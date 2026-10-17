@@ -12,6 +12,12 @@
 src/*
 !src/app
 src/app/*
+# Admit only the reviewed web-only liveness route and required ancestors.
+!src/app/api
+src/app/api/*
+!src/app/api/health
+src/app/api/health/*
+!src/app/api/health/route.ts
 !src/app/globals.css
 !src/app/layout.tsx
 !src/app/manual-month-progress.tsx

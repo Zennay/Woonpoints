@@ -9,7 +9,8 @@ const text = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf
 const expected = [
   'Dockerfile', 'package.json', 'package-lock.json',
   'next.config.mjs', 'next-env.d.ts', 'tsconfig.json',
-  'src', 'src/app', 'src/app/globals.css', 'src/app/layout.tsx',
+  'src', 'src/app', 'src/app/api', 'src/app/api/health',
+  'src/app/api/health/route.ts', 'src/app/globals.css', 'src/app/layout.tsx',
   'src/app/manual-month-progress.tsx', 'src/app/position-stats.tsx', 'src/app/page.tsx', 'src/lib', 'src/lib/db-url-launcher.mjs',
   'src/lib/manual-month-progress.mjs', 'src/lib/position-statistics.mjs',
   'src/lib/safety.mjs', 'src/worker', 'src/worker/index.mjs',
@@ -26,7 +27,7 @@ test('Docker build context is deny-by-default and exactly file-allowlisted', () 
     expectedRules.push('!' + path);
     // Docker exclusions are last-match-wins: unignoring a directory can
     // reintroduce its children unless the folder content is denied again.
-    if (['src', 'src/app', 'src/lib', 'src/worker', 'prisma'].includes(path)) {
+    if (['src', 'src/app', 'src/app/api', 'src/app/api/health', 'src/lib', 'src/worker', 'prisma'].includes(path)) {
       expectedRules.push(path + '/*');
     }
   }
@@ -35,12 +36,15 @@ test('Docker build context is deny-by-default and exactly file-allowlisted', () 
   for (const path of expected) {
     assert.ok(existsSync(new URL('../' + path, import.meta.url)), 'missing build dependency: ' + path);
   }
-  for (const source of ['src/app', 'src/lib', 'src/worker', 'prisma']) {
+  const reviewedDirectories = new Set(['src/app/api', 'src/app/api/health']);
+  for (const source of ['src/app', 'src/app/api', 'src/app/api/health', 'src/lib', 'src/worker', 'prisma']) {
     // Detect an accidentally added source that builds locally but is absent
     // in Docker, rather than silently broadening the context to all files.
     const sourceDir = new URL('../' + source + '/', import.meta.url);
     for (const member of readdirSync(sourceDir, { withFileTypes: true })) {
-      assert.ok(member.isFile() && includedFiles.includes(source + '/' + member.name),
+      const candidate = source + '/' + member.name;
+      assert.ok((member.isFile() && includedFiles.includes(candidate)) ||
+        (member.isDirectory() && reviewedDirectories.has(candidate)),
         'review new Docker dependency explicitly: ' + source + '/' + member.name);
     }
   }
@@ -51,14 +55,16 @@ test('allowlist cannot ingest synthetic nested credential file paths', () => {
   for (const secret of [
     '.env', '.env.production', '.npmrc', '.netrc',
     'src/.env', 'src/app/.env', 'src/app/production-credentials.json',
-    'src/app/config.secret.ts', 'src/lib/private.pem',
+    'src/app/config.secret.ts', 'src/app/api/secret.ts',
+    'src/app/api/health/secret.json', 'src/app/api/health/.env',
+    'src/lib/private.pem',
     'src/lib/token.json', 'src/worker/service-account.json',
     'prisma/.env', 'prisma/backup.sql', 'prisma/secret.p12',
     'public/local-token.json', '.git/config', '.next/server/manifest.json',
   ]) {
     assert.equal(allowed.has(secret), false, 'unreviewed secret path: ' + secret);
   }
-  assert.equal(includedFiles.length, 11, 'source files require manifest review when changed');
+  assert.equal(includedFiles.length, 12, 'source files require manifest review when changed');
 });
 
 // Until the separately owned Node OCI base update (#26) lands, accept only
