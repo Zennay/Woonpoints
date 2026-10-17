@@ -29,7 +29,7 @@ test('worker can run in dry-run mode without attempting a reaction', () => {
 
 test('explicit owner authorization is required', () => {
   assert.throws(() => assertAuthorizedAccount({}), /authorization is required/);
-  assert.doesNotThrow(() => assertAuthorizedAccount({ authorizationGrantedAt: new Date() }));
+  assert.doesNotThrow(() => assertAuthorizedAccount({ authorizationGrantedAt: new Date(), pausedReason: null }));
 });
 
 test('sensitive account states require human action', () => {
