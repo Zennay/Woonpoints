@@ -27,14 +27,31 @@ export function launchDatabaseCommand(command, args, env = process.env) {
   // original operator secret. Avoid unnecessarily widening its exposure.
   const childEnv = { ...env, DATABASE_URL: databaseUrl };
   delete childEnv.WOONPOINTS_DB_PASSWORD;
+  // npm run start/worker can spawn another Node process. On POSIX create
+  // a private process group so supervisor signals reach descendants as well
+  // as npm. Never signal the launcher's own process group.
+  const groupSignals = process.platform !== 'win32';
   const child = spawn(command, args, {
     env: childEnv,
     stdio: 'inherit',
     shell: false,
+    detached: groupSignals,
   });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
-      if (!child.killed) child.kill(signal);
+      if (!groupSignals || !Number.isSafeInteger(child.pid) || child.pid <= 1) {
+        if (!child.killed) child.kill(signal);
+        return;
+      }
+      try {
+        // Negative PID is the group ID of this detached child, never an
+        // arbitrary operator PID or the VPS host's process group.
+        process.kill(-child.pid, signal);
+      } catch (error) {
+        // The group may have exited already. On a permissions error retain
+        // the original direct-child fallback; do not log credentials.
+        if (error?.code !== 'ESRCH' && !child.killed) child.kill(signal);
+      }
     });
   }
   child.on('error', () => {
