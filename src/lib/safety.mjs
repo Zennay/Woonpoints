@@ -7,7 +7,13 @@ export const HUMAN_ACTION_REASONS = Object.freeze([
 ]);
 
 export function isDryRunEnabled(env = process.env) {
-  return String(env.BOT_DRY_RUN ?? '').toLowerCase() === 'true';
+  // process.env values are primitive strings. Never coerce caller-provided
+  // objects/arrays through toString() into an execution-policy admission.
+  if (env == null || !Object.hasOwn(env, 'BOT_DRY_RUN')) {
+    return false;
+  }
+  const value = env.BOT_DRY_RUN;
+  return typeof value === 'string' && value.toLowerCase() === 'true';
 }
 
 export function assertDryRun(env = process.env) {
