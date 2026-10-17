@@ -26,9 +26,9 @@ test('fail closed on absent, empty, or invalid operator password', () => {
   }
 });
 
-test('child receives percent-encoded source secret instead of stale prebuilt URL', () => {
+test('child receives canonical credential URL without inheriting duplicate raw source password', () => {
   const secret = 'synthetic:@/#?%[]';
-  const code = "const u = new URL(process.env.DATABASE_URL); if (u.hostname !== 'db' || decodeURIComponent(u.password) !== process.env.WOONPOINTS_DB_PASSWORD) process.exit(19);";
+  const code = "const u = new URL(process.env.DATABASE_URL); if (u.hostname !== 'db' || decodeURIComponent(u.password) !== 'synthetic:@/#?%[]' || Object.hasOwn(process.env, 'WOONPOINTS_DB_PASSWORD')) process.exit(19);";
   const result = spawnSync(process.execPath, [launcher, process.execPath, '-e', code], {
     encoding: 'utf8', timeout: 8000,
     env: { ...process.env, WOONPOINTS_DB_PASSWORD: secret,
