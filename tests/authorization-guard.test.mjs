@@ -25,11 +25,11 @@ test('owner consent must be a real, finite, nonfuture Prisma DateTime', () => {
     );
   }
   assert.doesNotThrow(
-    () => assertAuthorizedAccount({authorizationGrantedAt: granted}, now),
+    () => assertAuthorizedAccount({authorizationGrantedAt: granted, pausedReason: null}, now),
     'existing valid DateTime consent must remain valid'
   );
   assert.doesNotThrow(
-    () => assertAuthorizedAccount({authorizationGrantedAt: now}, now),
+    () => assertAuthorizedAccount({authorizationGrantedAt: now, pausedReason: null}, now),
     'a consent exactly at the evaluation instant must be accepted'
   );
 });
@@ -44,11 +44,13 @@ test('paused or unknown account states block eligibility even with valid consent
       'pausedReason '+String(pausedReason)+' must be fail-closed'
     );
   }
-  for (const pausedReason of [null,undefined]) {
-    assert.doesNotThrow(
-      () => assertAuthorizedAccount({authorizationGrantedAt: granted,pausedReason}, now)
-    );
-  }
+  assert.doesNotThrow(
+    () => assertAuthorizedAccount({authorizationGrantedAt: granted, pausedReason: null}, now)
+  );
+  assert.throws(
+    () => assertAuthorizedAccount({authorizationGrantedAt: granted, pausedReason: undefined}, now),
+    /paus|human/i,
+  );
 });
 
 test('authorization validation never relaxes the mandatory current dry-run gate', () => {
