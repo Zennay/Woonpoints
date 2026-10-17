@@ -8,7 +8,9 @@ import {
   clearManualProgress,
   decodeManualProgress,
   encodeManualProgress,
-  localMonthKey
+  localMonthKey,
+  writeManualProgressIfUnchanged,
+  eraseManualProgressIfUnchanged
 } from '../src/lib/manual-month-progress.mjs';
 
 test('local planning uses browser-local civil month and a scoped noncredential storage key', () => {
@@ -59,7 +61,7 @@ test('manual UI marks its status as unverified and contains no WoningNet API fet
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /geen geverifieerde WoningNet-stand/);
-  assert.match(ui, /window\.localStorage\.setItem/);
+  assert.match(ui, /writeManualProgressIfUnchanged\(window\.localStorage/);
   assert.match(ui, /unsaved\.current\?\.count \?\? stored/);
   assert.match(ui, /unsaved\.current\?\.count \?\? null/);
   assert.doesNotMatch(ui, /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bBOT_DRY_RUN\s*=/);
@@ -98,7 +100,7 @@ test('privacy UI exposes erase controls, midnight refresh and an explicit storag
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /Wis mijn notitie/);
-  assert.match(ui, /clearManualProgress\(window\.localStorage\)/);
+  assert.match(ui, /eraseManualProgressIfUnchanged\(window\.localStorage/);
   assert.match(ui, /setTimeout\(refresh/);
   assert.match(ui, /clearTimeout\(timer\)/);
   assert.match(ui, /visibilitychange/);
@@ -155,7 +157,7 @@ test('cross-tab event handler discards failed-write fallback and refreshes only 
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /relevantManualStorageEvent\(event, window\.localStorage\)/);
-  assert.match(ui, /unsaved\.current = null;\s*setHasUnsaved\(false\);\s*setTransientDiscarded\(false\);\s*setDeleteError\(false\);\s*refresh\(\)/);
+  assert.match(ui, /unsaved\.current = null;\s*setHasUnsaved\(false\);\s*setTransientDiscarded\(false\);\s*setDeleteError\(false\);\s*setConflict\(false\);\s*refresh\(\)/);
   assert.match(ui, /addEventListener\('storage', onStorage\)/);
   assert.match(ui, /removeEventListener\('storage', onStorage\)/);
 });
@@ -175,7 +177,63 @@ test('storage denial exposes a distinct temporary-only erase without claiming du
 test('persistent erase still does not silently downgrade to in-memory-only success on storage denial', async () => {
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
-  assert.match(ui, /try \{\s*clearManualProgress\(window\.localStorage\)/);
+  assert.match(ui, /try \{\s*const result = eraseManualProgressIfUnchanged\(window\.localStorage/);
   assert.match(ui, /catch \{\s*setDeleteError\(true\)/);
   assert.doesNotMatch(ui, /localStorage\.clear\(/);
+});
+
+
+test('stale tab cannot recreate or erase a private note changed since its last observed snapshot', () => {
+  const key = MANUAL_PROGRESS_STORAGE_KEY;
+  const first = encodeManualProgress('2026-10', 1);
+  const replaced = encodeManualProgress('2026-10', 3);
+  let raw = first;
+  const events = [];
+  const storage = {getItem(k){ assert.equal(k,key); return raw; }, setItem(k,v){ events.push('set'); raw=v; }, removeItem(k){events.push('erase');raw=null;} };
+  assert.deepEqual(writeManualProgressIfUnchanged(storage,first,'2026-10',2), { status:'saved',raw:encodeManualProgress('2026-10',2) });
+  raw=replaced;events.length=0;
+  assert.deepEqual(writeManualProgressIfUnchanged(storage,first,'2026-10',4), { status:'changed',raw:replaced });
+  assert.deepEqual(eraseManualProgressIfUnchanged(storage,first), { status:'changed',raw:replaced });
+  assert.deepEqual(events, []);
+  raw=null;
+  assert.deepEqual(writeManualProgressIfUnchanged(storage,first,'2026-10',2), { status:'changed',raw:null });
+  assert.deepEqual(eraseManualProgressIfUnchanged(storage,first), { status:'changed',raw:null });
+  assert.deepEqual(events, []);
+  assert.deepEqual(writeManualProgressIfUnchanged(storage,null,'2026-10',0), {status:'saved',raw:encodeManualProgress('2026-10',0)});
+  assert.deepEqual(eraseManualProgressIfUnchanged(storage,encodeManualProgress('2026-10',0)), {status:'cleared',raw:null});
+});
+
+test('unknown or inaccessible storage snapshot never silently destroys existing private note', () => {
+  const key=MANUAL_PROGRESS_STORAGE_KEY;
+  for (const expected of [undefined,42,false,{}]) {
+    let called=0;
+    const storage={getItem(){called++;return 'old';},setItem(){called++;},removeItem(){called++;}};
+    assert.deepEqual(writeManualProgressIfUnchanged(storage,expected,'2026-10',1), {status:'unknown'});
+    assert.deepEqual(eraseManualProgressIfUnchanged(storage,expected), {status:'unknown'});
+    assert.equal(called,0);
+  }
+  const denied={getItem(){throw Error('denied');},setItem(){throw Error('must not write');},removeItem(){throw Error('must not erase');}};
+  assert.throws(()=>writeManualProgressIfUnchanged(denied,null,'2026-10',1), /denied/);
+  assert.throws(()=>eraseManualProgressIfUnchanged(denied,null), /denied/);
+  assert.throws(()=>writeManualProgressIfUnchanged({getItem(){return null;}},null,'2026-10',10), /Invalid/);
+});
+
+test('manual buttons require an observed local snapshot and acknowledge conflicts without overwriting it', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const ui=await readFile(new URL('../src/app/manual-month-progress.tsx',import.meta.url),'utf8');
+  assert.match(ui,/lastObservedRaw/);
+  assert.match(ui,/writeManualProgressIfUnchanged\(window\.localStorage/);
+  assert.match(ui,/eraseManualProgressIfUnchanged\(window\.localStorage/);
+  assert.match(ui,/De notitie is gewijzigd in een ander tabblad/);
+  assert.match(ui,/role="alert"/);
+});
+
+
+test('storage read denial still permits a temporary, explicitly unsaved in-memory edit', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const ui=await readFile(new URL('../src/app/manual-month-progress.tsx',import.meta.url),'utf8');
+  assert.match(ui, /if \(result\.status === 'unknown'\)/);
+  assert.match(ui, /unsaved\.current = \{ month: current, count: next \};/);
+  assert.match(ui, /setHasUnsaved\(true\);\s*setCount\(next\);\s*setStorageWorks\(false\);/);
+  assert.match(ui, /setConflict\(false\);\s*return;/);
 });
