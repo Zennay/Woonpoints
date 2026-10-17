@@ -8,9 +8,10 @@ const compose = text('docker-compose.yml');
 const workflow = text('.github/workflows/qa-production-app-container.yml');
 
 test('app stage performs a real production build and starts next start, never dev', () => {
-  assert.match(dockerfile, /^FROM base AS app\nRUN npm run build\nEXPOSE 3000\nCMD \["npm", "run", "start"\]$/m);
+  assert.match(dockerfile, /^FROM base AS app\nRUN npm run build$/m);
+  assert.match(dockerfile, /^USER node\nEXPOSE 3000\nCMD \["npm", "run", "start"\]$/m);
   assert.doesNotMatch(dockerfile, /^CMD \["npm", "run", "dev"\]$/m);
-  assert.match(dockerfile, /^FROM base AS worker\nCMD \["npm", "run", "worker"\]$/m);
+  assert.match(dockerfile, /^FROM base AS worker\nUSER node\nCMD \["npm", "run", "worker"\]$/m);
   assert.match(dockerfile, /^FROM node:20-alpine@sha256:[0-9a-f]{64} AS base$/m);
 });
 
