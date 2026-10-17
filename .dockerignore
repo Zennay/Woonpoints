@@ -15,11 +15,13 @@ src/app/*
 !src/app/globals.css
 !src/app/layout.tsx
 !src/app/manual-month-progress.tsx
+!src/app/position-stats.tsx
 !src/app/page.tsx
 !src/lib
 src/lib/*
 !src/lib/db-url-launcher.mjs
 !src/lib/manual-month-progress.mjs
+!src/lib/position-statistics.mjs
 !src/lib/safety.mjs
 !src/worker
 src/worker/*
