@@ -9,10 +9,20 @@ export const HUMAN_ACTION_REASONS = Object.freeze([
 export function isDryRunEnabled(env = process.env) {
   // process.env values are primitive strings. Never coerce caller-provided
   // objects/arrays through toString() into an execution-policy admission.
-  if (env == null || !Object.hasOwn(env, 'BOT_DRY_RUN')) {
+  if (env == null) {
     return false;
   }
-  const value = env.BOT_DRY_RUN;
+  // Never evaluate an untrusted accessor when deciding whether a worker is
+  // confined to dry-run. process.env exposes its values as own data fields;
+  // prototypes and accessor properties are not operator proof.
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(env, 'BOT_DRY_RUN');
+  } catch {
+    return false;
+  }
+  const value = descriptor && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value : undefined;
   return typeof value === 'string' && value.toLowerCase() === 'true';
 }
 
@@ -27,16 +37,48 @@ export function assertDryRun(env = process.env) {
 export function assertAuthorizedAccount(account, now = new Date()) {
   // Prisma DateTime is a native Date. Arbitrary strings/flags are not proof
   // of consent; malformed or future timestamps must never enable execution.
-  const granted = account?.authorizationGrantedAt;
-  const grantedAt = granted instanceof Date ? granted.getTime() : NaN;
-  const checkedAt = now instanceof Date ? now.getTime() : NaN;
+  // A Prisma consent timestamp is an OWN DATA field of the account row.
+  // Inherited properties and computed getters cannot be evidence of owner
+  // authorization; do not execute arbitrary getters while evaluating it.
+  let descriptor;
+  try {
+    descriptor = account == null ? undefined
+      : Object.getOwnPropertyDescriptor(account, 'authorizationGrantedAt');
+  } catch {
+    descriptor = undefined;
+  }
+  const granted = descriptor && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value : undefined;
+  // A Date instance can shadow its getTime method. Authenticate the native
+  // internal Date value instead of trusting instance-overridden methods.
+  // In particular, an actual *future* consent may not claim an older value.
+  let grantedAt = NaN;
+  let checkedAt = NaN;
+  try {
+    grantedAt = granted instanceof Date ? Date.prototype.getTime.call(granted) : NaN;
+    checkedAt = now instanceof Date ? Date.prototype.getTime.call(now) : NaN;
+  } catch {
+    // A Proxy around a Date passes instanceof but has no Date internal
+    // slot. Normalize the failure to the existing policy rejection rather
+    // than leaking a runtime TypeError to an operator.
+  }
   if (!Number.isFinite(grantedAt) || !Number.isFinite(checkedAt) || grantedAt > checkedAt) {
     throw new Error('Account owner authorization is required before worker execution.');
   }
 
   // Account-level human stops override even previously valid consent.
-  // Unknown/empty pause reasons fail closed instead of being ignored.
-  if (account.pausedReason !== null && account.pausedReason !== undefined) {
+  // Trust only an own, stored pause state: an accessor (even if it returns
+  // null) or inherited value cannot prove that no human stop is pending.
+  let confirmedUnpaused = false;
+  try {
+    const pause = Object.getOwnPropertyDescriptor(account, 'pausedReason');
+    confirmedUnpaused = pause
+      ? Object.hasOwn(pause, 'value') && (pause.value === null || pause.value === undefined)
+      : !('pausedReason' in account);
+  } catch {
+    confirmedUnpaused = false;
+  }
+  if (!confirmedUnpaused) {
     throw new Error('Account paused for human review before worker execution.');
   }
 }
