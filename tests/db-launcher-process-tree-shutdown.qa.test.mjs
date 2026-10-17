@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,9 +54,9 @@ test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
   child.stderr.on('data', chunk => { stderr += chunk.toString(); });
   let grandchildPid = null;
   try {
-    const ready = await until(() => existsSync(readyPath) && /^\\d+\\n/.test(stdout));
+    const ready = await until(() => existsSync(readyPath) && /^\d+\n/.test(stdout));
     assert.equal(ready, true, 'test subprocesses must start: ' + stderr);
-    grandchildPid = Number(stdout.match(/^(\\d+)\\n/)[1]);
+    grandchildPid = Number(stdout.match(/^(\d+)\n/)[1]);
     assert.ok(Number.isSafeInteger(grandchildPid) && grandchildPid > 1);
     child.kill('SIGTERM');
     assert.equal(await until(() => existsSync(stoppedPath), 2600), true,
