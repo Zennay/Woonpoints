@@ -52,8 +52,11 @@ test('built Next server sends anti-embedding and privacy policy on 200 and 404',
       if (path === '/api/health') {
         // Only the HTTP server was reachable. No database, account, queue,
         // worker or live WoningNet status is independently verified here.
-        assert.match(r.headers.get('content-type') || '', /^application\\/json/);
-        assert.match(r.headers.get('cache-control') || '', /(?:^|,)\\s*no-store(?:,|$)/);
+        assert.ok((r.headers.get('content-type') || '').startsWith('application/json'),
+          'health endpoint must send JSON');
+        const cacheDirectives = (r.headers.get('cache-control') || '')
+          .split(',').map(part => part.trim().toLowerCase());
+        assert.ok(cacheDirectives.includes('no-store'), 'health response must not be cached');
         const body = await r.json();
         assert.deepEqual(body, { service: 'woonpoints-web', status: 'serving' },
           'health response must never reveal operational details, secrets or a READY claim');
