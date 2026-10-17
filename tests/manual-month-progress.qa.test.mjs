@@ -227,3 +227,13 @@ test('manual buttons require an observed local snapshot and acknowledge conflict
   assert.match(ui,/De notitie is gewijzigd in een ander tabblad/);
   assert.match(ui,/role="alert"/);
 });
+
+
+test('storage read denial still permits a temporary, explicitly unsaved in-memory edit', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const ui=await readFile(new URL('../src/app/manual-month-progress.tsx',import.meta.url),'utf8');
+  assert.match(ui, /if \(result\.status === 'unknown'\)/);
+  assert.match(ui, /unsaved\.current = \{ month: current, count: next \};/);
+  assert.match(ui, /setHasUnsaved\(true\);\s*setCount\(next\);\s*setStorageWorks\(false\);/);
+  assert.match(ui, /setConflict\(false\);\s*return;/);
+});

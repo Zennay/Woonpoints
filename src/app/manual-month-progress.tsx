@@ -110,6 +110,18 @@ export default function ManualMonthProgress() {
     try {
       const result = writeManualProgressIfUnchanged(window.localStorage, lastObservedRaw.current, current, next);
       if (result.status !== 'saved') {
+        if (result.status === 'unknown') {
+          // Read denied or not yet observed: only a private temporary edit is
+          // allowed; never overwrite unknown persistent data.
+          unsaved.current = { month: current, count: next };
+          setHasUnsaved(true);
+          setCount(next);
+          setStorageWorks(false);
+          setDeleteError(false);
+          setTransientDiscarded(false);
+          setConflict(false);
+          return;
+        }
         unsaved.current = null;
         setHasUnsaved(false);
         if (result.status === 'changed') {
