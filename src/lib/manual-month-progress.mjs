@@ -40,6 +40,12 @@ export function manualPlanningNudge(month, count, now = new Date()) {
     urgency: lastDay - day <= 7 ? 'late' : 'midmonth' };
 }
 
+/** A different tab may replace or erase a note. Unrelated/session storage does not. */
+export function relevantManualStorageEvent(event, localStorageArea) {
+  return event != null && event.storageArea === localStorageArea &&
+    (event.key === MANUAL_PROGRESS_STORAGE_KEY || event.key === null);
+}
+
 export function clearManualProgress(storage) {
   storage.removeItem(MANUAL_PROGRESS_STORAGE_KEY);
 }
