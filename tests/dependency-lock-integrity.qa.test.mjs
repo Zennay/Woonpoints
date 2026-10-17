@@ -37,4 +37,6 @@ test('hosted integration uses the committed lock instead of resolving versions a
   assert.doesNotMatch(workflow, /^\s*- run: npm install(?:\s|$)/m);
   assert.match(workflow, /^\s*- run: npm test$/m);
   assert.match(workflow, /^\s*- run: npm run typecheck$/m);
+  assert.match(workflow, /^\s*- run: npm run build$/m, 'real Next.js build must run in integration CI');
+  assert.match(workflow, /^\s*timeout-minutes: 10$/m, 'bounded build job required');
 });
