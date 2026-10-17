@@ -18,15 +18,47 @@ export function composeDatabaseUrl(password) {
   return url.href;
 }
 
+// Construct the child's launch environment from one inert descriptor
+// snapshot. Object spread and direct env.secret access execute accessors;
+// a caller-controlled or incomplete environment is not operator proof.
+// The actual Compose/process.env environment contains own string fields.
+export function prepareChildEnvironment(env = process.env) {
+  let fields;
+  try {
+    if (env === null || typeof env !== 'object') {
+      throw new TypeError('environment is not an object');
+    }
+    fields = Object.getOwnPropertyDescriptors(env);
+  } catch {
+    throw new Error('Invalid database environment.');
+  }
+
+  const password = Object.getOwnPropertyDescriptor(fields, 'WOONPOINTS_DB_PASSWORD')?.value;
+  if (!password || !Object.hasOwn(password, 'value') || typeof password.value !== 'string') {
+    throw new Error('Invalid database environment.');
+  }
+  // Validate the operator value before returning any candidate child fields.
+  const databaseUrl = composeDatabaseUrl(password.value);
+  const child = Object.create(null);
+  for (const [key, descriptor] of Object.entries(fields)) {
+    // Drop the original raw secret and any inherited/stale DATABASE_URL.
+    // In particular, do not invoke an existing DATABASE_URL getter.
+    if (key === 'WOONPOINTS_DB_PASSWORD' || key === 'DATABASE_URL') continue;
+    if (!Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string') {
+      throw new Error('Invalid database environment.');
+    }
+    child[key] = descriptor.value;
+  }
+  child.DATABASE_URL = databaseUrl;
+  return child;
+}
+
 export function launchDatabaseCommand(command, args, env = process.env) {
   if (typeof command !== 'string' || !command || !Array.isArray(args)) {
     throw new Error('A command is required.');
   }
-  const databaseUrl = composeDatabaseUrl(env.WOONPOINTS_DB_PASSWORD);
-  // The child needs the canonical DATABASE_URL, not a second copy of the
-  // original operator secret. Avoid unnecessarily widening its exposure.
-  const childEnv = { ...env, DATABASE_URL: databaseUrl };
-  delete childEnv.WOONPOINTS_DB_PASSWORD;
+  // Admission is completed before spawn or signal-handler registration.
+  const childEnv = prepareChildEnvironment(env);
   // npm run start/worker can spawn another Node process. On POSIX create
   // a private process group so supervisor signals reach descendants as well
   // as npm. Never signal the launcher's own process group.
