@@ -1,23 +1,22 @@
-# Deny by default: docker-compose uses a local .env for database credentials.
-# Dockerfile COPY . . must never snapshot .env, private keys, .git or caches
-# into reusable app/worker image layers.
+# Strict source manifest: Docker COPY . . can only see the reviewed files below.
+# A new source/asset or Dockerfile dependency requires an explicit reviewed
+# manifest change. This also blocks arbitrary JSON/key files under src/prisma.
 *
 !Dockerfile
-!package*.json
+!package.json
+!package-lock.json
 !next.config.mjs
 !next-env.d.ts
 !tsconfig.json
 !src
-!src/**
+!src/app
+!src/app/globals.css
+!src/app/layout.tsx
+!src/app/page.tsx
+!src/lib
+!src/lib/db-url-launcher.mjs
+!src/lib/safety.mjs
+!src/worker
+!src/worker/index.mjs
 !prisma
-!prisma/**
-!public
-!public/**
-# Last-match-wins: nested secrets under allowed source folders stay denied.
-**/.env
-**/.env.*
-**/.npmrc
-**/.netrc
-**/*.pem
-**/*.key
-**/*.p12
+!prisma/schema.prisma
