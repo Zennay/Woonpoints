@@ -12,7 +12,7 @@
 src/*
 !src/app
 src/app/*
-# Minimal static web-liveness API; admit ONLY its exact reviewed route.
+# Admit only the reviewed web-only liveness route and required ancestors.
 !src/app/api
 src/app/api/*
 !src/app/api/health
@@ -21,11 +21,13 @@ src/app/api/health/*
 !src/app/globals.css
 !src/app/layout.tsx
 !src/app/manual-month-progress.tsx
+!src/app/position-stats.tsx
 !src/app/page.tsx
 !src/lib
 src/lib/*
 !src/lib/db-url-launcher.mjs
 !src/lib/manual-month-progress.mjs
+!src/lib/position-statistics.mjs
 !src/lib/safety.mjs
 !src/worker
 src/worker/*

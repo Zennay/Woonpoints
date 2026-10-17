@@ -11,8 +11,8 @@ const expected = [
   'next.config.mjs', 'next-env.d.ts', 'tsconfig.json',
   'src', 'src/app', 'src/app/api', 'src/app/api/health',
   'src/app/api/health/route.ts', 'src/app/globals.css', 'src/app/layout.tsx',
-  'src/app/manual-month-progress.tsx', 'src/app/page.tsx', 'src/lib', 'src/lib/db-url-launcher.mjs',
-  'src/lib/manual-month-progress.mjs',
+  'src/app/manual-month-progress.tsx', 'src/app/position-stats.tsx', 'src/app/page.tsx', 'src/lib', 'src/lib/db-url-launcher.mjs',
+  'src/lib/manual-month-progress.mjs', 'src/lib/position-statistics.mjs',
   'src/lib/safety.mjs', 'src/worker', 'src/worker/index.mjs',
   'prisma', 'prisma/schema.prisma',
 ];
@@ -64,7 +64,7 @@ test('allowlist cannot ingest synthetic nested credential file paths', () => {
   ]) {
     assert.equal(allowed.has(secret), false, 'unreviewed secret path: ' + secret);
   }
-  assert.equal(includedFiles.length, 10, 'source files require manifest review when changed');
+  assert.equal(includedFiles.length, 12, 'source files require manifest review when changed');
 });
 
 // Until the separately owned Node OCI base update (#26) lands, accept only

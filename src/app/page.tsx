@@ -1,4 +1,5 @@
 import ManualMonthProgress from './manual-month-progress';
+import PositionStats from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -33,6 +34,7 @@ export default function HomePage() {
       </section>
 
       <ManualMonthProgress />
+      <PositionStats />
 
       <section className="panel">
         <div>
