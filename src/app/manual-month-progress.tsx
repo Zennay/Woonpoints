@@ -67,7 +67,10 @@ export default function ManualMonthProgress() {
         setStorageWorks(false);
       }
       if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(refresh, msUntilNextLocalMidnight() + 50);
+      // Keep the deadline bound to the same civil instant used for the
+      // displayed month. If storage refresh crosses midnight, re-reading
+      // the clock here would defer rollover for another entire day.
+      timer = setTimeout(refresh, msUntilNextLocalMidnight(observed) + 50);
     }
     function onStorage(event: StorageEvent) {
       // A trusted same-origin localStorage update/erase overrides this tab's
