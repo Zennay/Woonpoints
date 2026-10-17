@@ -40,11 +40,15 @@ The first baseline intentionally does **not** place live WoningNet reactions. Br
 1. Copy `.env.example` to `.env`; **do not commit or paste the local secret**.
 2. Generate one private, URL-safe random database password, for example:
    `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`
-   Store that value in `.env` as `WOONPOINTS_DB_PASSWORD`. Configure
-   `DATABASE_URL=postgresql://woonpoints:<same-password>@db:5432/woonpoints?schema=public`
-   for the Docker Compose app/worker. Replace `<same-password>` locally; do
-   not include angle brackets. For host-side Prisma, use `localhost:5432`
-   rather than the Docker-only `db` hostname.
+   Store that value in `.env` as `WOONPOINTS_DB_PASSWORD`. The
+   Compose PostgreSQL, app and worker services all derive their private
+   database password from **this single value**. An independent
+   `DATABASE_URL` entry in `.env` is NOT trusted by the Compose app/worker;
+   their service environment overrides it to avoid credential drift.
+   For host-side Prisma or `npm run dev` outside Docker, configure
+   `DATABASE_URL=postgresql://woonpoints:<same-password>@localhost:5432/woonpoints?schema=public`.
+   Replace `<same-password>` locally, with no angle brackets. Only use
+   the generated URL-safe secret to avoid reserved URL delimiter issues.
 3. Keep `BOT_DRY_RUN=true`. Missing/empty `WOONPOINTS_DB_PASSWORD`
    intentionally blocks Compose startup; there is **no default password**.
 4. Validate the local Compose configuration without starting a container:
