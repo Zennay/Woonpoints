@@ -31,15 +31,39 @@ const root=path.resolve(import.meta.dirname,'..');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'woonpoints-compose-qa-'));
 try {
   fs.copyFileSync(path.join(root,'docker-compose.yml'),path.join(temp,'docker-compose.yml'));
-  // For schema inspection only: placeholders are not forwarded to any
-  // service, database or Docker daemon and are never printed.
-  fs.copyFileSync(path.join(root,'.env.example'),path.join(temp,'.env'));
-  const result=spawnSync('docker',
+  // The distributable sample deliberately leaves the DB password empty.
+  // Assert the real Compose parser FAILS CLOSED before supplying any secret.
+  const sample=fs.readFileSync(path.join(root,'.env.example'),'utf8');
+  const envFile=path.join(temp,'.env');
+  fs.writeFileSync(envFile,sample,{mode:0o600});
+  // Ignore any unrelated runner-level environment variables so the test
+  // proves the actual example/Compose admission contract.
+  const isolatedEnv={...process.env};
+  delete isolatedEnv.WOONPOINTS_DB_PASSWORD;
+  delete isolatedEnv.DATABASE_URL;
+  const run=()=>spawnSync('docker',
     ['compose','-f','docker-compose.yml','config','--format','json'],
-    {cwd:temp,encoding:'utf8',timeout:20000,maxBuffer:1024*1024});
+    {cwd:temp,env:isolatedEnv,encoding:'utf8',timeout:20000,maxBuffer:1024*1024});
+  const rejected=run();
+  if(rejected.error)throw Error('Docker Compose config unavailable: '+rejected.error.code);
+  assert.notEqual(rejected.status,0,
+    'missing DB password must block real Compose config admission');
+
+  // Use disposable fixture-only credentials. Never contact Docker daemon,
+  // run an image or write a real operator's database.
+  const syntheticPassword='fixture-only-not-for-deployment-47';
+  const admitted=sample
+    .replace(/^WOONPOINTS_DB_PASSWORD=\s*$/m,
+      'WOONPOINTS_DB_PASSWORD='+syntheticPassword)
+    .replace(/^DATABASE_URL=\s*$/m,
+      'DATABASE_URL=postgresql://woonpoints:'+syntheticPassword+
+      '@db:5432/woonpoints?schema=public');
+  assert.notEqual(admitted,sample,'fixture must populate empty credential sample');
+  fs.writeFileSync(envFile,admitted,{mode:0o600});
+  const result=run();
   if (result.error) throw Error('Docker Compose config unavailable: '+result.error.code);
   assert.equal(result.status,0,
-    'Compose configuration failed: '+(result.stderr||'').slice(0,500));
+    'synthetic private credential must pass the actual Compose parser');
   const services=JSON.parse(result.stdout).services;
   assert.ok(services?.db,'expected PostgreSQL service');
   const ports=services.db.ports||[];
