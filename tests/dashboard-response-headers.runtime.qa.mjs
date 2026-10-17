@@ -42,13 +42,22 @@ test('built Next server sends anti-embedding and privacy policy on 200 and 404',
       await sleep(100);
     }
     assert.ok(ready, 'built preview must start: ' + errorText);
-    for (const [path, expected] of [['/', 200], ['/unavailable-test-path', 404]]) {
+    for (const [path, expected] of [['/', 200], ['/unavailable-test-path', 404], ['/api/health', 200]]) {
       const r = await fetch('http://127.0.0.1:' + port + path, { signal: AbortSignal.timeout(3000) });
       assert.equal(r.status, expected);
       assert.equal(r.headers.get('x-frame-options'), 'DENY');
       assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
       assert.equal(r.headers.get('referrer-policy'), 'no-referrer');
       assert.equal(r.headers.get('x-dns-prefetch-control'), 'off');
+      if (path === '/api/health') {
+        // Only the HTTP server was reachable. No database, account, queue,
+        // worker or live WoningNet status is independently verified here.
+        assert.match(r.headers.get('content-type') || '', /^application\\/json/);
+        assert.match(r.headers.get('cache-control') || '', /(?:^|,)\\s*no-store(?:,|$)/);
+        const body = await r.json();
+        assert.deepEqual(body, { service: 'woonpoints-web', status: 'serving' },
+          'health response must never reveal operational details, secrets or a READY claim');
+      }
       const policy = r.headers.get('permissions-policy') || '';
       for (const feature of ['camera', 'microphone', 'geolocation', 'payment']) {
         assert.ok(policy.includes(feature + '=()'), feature + ' must be disabled on ' + path);
