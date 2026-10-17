@@ -8,8 +8,12 @@ COPY . .
 
 FROM base AS app
 RUN npm run build
+# Next's runtime cache must remain writable after dropping build privileges.
+RUN chown -R node:node /app/.next
+USER node
 EXPOSE 3000
 CMD ["npm", "run", "start"]
 
 FROM base AS worker
+USER node
 CMD ["npm", "run", "worker"]
