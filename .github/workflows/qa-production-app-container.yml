@@ -59,6 +59,8 @@ jobs:
             --entrypoint node woonpoints-app-qa:local \
             src/lib/db-url-launcher.mjs npm run start)"
           trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          # Verify actual image runtime identity, not just Dockerfile text.
+          test "$(docker exec "$cid" node -p 'process.getuid()')" = "1000"
           docker exec "$cid" node -e '
             (async () => {
               let lastError = "not ready";
