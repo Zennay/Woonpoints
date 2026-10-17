@@ -37,13 +37,27 @@ The first baseline intentionally does **not** place live WoningNet reactions. Br
 
 ## Local development
 
-1. Copy `.env.example` to `.env`.
-2. Keep `BOT_DRY_RUN=true`.
-3. Start PostgreSQL with `docker compose up -d db`.
-4. Run `npm install`.
-5. Run `npm run dev`.
+1. Copy `.env.example` to `.env`; **do not commit or paste the local secret**.
+2. Generate one private, URL-safe random database password, for example:
+   `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`
+   Store that value in `.env` as `WOONPOINTS_DB_PASSWORD`. Configure
+   `DATABASE_URL=postgresql://woonpoints:<same-password>@db:5432/woonpoints?schema=public`
+   for the Docker Compose app/worker. Replace `<same-password>` locally; do
+   not include angle brackets. For host-side Prisma, use `localhost:5432`
+   rather than the Docker-only `db` hostname.
+3. Keep `BOT_DRY_RUN=true`. Missing/empty `WOONPOINTS_DB_PASSWORD`
+   intentionally blocks Compose startup; there is **no default password**.
+4. Validate the local Compose configuration without starting a container:
+   `docker compose config --quiet`
+5. Start PostgreSQL with `docker compose up -d db`, then run `npm install`
+   and `npm run dev`.
 
-For the complete app + worker stack, use `docker compose up --build` after dependencies and environment variables are configured.
+For the complete app + worker stack, use `docker compose up --build` only
+after the operator has configured matching credentials and authorized a
+private local preview. Both dashboard and database ports default to host
+loopback; enabling an authenticated public gateway is a separate release.
+**These instructions are for a fresh local installation, not a production
+password rotation or a live database migration.**
 
 ## Prototype
 
