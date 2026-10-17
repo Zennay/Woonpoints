@@ -1,3 +1,5 @@
+import ManualMonthProgress from './manual-month-progress';
+
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
   ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
@@ -29,6 +31,8 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <ManualMonthProgress />
 
       <section className="panel">
         <div>
