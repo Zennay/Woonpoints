@@ -1,48 +1,63 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const text = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
-const expected = [
-  '!Dockerfile',
-  '!package*.json',
-  '!next.config.mjs',
-  '!next-env.d.ts',
-  '!tsconfig.json',
-  '!src', '!src/**',
-  '!prisma', '!prisma/**',
-  '!public', '!public/**',
-];
 
-test('docker context is opt-in only: no local .env, credentials or git history', () => {
+// No recursive allowlists: an arbitrary secret JSON, migration dump or source
+// config must not be swept into a cached app/worker Docker image layer.
+const expected = [
+  'Dockerfile', 'package.json', 'package-lock.json',
+  'next.config.mjs', 'next-env.d.ts', 'tsconfig.json',
+  'src', 'src/app', 'src/app/globals.css', 'src/app/layout.tsx',
+  'src/app/page.tsx', 'src/lib', 'src/lib/db-url-launcher.mjs',
+  'src/lib/safety.mjs', 'src/worker', 'src/worker/index.mjs',
+  'prisma', 'prisma/schema.prisma',
+];
+const includedFiles = expected.filter(path => path.includes('/') && /\.[a-z]+$/.test(path));
+
+test('Docker build context is deny-by-default and exactly file-allowlisted', () => {
   const rules = text('.dockerignore').split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-  assert.equal(rules[0], '*', 'deny all source files before selective inclusion');
-  const includes = rules.slice(1).filter((line) => line.startsWith('!'));
-  const nestedSecretDenies = rules.slice(1).filter((line) => !line.startsWith('!'));
-  assert.deepEqual(includes.slice().sort(), expected.slice().sort(),
-    'review each added Docker build-context exception: no blanket !**');
-  assert.deepEqual(nestedSecretDenies, [
-    '**/.env', '**/.env.*', '**/.npmrc', '**/.netrc',
-    '**/*.pem', '**/*.key', '**/*.p12',
-  ], 'nested credentials under allowed src/prisma/public require final exclusions');
-  assert.equal(rules[rules.length - 1], '**/*.p12',
-    'secret exclusion rules must be AFTER the folder allowlist');
-  for (const sensitive of [
-    '.env', '.env.local', '.env.production', '.git/config',
-    'secrets/private.key', 'keys/token.json', '.next/server/server.js',
-    'node_modules/.cache/x',
-  ]) {
-    // Every allowed exception must remain disjoint from these examples.
-    const selected = includes.some((rule) => {
-      const candidate = rule.slice(1);
-      return candidate === sensitive ||
-        (candidate.endsWith('/**') && sensitive.startsWith(candidate.slice(0, -3) + '/')) ||
-        (candidate === 'package*.json' && /^package[^/]*\.json$/.test(sensitive));
-    });
-    assert.equal(selected, false, sensitive + ' must not enter the image');
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'));
+  const expectedRules = ['*'];
+  for (const path of expected) {
+    expectedRules.push('!' + path);
+    // Docker exclusions are last-match-wins: unignoring a directory can
+    // reintroduce its children unless the folder content is denied again.
+    if (['src', 'src/app', 'src/lib', 'src/worker', 'prisma'].includes(path)) {
+      expectedRules.push(path + '/*');
+    }
   }
+  assert.deepEqual(rules, expectedRules,
+    'every traversable folder must re-deny all children before exact files');
+  for (const path of expected) {
+    assert.ok(existsSync(new URL('../' + path, import.meta.url)), 'missing build dependency: ' + path);
+  }
+  for (const source of ['src/app', 'src/lib', 'src/worker', 'prisma']) {
+    // Detect an accidentally added source that builds locally but is absent
+    // in Docker, rather than silently broadening the context to all files.
+    const sourceDir = new URL('../' + source + '/', import.meta.url);
+    for (const member of readdirSync(sourceDir, { withFileTypes: true })) {
+      assert.ok(member.isFile() && includedFiles.includes(source + '/' + member.name),
+        'review new Docker dependency explicitly: ' + source + '/' + member.name);
+    }
+  }
+});
+
+test('allowlist cannot ingest synthetic nested credential file paths', () => {
+  const allowed = new Set(expected);
+  for (const secret of [
+    '.env', '.env.production', '.npmrc', '.netrc',
+    'src/.env', 'src/app/.env', 'src/app/production-credentials.json',
+    'src/app/config.secret.ts', 'src/lib/private.pem',
+    'src/lib/token.json', 'src/worker/service-account.json',
+    'prisma/.env', 'prisma/backup.sql', 'prisma/secret.p12',
+    'public/local-token.json', '.git/config', '.next/server/manifest.json',
+  ]) {
+    assert.equal(allowed.has(secret), false, 'unreviewed secret path: ' + secret);
+  }
+  assert.equal(includedFiles.length, 7, 'source files require manifest review when changed');
 });
 
 // Until the separately owned Node OCI base update (#26) lands, accept only

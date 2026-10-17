@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - .dockerignore
+      - tests/docker-build-context.qa.test.mjs
       - docker-compose.yml
       - next.config.mjs
       - package.json
@@ -16,6 +18,8 @@ on:
     branches: [main]
     paths:
       - Dockerfile
+      - .dockerignore
+      - tests/docker-build-context.qa.test.mjs
       - docker-compose.yml
       - next.config.mjs
       - package.json
@@ -46,10 +50,35 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test -z "$(git status --porcelain)"
           node --test tests/docker-production-app.qa.test.mjs
+      - name: Plant inert nested secret canaries to verify actual context exclusion
+        run: |
+          set -euo pipefail
+          printf 'PRIVATE-SYNTHETIC-ONLY' > src/app/production-credentials.json
+          printf 'PRIVATE-SYNTHETIC-ONLY' > src/lib/token.json
+          printf 'PRIVATE-SYNTHETIC-ONLY' > prisma/backup.sql
       - name: Build application image in a disposable hosted runner
         run: |
           set -euo pipefail
           docker build --target app -t woonpoints-app-qa:local .
+      - name: Prove review-only source inclusion and canary exclusion in built image
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --entrypoint node woonpoints-app-qa:local -e '
+            const fs = require("node:fs");
+            const rejected = [
+              "/app/src/app/production-credentials.json",
+              "/app/src/lib/token.json",
+              "/app/prisma/backup.sql",
+            ];
+            const required = [
+              "/app/src/app/page.tsx",
+              "/app/src/lib/db-url-launcher.mjs",
+              "/app/src/worker/index.mjs",
+              "/app/prisma/schema.prisma",
+            ];
+            if (rejected.some(p => fs.existsSync(p)) ||
+                required.some(p => !fs.existsSync(p))) process.exit(1);
+          '
       - name: Launch unnetworked production server and prove real HTTP + privacy headers
         run: |
           set -euo pipefail

@@ -23,8 +23,13 @@ test('app and worker Docker build restore exact committed npm lock with npm ci',
   assertLockedContainerInstall(dockerfile);
   assert.deepEqual(lock.packages[''].dependencies, pkg.dependencies);
   assert.deepEqual(lock.packages[''].devDependencies, pkg.devDependencies);
-  assert.match(text('.dockerignore'), /^!package\*\.json$/m,
-    'the committed lockfile must be available inside the Docker build context');
+  const dockerignore = text('.dockerignore');
+  assert.match(dockerignore, /^!package\.json$/m,
+    'package.json must be explicitly admitted into the Docker build context');
+  assert.match(dockerignore, /^!package-lock\.json$/m,
+    'the committed integrity lockfile must be explicitly admitted');
+  assert.doesNotMatch(dockerignore, /^!package\*\.json$/m,
+    'a broad package glob could admit unreviewed secret-like JSON files');
 });
 
 test('mutable install, fallback or mismatched build order fail closed', () => {
