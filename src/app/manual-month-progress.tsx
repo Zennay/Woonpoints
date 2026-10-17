@@ -10,6 +10,7 @@ import {
   relevantManualStorageEvent,
   writeManualProgressIfUnchanged,
   eraseManualProgressIfUnchanged,
+  manualStorageWarning,
   localMonthKey
 } from '../lib/manual-month-progress.mjs';
 
@@ -256,7 +257,7 @@ export default function ManualMonthProgress() {
         )}
         {conflict && <p role="alert">De notitie is gewijzigd in een ander tabblad of de opslagstatus is onbekend. De vorige actie is niet uitgevoerd; controleer de huidige stand en probeer opnieuw.</p>}
         {deleteError && <p role="alert">Verwijderen niet gelukt. Probeer opnieuw; opgeslagen gegevens kunnen nog aanwezig zijn.</p>}
-        {!storageWorks && <p role="status">Opslaan is niet beschikbaar; deze invoer blijft alleen op dit scherm.</p>}
+        {!storageWorks && <p role="status">{manualStorageWarning(storageWorks, hasUnsaved)}</p>}
       </div>
     </section>
   );
