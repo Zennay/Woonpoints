@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { assertDryRun } from '../lib/safety.mjs';
 
 export function runWorker(env = process.env) {
@@ -14,6 +15,9 @@ export function runWorker(env = process.env) {
   return event;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// import.meta.url encodes spaces, '#' and '%' while process.argv[1] is a
+// filesystem path. Compare canonical file URLs so direct CLI execution never
+// exits silently in special-character installation paths.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runWorker();
 }
