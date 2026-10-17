@@ -20,10 +20,11 @@ services:
       context: .
       target: app
     env_file: .env
-    # Container services always use the SAME operator-supplied credential
-    # as the PostgreSQL service. Host-side Prisma can use a separate URL.
+    # Retain the existing Compose credential-parity contract; the launcher
+    # replaces the provisional URI with a percent-encoded child-process URL.
     environment:
       DATABASE_URL: "postgresql://woonpoints:${WOONPOINTS_DB_PASSWORD:?Set a unique WOONPOINTS_DB_PASSWORD in .env before starting Compose}@db:5432/woonpoints?schema=public"
+    command: ["node", "src/lib/db-url-launcher.mjs", "npm", "run", "dev"]
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -35,10 +36,10 @@ services:
       context: .
       target: worker
     env_file: .env
-    # Container services always use the SAME operator-supplied credential
-    # as the PostgreSQL service. Host-side Prisma can use a separate URL.
+    # No shell: the launcher builds the actual child DATABASE_URL securely.
     environment:
       DATABASE_URL: "postgresql://woonpoints:${WOONPOINTS_DB_PASSWORD:?Set a unique WOONPOINTS_DB_PASSWORD in .env before starting Compose}@db:5432/woonpoints?schema=public"
+    command: ["node", "src/lib/db-url-launcher.mjs", "npm", "run", "worker"]
     depends_on:
       db:
         condition: service_healthy
