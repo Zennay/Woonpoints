@@ -4,6 +4,7 @@ import {
   MANUAL_PROGRESS_STORAGE_KEY,
   msUntilNextLocalMidnight,
   manualPlanningNudge,
+  relevantManualStorageEvent,
   clearManualProgress,
   decodeManualProgress,
   encodeManualProgress,
@@ -132,4 +133,29 @@ test('onscreen reminder is explicitly manual and never claims 4 verified reactio
   assert.match(ui, /Eigen planning/);
   assert.match(ui, /officiële WoningNet-stand is onbekend/);
   assert.doesNotMatch(ui, /automatisch gereageerd|WoningNet-reacties bevestigd/);
+});
+
+
+test('cross-tab privacy: only same localStorage key deletion or clear-all invalidates pending local edits', () => {
+  const storage = { kind: 'local' };
+  const session = { kind: 'session' };
+  for (const key of [MANUAL_PROGRESS_STORAGE_KEY, null]) {
+    assert.equal(relevantManualStorageEvent({ key, storageArea: storage }, storage), true);
+    assert.equal(relevantManualStorageEvent({ key, storageArea: session }, storage), false);
+  }
+  for (const key of ['other:setting', '', undefined, 0]) {
+    assert.equal(relevantManualStorageEvent({ key, storageArea: storage }, storage), false);
+  }
+  for (const item of [null, undefined, {}, { key: null }, { key: MANUAL_PROGRESS_STORAGE_KEY }]) {
+    assert.equal(relevantManualStorageEvent(item, storage), false);
+  }
+});
+
+test('cross-tab event handler discards failed-write fallback and refreshes only on relevant local changes', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /relevantManualStorageEvent\(event, window\.localStorage\)/);
+  assert.match(ui, /unsaved\.current = null;\s*setDeleteError\(false\);\s*refresh\(\)/);
+  assert.match(ui, /addEventListener\('storage', onStorage\)/);
+  assert.match(ui, /removeEventListener\('storage', onStorage\)/);
 });

@@ -8,6 +8,7 @@ import {
   clearManualProgress,
   msUntilNextLocalMidnight,
   manualPlanningNudge,
+  relevantManualStorageEvent,
   encodeManualProgress,
   localMonthKey
 } from '../lib/manual-month-progress.mjs';
@@ -41,13 +42,25 @@ export default function ManualMonthProgress() {
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(refresh, msUntilNextLocalMidnight() + 50);
     }
+    function onStorage(event: StorageEvent) {
+      // A trusted same-origin localStorage update/erase overrides this tab's
+      // unsaved fallback. Otherwise a different tab's deletion is invisible.
+      try {
+        if (!relevantManualStorageEvent(event, window.localStorage)) return;
+      } catch {
+        return; // Storage unavailable: retain the explicitly unsaved local note.
+      }
+      unsaved.current = null;
+      setDeleteError(false);
+      refresh();
+    }
     refresh();
-    window.addEventListener('storage', refresh);
+    window.addEventListener('storage', onStorage);
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
       if (timer !== undefined) clearTimeout(timer);
-      window.removeEventListener('storage', refresh);
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
