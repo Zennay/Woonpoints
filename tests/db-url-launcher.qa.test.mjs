@@ -58,3 +58,24 @@ test('both Compose services invoke the URL launcher without an implicit shell', 
     assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(?:dev|worker)"\]/);
   }
 });
+
+
+test('launched service nonzero exit status is retained for supervisor diagnosis', () => {
+  const result = spawnSync(process.execPath, [launcher, process.execPath, '-e', 'process.exit(17)'], {
+    encoding: 'utf8', timeout: 8000,
+    env: { ...process.env, WOONPOINTS_DB_PASSWORD: 'synthetic-safe-password' }
+  });
+  assert.equal(result.status, 17);
+  assert.equal(result.stderr, '');
+});
+
+test('missing child executable fails without leaking the generated connection URL', () => {
+  const result = spawnSync(process.execPath, [launcher, 'woonpoints-nonexistent-cli-20261017'], {
+    encoding: 'utf8', timeout: 8000,
+    env: { ...process.env, WOONPOINTS_DB_PASSWORD: 'synthetic:@/#%reserved',
+      DATABASE_URL: 'private-should-not-appear' }
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /service could not start/);
+  assert.doesNotMatch(result.stderr, /synthetic|private-should-not-appear|postgresql:\/\//);
+});
