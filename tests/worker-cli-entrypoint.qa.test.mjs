@@ -34,11 +34,18 @@ test('direct Node CLI invocation works even when worker URL contains spaces and 
     assert.equal(run.status, 0, run.stderr);
     assert.equal(run.stderr, '');
     const lines = run.stdout.trim().split('\n');
-    assert.equal(lines.length, 1, 'a successful CLI must produce exactly one readiness receipt');
+    assert.equal(lines.length, 1, 'successful dry-run CLI emits one non-authorizing receipt');
     const receipt = JSON.parse(lines[0]);
     assert.equal(receipt.service, 'woonpoints-worker');
     assert.equal(receipt.mode, 'dry-run');
-    assert.equal(receipt.status, 'ready');
+    assert.equal(receipt.status, 'dry_run_only');
+    assert.equal(receipt.liveExecutionAllowed, false);
+    assert.equal(receipt.accountDataVerified, false);
+    assert.equal(receipt.providerAdapterAvailable, false);
+    assert.deepEqual(Object.keys(receipt).sort(), [
+      'accountDataVerified', 'action', 'liveExecutionAllowed', 'mode',
+      'providerAdapterAvailable', 'service', 'status'
+    ]);
     assert.match(receipt.action, /No live WoningNet reaction/);
   });
 });

@@ -7,7 +7,13 @@ export function runWorker(env = process.env) {
   const event = {
     service: 'woonpoints-worker',
     mode: 'dry-run',
-    status: 'ready',
+    // This process only validated the mandatory dry-run gate. Do not emit
+    // a generic READY signal that a portfolio monitor could misclassify as
+    // provider connectivity, an authorized account or resumed live work.
+    status: 'dry_run_only',
+    liveExecutionAllowed: false,
+    accountDataVerified: false,
+    providerAdapterAvailable: false,
     action: 'No live WoningNet reaction was attempted.'
   };
 
