@@ -50,6 +50,15 @@ export function clearManualProgress(storage) {
   storage.removeItem(MANUAL_PROGRESS_STORAGE_KEY);
 }
 
+/**
+ * A previous-month or malformed note occupies the same private storage key.
+ * Do not convert its "unknown" presentation into permission to overwrite it.
+ * The UI must request an explicit erase of that exact observed snapshot.
+ */
+export function manualProgressNeedsExplicitErase(raw, currentMonth) {
+  return raw !== null && decodeManualProgress(raw, currentMonth) === null;
+}
+
 /** Best-effort stale-tab guard, NOT an atomic browser-wide transaction. */
 export function writeManualProgressIfUnchanged(storage, expectedRaw, month, count) {
   // Invalid count must fail before reading/writing browser state.
@@ -57,6 +66,9 @@ export function writeManualProgressIfUnchanged(storage, expectedRaw, month, coun
   if (expectedRaw !== null && typeof expectedRaw !== 'string') return { status: 'unknown' };
   const actual = storage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
   if (actual !== expectedRaw) return { status: 'changed', raw: actual };
+  if (manualProgressNeedsExplicitErase(actual, month)) {
+    return { status: 'requires_erase', raw: actual };
+  }
   storage.setItem(MANUAL_PROGRESS_STORAGE_KEY, next);
   return { status: 'saved', raw: next };
 }

@@ -5,6 +5,7 @@ import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
   decodeManualProgress,
+  manualProgressNeedsExplicitErase,
   msUntilNextLocalMidnight,
   manualPlanningNudge,
   relevantManualStorageEvent,
@@ -23,6 +24,9 @@ export default function ManualMonthProgress() {
   const [deleteError, setDeleteError] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  // A previous-month or unrecognized saved value must never be overwritten
+  // by the blank/current-month "Begin" button without explicit deletion.
+  const [opaqueStoredNote, setOpaqueStoredNote] = useState(false);
   const [transientDiscarded, setTransientDiscarded] = useState(false);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
@@ -52,11 +56,13 @@ export default function ManualMonthProgress() {
         }
         lastObservedRaw.current = raw;
         const stored = decodeManualProgress(raw, current);
+        setOpaqueStoredNote(manualProgressNeedsExplicitErase(raw, current));
         setCount(unsaved.current?.count ?? stored);
         setStorageWorks(unsaved.current === null && !writeUnverified.current);
       } catch {
         writeUnverified.current = true;
         lastObservedRaw.current = undefined;
+        setOpaqueStoredNote(false); // unreadable storage is already a separate HOLD
         setCount(unsaved.current?.count ?? null);
         setStorageWorks(false);
       }
@@ -103,17 +109,19 @@ export default function ManualMonthProgress() {
       try {
         const raw = window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
         lastObservedRaw.current = raw;
+        setOpaqueStoredNote(manualProgressNeedsExplicitErase(raw, current));
         setCount(decodeManualProgress(raw, current));
         setStorageWorks(!writeUnverified.current);
       } catch {
         writeUnverified.current = true;
         lastObservedRaw.current = undefined;
+        setOpaqueStoredNote(false);
         setCount(null);
         setStorageWorks(false);
       }
       return;
     }
-    if (!Number.isInteger(next) || next < 0 || next > MANUAL_MONTHLY_GOAL) return;
+    if (opaqueStoredNote || !Number.isInteger(next) || next < 0 || next > MANUAL_MONTHLY_GOAL) return;
     try {
       const result = writeManualProgressIfUnchanged(window.localStorage, lastObservedRaw.current, current, next);
       if (result.status !== 'saved') {
@@ -132,8 +140,17 @@ export default function ManualMonthProgress() {
         }
         unsaved.current = null;
         setHasUnsaved(false);
+        if (result.status === 'requires_erase') {
+          lastObservedRaw.current = result.raw;
+          setOpaqueStoredNote(true);
+          setCount(null);
+          setStorageWorks(!writeUnverified.current);
+          setConflict(false);
+          return;
+        }
         if (result.status === 'changed') {
           lastObservedRaw.current = result.raw;
+          setOpaqueStoredNote(manualProgressNeedsExplicitErase(result.raw, current));
           setCount(decodeManualProgress(result.raw, current));
           setStorageWorks(!writeUnverified.current);
         } else {
@@ -146,6 +163,7 @@ export default function ManualMonthProgress() {
         return;
       }
       lastObservedRaw.current = result.raw;
+      setOpaqueStoredNote(false);
       unsaved.current = null;
       setHasUnsaved(false);
       writeUnverified.current = false; // confirmed setItem success
@@ -173,6 +191,7 @@ export default function ManualMonthProgress() {
         setHasUnsaved(false);
         if (result.status === 'changed') {
           lastObservedRaw.current = result.raw;
+          setOpaqueStoredNote(manualProgressNeedsExplicitErase(result.raw, localMonthKey()));
           setCount(decodeManualProgress(result.raw, localMonthKey()));
           setStorageWorks(!writeUnverified.current);
         } else {
@@ -185,6 +204,7 @@ export default function ManualMonthProgress() {
         return;
       }
       lastObservedRaw.current = null;
+      setOpaqueStoredNote(false);
       unsaved.current = null;
       setHasUnsaved(false);
       setCount(null);
@@ -224,10 +244,10 @@ export default function ManualMonthProgress() {
       <div aria-live="polite" aria-atomic="true">
         <p className="manual-month">Maand: {month ?? 'Laden…'}</p>
         <p className="manual-total">
-          {count === null ? 'Nog niets ingevuld' : `${count} / ${MANUAL_MONTHLY_GOAL} zelf genoteerd`}
+          {opaqueStoredNote ? 'Eerdere of onleesbare notitie aanwezig' : count === null ? 'Nog niets ingevuld' : `${count} / ${MANUAL_MONTHLY_GOAL} zelf genoteerd`}
         </p>
         {month !== null && (count === null ? (
-          <button type="button" onClick={() => save(0)}>Begin maandplanning</button>
+          !opaqueStoredNote && <button type="button" onClick={() => save(0)}>Begin maandplanning</button>
         ) : (
           <div className="manual-controls" role="group" aria-label="Eigen reactieplanning aanpassen">
             <button type="button" disabled={count <= 0} onClick={() => save(count - 1)}>
@@ -238,6 +258,7 @@ export default function ManualMonthProgress() {
             </button>
           </div>
         ))}
+        {opaqueStoredNote && <p role="alert">Er staat een notitie uit een eerdere maand of met onleesbare inhoud in deze browser. Beginnen zou die notitie overschrijven. Wis deze alleen bewust met ‘Wis mijn notitie’ als je de bestaande gegevens niet wilt bewaren.</p>}
         {count !== null && <p>Zelf nog te plannen: {MANUAL_MONTHLY_GOAL - count}.</p>}
         {nudge !== null && (
           <p className="manual-reminder" role="status">

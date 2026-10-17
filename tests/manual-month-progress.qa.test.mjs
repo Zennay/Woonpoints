@@ -10,6 +10,7 @@ import {
   encodeManualProgress,
   localMonthKey,
   writeManualProgressIfUnchanged,
+  manualProgressNeedsExplicitErase,
   eraseManualProgressIfUnchanged,
   manualStorageWarning
 } from '../src/lib/manual-month-progress.mjs';
@@ -290,4 +291,59 @@ test('read-only and delete-denied UI warns without falsely asserting memory-only
   assert.match(ui, /Verwijderen niet gelukt/);
   assert.match(ui, /writeUnverified\.current = true/);
   assert.doesNotMatch(ui, /localStorage\.clear\(/);
+});
+
+test('opaque prior-month or malformed manual note cannot be silently overwritten', () => {
+  const older = encodeManualProgress('2026-09', 3);
+  const malformed = '{"version":1,"month":"2026-10","count":2,"private":"keep"}';
+  const duplicate = '{"version":1,"month":"2026-10","count":1,"count":3}';
+  const unreadable = 'not a note';
+  for (const original of [older, malformed, duplicate, unreadable, 'x'.repeat(129)]) {
+    let raw = original;
+    const writes = [];
+    const storage = {
+      getItem(k) { assert.equal(k, MANUAL_PROGRESS_STORAGE_KEY); return raw; },
+      setItem(k,v) { writes.push([k,v]); raw = v; },
+      removeItem(k) { assert.equal(k,MANUAL_PROGRESS_STORAGE_KEY); raw = null; writes.push(['erase']); }
+    };
+    assert.equal(manualProgressNeedsExplicitErase(original,'2026-10'),true);
+    assert.deepEqual(writeManualProgressIfUnchanged(storage,original,'2026-10',0),
+      {status:'requires_erase',raw:original});
+    assert.deepEqual(writeManualProgressIfUnchanged(storage,original,'2026-10',4),
+      {status:'requires_erase',raw:original});
+    assert.deepEqual(writes, [], 'neither initialization nor increment may destroy an opaque note');
+    assert.equal(raw, original);
+    assert.deepEqual(eraseManualProgressIfUnchanged(storage,original),{status:'cleared',raw:null},
+      'an explicit current-snapshot user erase still remains possible');
+    assert.deepEqual(writes,[['erase']]);
+    assert.deepEqual(writeManualProgressIfUnchanged(storage,null,'2026-10',0),
+      {status:'saved',raw:encodeManualProgress('2026-10',0)});
+  }
+});
+
+test('note write guard preserves missing/current-month normal behavior and stale-tab CAS', () => {
+  const valid=encodeManualProgress('2026-10',2);
+  assert.equal(manualProgressNeedsExplicitErase(null,'2026-10'),false);
+  assert.equal(manualProgressNeedsExplicitErase(valid,'2026-10'),false);
+  assert.equal(manualProgressNeedsExplicitErase(undefined,'2026-10'),true);
+  const actual=encodeManualProgress('2026-09',1);
+  let writes=0;
+  const storage={getItem(){return actual;},setItem(){writes++;}};
+  assert.deepEqual(writeManualProgressIfUnchanged(storage,valid,'2026-10',3),
+    {status:'changed',raw:actual},'CAS mismatch is checked before the opaque-note guard');
+  assert.equal(writes,0);
+});
+
+test('browser UI exposes opaque-note hold and explicit erase without bypassing the source guard', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const ui=await readFile(new URL('../src/app/manual-month-progress.tsx',import.meta.url),'utf8');
+  assert.match(ui,/manualProgressNeedsExplicitErase/);
+  assert.match(ui,/status === 'requires_erase'/);
+  assert.match(ui,/setOpaqueStoredNote\(true\)/);
+  assert.match(ui,/opaqueStoredNote/);
+  assert.match(ui,/Wis mijn notitie/);
+  assert.match(ui,/onClick=\{\(\) => save\(0\)\}/);
+  assert.match(ui,/!opaqueStoredNote/);
+  assert.doesNotMatch(ui,/localStorage\.clear\(/);
+  assert.doesNotMatch(ui,/\bfetch\s*\(|XMLHttpRequest|WebSocket/);
 });
