@@ -27,6 +27,9 @@ export default function ManualMonthProgress() {
   const unsaved = useRef<{month: string; count: number} | null>(null);
   // Undefined means storage has not supplied an authoritative snapshot yet.
   const lastObservedRaw = useRef<string | null | undefined>(undefined);
+  // A successful read does NOT prove persistence is writable. Keep a prior
+  // write/delete failure visible until a real write/delete succeeds.
+  const writeUnverified = useRef(false);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -49,8 +52,9 @@ export default function ManualMonthProgress() {
         lastObservedRaw.current = raw;
         const stored = decodeManualProgress(raw, current);
         setCount(unsaved.current?.count ?? stored);
-        setStorageWorks(unsaved.current === null);
+        setStorageWorks(unsaved.current === null && !writeUnverified.current);
       } catch {
+        writeUnverified.current = true;
         lastObservedRaw.current = undefined;
         setCount(unsaved.current?.count ?? null);
         setStorageWorks(false);
@@ -99,7 +103,9 @@ export default function ManualMonthProgress() {
         const raw = window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
         lastObservedRaw.current = raw;
         setCount(decodeManualProgress(raw, current));
+        setStorageWorks(!writeUnverified.current);
       } catch {
+        writeUnverified.current = true;
         lastObservedRaw.current = undefined;
         setCount(null);
         setStorageWorks(false);
@@ -113,6 +119,7 @@ export default function ManualMonthProgress() {
         if (result.status === 'unknown') {
           // Read denied or not yet observed: only a private temporary edit is
           // allowed; never overwrite unknown persistent data.
+          writeUnverified.current = true;
           unsaved.current = { month: current, count: next };
           setHasUnsaved(true);
           setCount(next);
@@ -127,8 +134,9 @@ export default function ManualMonthProgress() {
         if (result.status === 'changed') {
           lastObservedRaw.current = result.raw;
           setCount(decodeManualProgress(result.raw, current));
-          setStorageWorks(true);
+          setStorageWorks(!writeUnverified.current);
         } else {
+          writeUnverified.current = true;
           lastObservedRaw.current = undefined;
           setCount(null);
           setStorageWorks(false);
@@ -139,8 +147,10 @@ export default function ManualMonthProgress() {
       lastObservedRaw.current = result.raw;
       unsaved.current = null;
       setHasUnsaved(false);
+      writeUnverified.current = false; // confirmed setItem success
       setStorageWorks(true);
     } catch {
+      writeUnverified.current = true;
       // If getItem/setItem fails, keep a private temporary edit, never assume
       // the durable browser note was safely replaced.
       unsaved.current = { month: current, count: next };
@@ -163,8 +173,9 @@ export default function ManualMonthProgress() {
         if (result.status === 'changed') {
           lastObservedRaw.current = result.raw;
           setCount(decodeManualProgress(result.raw, localMonthKey()));
-          setStorageWorks(true);
+          setStorageWorks(!writeUnverified.current);
         } else {
+          writeUnverified.current = true;
           lastObservedRaw.current = undefined;
           setCount(null);
           setStorageWorks(false);
@@ -176,11 +187,14 @@ export default function ManualMonthProgress() {
       unsaved.current = null;
       setHasUnsaved(false);
       setCount(null);
+      writeUnverified.current = false; // confirmed removeItem success
       setStorageWorks(true);
       setTransientDiscarded(false);
       setConflict(false);
       setDeleteError(false);
     } catch {
+      writeUnverified.current = true;
+      setStorageWorks(false);
       setDeleteError(true);
     }
   }

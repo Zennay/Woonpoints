@@ -178,7 +178,7 @@ test('persistent erase still does not silently downgrade to in-memory-only succe
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /try \{\s*const result = eraseManualProgressIfUnchanged\(window\.localStorage/);
-  assert.match(ui, /catch \{\s*setDeleteError\(true\)/);
+  assert.match(ui, /catch \{\s*writeUnverified\.current = true;\s*setStorageWorks\(false\);\s*setDeleteError\(true\)/);
   assert.doesNotMatch(ui, /localStorage\.clear\(/);
 });
 
@@ -236,4 +236,30 @@ test('storage read denial still permits a temporary, explicitly unsaved in-memor
   assert.match(ui, /unsaved\.current = \{ month: current, count: next \};/);
   assert.match(ui, /setHasUnsaved\(true\);\s*setCount\(next\);\s*setStorageWorks\(false\);/);
   assert.match(ui, /setConflict\(false\);\s*return;/);
+});
+
+test('readable storage must not hide a previously failed local write after focus refresh', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /const writeUnverified = useRef\(false\)/);
+  assert.match(ui, /setStorageWorks\(unsaved\.current === null && !writeUnverified\.current\)/,
+    'successful getItem must never clear an earlier write failure');
+  assert.match(ui, /writeUnverified\.current = true;\s*\/\/ If getItem\/setItem fails/,
+    'failed save must retain a durable in-component write-failure signal');
+  assert.match(ui, /if \(result\.status === 'unknown'\) \{[\s\S]*?writeUnverified\.current = true;/,
+    'unknown snapshot must not claim persistent storage is healthy');
+  assert.match(ui, /function forgetTemporary\(\)[\s\S]*?setStorageWorks\(false\)/,
+    'discarding an unsaved fallback is not a confirmed persistent write');
+  assert.match(ui, /function onStorage\(event: StorageEvent\)[\s\S]*?refresh\(\)/,
+    'another tab updating storage cannot confirm this tab can write');
+});
+
+test('only successful persistent mutations restore the local write-availability signal', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /if \(result\.status !== 'saved'\)[\s\S]*?writeUnverified\.current = false; \/\/ confirmed setItem success/);
+  assert.match(ui, /if \(result\.status !== 'cleared'\)[\s\S]*?writeUnverified\.current = false; \/\/ confirmed removeItem success/);
+  assert.match(ui, /if \(result\.status === 'changed'\)[\s\S]*?setStorageWorks\(!writeUnverified\.current\)/);
+  assert.match(ui, /setDeleteError\(true\)/);
+  assert.doesNotMatch(ui, /localStorage\.clear\(/);
 });
