@@ -1,0 +1,39 @@
+name: QA Compose Single DB Secret
+on:
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'tests/compose-db-url-parity.qa.mjs'
+      - '.github/workflows/qa-compose-db-url-parity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - 'tests/compose-db-url-parity.qa.mjs'
+      - '.github/workflows/qa-compose-db-url-parity.yml'
+permissions:
+  contents: read
+jobs:
+  db-secret-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean HEAD checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Actual normalized Compose parity and safety contracts
+        run: |
+          node --test tests/compose-db-url-parity.qa.mjs
+          node --test tests/db-password-env.qa.mjs
+          node --test tests/compose-app-loopback.qa.mjs
+          node --test tests/safety.test.mjs
