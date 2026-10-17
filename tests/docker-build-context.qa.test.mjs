@@ -20,8 +20,17 @@ test('Docker build context is deny-by-default and exactly file-allowlisted', () 
   const rules = text('.dockerignore').split(/\r?\n/)
     .map(line => line.trim())
     .filter(line => line && !line.startsWith('#'));
-  assert.deepEqual(rules, ['*', ...expected.map(path => '!' + path)],
-    'any new file entering Docker context needs a deliberate manifest review');
+  const expectedRules = ['*'];
+  for (const path of expected) {
+    expectedRules.push('!' + path);
+    // Docker exclusions are last-match-wins: unignoring a directory can
+    // reintroduce its children unless the folder content is denied again.
+    if (['src', 'src/app', 'src/lib', 'src/worker', 'prisma'].includes(path)) {
+      expectedRules.push(path + '/*');
+    }
+  }
+  assert.deepEqual(rules, expectedRules,
+    'every traversable folder must re-deny all children before exact files');
   for (const path of expected) {
     assert.ok(existsSync(new URL('../' + path, import.meta.url)), 'missing build dependency: ' + path);
   }
