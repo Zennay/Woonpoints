@@ -85,6 +85,10 @@ export function assertAuthorizedAccount(account, now = new Date()) {
   }
 }
 
+// An unknown new provider/challenge status is not affirmative evidence that
+// it is safe to continue. Only the explicitly reviewed neutral listing state
+// may avoid the human-stop branch. Do not coerce objects, invoke getters, or
+// accept padded/case-mutated aliases for a state that controls execution.
 export function shouldPauseForHuman(reason) {
-  return HUMAN_ACTION_REASONS.includes(reason);
+  return reason !== 'normal_listing';
 }
