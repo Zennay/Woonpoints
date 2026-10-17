@@ -18,7 +18,7 @@ test('Compose never embeds the operator DB password into a redundant app or work
       name + ' must receive an empty bootstrap URI; launcher derives the real URI');
     assert.doesNotMatch(block, /DATABASE_URL:\s*["']?postgresql:\/\//,
       name + ' must not re-expose raw password in a provisional URI');
-    assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(dev|worker)"\]/);
+    assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(start|worker)"\]/);
   }
   assert.match(compose, /^      POSTGRES_PASSWORD: \$\{WOONPOINTS_DB_PASSWORD:\?/m);
 });
