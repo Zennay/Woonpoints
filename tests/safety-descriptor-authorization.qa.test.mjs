@@ -10,18 +10,18 @@ test('an overridden instance getTime must not fabricate owner consent', () => {
   const spoofed = new Date(future);
   spoofed.getTime = () => past.getTime();
   assert.throws(
-    () => assertAuthorizedAccount({authorizationGrantedAt: spoofed}, now),
+    () => assertAuthorizedAccount({authorizationGrantedAt: spoofed, pausedReason: null}, now),
     /authorization is required/,
   );
   // A normal valid consent timestamp must still be accepted.
-  assert.doesNotThrow(() => assertAuthorizedAccount({authorizationGrantedAt: past}, now));
+  assert.doesNotThrow(() => assertAuthorizedAccount({authorizationGrantedAt: past, pausedReason: null}, now));
 });
 
 test('an overridden now.getTime must not advance the eligibility clock', () => {
   const spoofedNow = new Date(past);
   spoofedNow.getTime = () => future.getTime();
   assert.throws(
-    () => assertAuthorizedAccount({authorizationGrantedAt: now}, spoofedNow),
+    () => assertAuthorizedAccount({authorizationGrantedAt: now, pausedReason: null}, spoofedNow),
     /authorization is required/,
   );
 });
@@ -46,11 +46,11 @@ test('dry-run policy requires own data descriptor, not an accessor', () => {
 test('date-shaped proxies and malformed environment proxies fail closed with policy errors', () => {
   const disguised = new Proxy(new Date(past), {});
   assert.throws(
-    () => assertAuthorizedAccount({authorizationGrantedAt: disguised}, now),
+    () => assertAuthorizedAccount({authorizationGrantedAt: disguised, pausedReason: null}, now),
     /authorization is required/,
   );
   assert.throws(
-    () => assertAuthorizedAccount({authorizationGrantedAt: past},
+    () => assertAuthorizedAccount({authorizationGrantedAt: past, pausedReason: null},
                                   new Proxy(new Date(now), {})),
     /authorization is required/,
   );
@@ -64,7 +64,7 @@ test('date-shaped proxies and malformed environment proxies fail closed with pol
 });
 
 test('account consent cannot be inherited or supplied by an accessor', () => {
-  const inheritedAccount = Object.create({ authorizationGrantedAt: past });
+  const inheritedAccount = Object.create({ authorizationGrantedAt: past, pausedReason: null });
   assert.throws(
     () => assertAuthorizedAccount(inheritedAccount, now),
     /authorization is required/,
@@ -72,7 +72,7 @@ test('account consent cannot be inherited or supplied by an accessor', () => {
   );
 
   let getterCalls = 0;
-  const accessored = {};
+  const accessored = { pausedReason: null };
   Object.defineProperty(accessored, 'authorizationGrantedAt', {
     enumerable: true,
     get() {
@@ -87,13 +87,13 @@ test('account consent cannot be inherited or supplied by an accessor', () => {
   );
   assert.equal(getterCalls, 0, 'no untrusted getter should execute to fetch consent');
   assert.doesNotThrow(
-    () => assertAuthorizedAccount({authorizationGrantedAt: past}, now),
+    () => assertAuthorizedAccount({authorizationGrantedAt: past, pausedReason: null}, now),
   );
 });
 
 test('computed or inherited human-stop fields cannot impersonate a clear account', () => {
   let getterCalls = 0;
-  const deceptive = {authorizationGrantedAt: past};
+  const deceptive = {authorizationGrantedAt: past, pausedReason: null};
   Object.defineProperty(deceptive, 'pausedReason', {
     enumerable: true,
     get() {
@@ -109,7 +109,7 @@ test('computed or inherited human-stop fields cannot impersonate a clear account
 
   const inheritedClear = Object.assign(
     Object.create({pausedReason: null}),
-    {authorizationGrantedAt: past},
+    {authorizationGrantedAt: past, pausedReason: null},
   );
   assert.throws(
     () => assertAuthorizedAccount(inheritedClear, now),
