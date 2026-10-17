@@ -1,0 +1,37 @@
+name: QA Woonpoints Compose DB Isolation
+on:
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'tests/db-port-isolation.qa.mjs'
+      - '.github/workflows/qa-compose-db-isolation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - 'tests/db-port-isolation.qa.mjs'
+      - '.github/workflows/qa-compose-db-isolation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  db-loopback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exactly the triggered clean source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: docker compose version
+      - run: node --check tests/db-port-isolation.qa.mjs
+      - run: node tests/db-port-isolation.qa.mjs
