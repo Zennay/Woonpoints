@@ -22,8 +22,12 @@ export function launchDatabaseCommand(command, args, env = process.env) {
     throw new Error('A command is required.');
   }
   const databaseUrl = composeDatabaseUrl(env.WOONPOINTS_DB_PASSWORD);
+  // The child needs the canonical DATABASE_URL, not a second copy of the
+  // original operator secret. Avoid unnecessarily widening its exposure.
+  const childEnv = { ...env, DATABASE_URL: databaseUrl };
+  delete childEnv.WOONPOINTS_DB_PASSWORD;
   const child = spawn(command, args, {
-    env: { ...env, DATABASE_URL: databaseUrl },
+    env: childEnv,
     stdio: 'inherit',
     shell: false,
   });
