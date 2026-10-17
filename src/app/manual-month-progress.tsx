@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
@@ -14,16 +14,20 @@ export default function ManualMonthProgress() {
   const [month, setMonth] = useState<string | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [storageWorks, setStorageWorks] = useState(true);
+  // If the browser refuses writes, preserve current-tab edits across focus events.
+  const unsaved = useRef<{month: string; count: number} | null>(null);
 
   useEffect(() => {
     function refresh() {
       const current = localMonthKey();
       setMonth(current);
+      if (unsaved.current !== null && unsaved.current.month !== current) unsaved.current = null;
       try {
-        setCount(decodeManualProgress(window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY), current));
-        setStorageWorks(true);
+        const stored = decodeManualProgress(window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY), current);
+        setCount(unsaved.current?.count ?? stored);
+        setStorageWorks(unsaved.current === null);
       } catch {
-        setCount(null);
+        setCount(unsaved.current?.count ?? null);
         setStorageWorks(false);
       }
     }
@@ -47,11 +51,13 @@ export default function ManualMonthProgress() {
     if (!Number.isInteger(next) || next < 0 || next > MANUAL_MONTHLY_GOAL) return;
     setMonth(current);
     setCount(next);
+    unsaved.current = { month: current, count: next };
     try {
       window.localStorage.setItem(MANUAL_PROGRESS_STORAGE_KEY, encodeManualProgress(current, next));
+      unsaved.current = null;
       setStorageWorks(true);
     } catch {
-      // Still usable in-memory when private browsing/storage is unavailable.
+      // Still usable in-memory if private browsing/storage writes fail.
       setStorageWorks(false);
     }
   }

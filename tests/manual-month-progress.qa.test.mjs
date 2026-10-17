@@ -56,5 +56,7 @@ test('manual UI marks its status as unverified and contains no WoningNet API fet
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /geen geverifieerde WoningNet-stand/);
   assert.match(ui, /window\.localStorage\.setItem/);
+  assert.match(ui, /unsaved\.current\?\.count \?\? stored/);
+  assert.match(ui, /unsaved\.current\?\.count \?\? null/);
   assert.doesNotMatch(ui, /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bBOT_DRY_RUN\s*=/);
 });
