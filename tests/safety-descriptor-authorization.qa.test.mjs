@@ -62,3 +62,64 @@ test('date-shaped proxies and malformed environment proxies fail closed with pol
   });
   assert.equal(isDryRunEnabled(badEnv), false);
 });
+
+test('account consent cannot be inherited or supplied by an accessor', () => {
+  const inheritedAccount = Object.create({ authorizationGrantedAt: past });
+  assert.throws(
+    () => assertAuthorizedAccount(inheritedAccount, now),
+    /authorization is required/,
+    'prototype properties are not account-specific permission evidence',
+  );
+
+  let getterCalls = 0;
+  const accessored = {};
+  Object.defineProperty(accessored, 'authorizationGrantedAt', {
+    enumerable: true,
+    get() {
+      getterCalls++;
+      return past;
+    },
+  });
+  assert.throws(
+    () => assertAuthorizedAccount(accessored, now),
+    /authorization is required/,
+    'computed properties must not manufacture a permission receipt',
+  );
+  assert.equal(getterCalls, 0, 'no untrusted getter should execute to fetch consent');
+  assert.doesNotThrow(
+    () => assertAuthorizedAccount({authorizationGrantedAt: past}, now),
+  );
+});
+
+test('computed or inherited human-stop fields cannot impersonate a clear account', () => {
+  let getterCalls = 0;
+  const deceptive = {authorizationGrantedAt: past};
+  Object.defineProperty(deceptive, 'pausedReason', {
+    enumerable: true,
+    get() {
+      getterCalls++;
+      return null;  // A computed 'not paused' is not stored account state.
+    },
+  });
+  assert.throws(
+    () => assertAuthorizedAccount(deceptive, now),
+    /paused|human review/,
+  );
+  assert.equal(getterCalls, 0);
+
+  const inheritedClear = Object.assign(
+    Object.create({pausedReason: null}),
+    {authorizationGrantedAt: past},
+  );
+  assert.throws(
+    () => assertAuthorizedAccount(inheritedClear, now),
+    /paused|human review/,
+  );
+  assert.doesNotThrow(
+    () => assertAuthorizedAccount({authorizationGrantedAt: past, pausedReason: null}, now),
+  );
+  assert.throws(
+    () => assertAuthorizedAccount({authorizationGrantedAt: past, pausedReason: 'mfa'}, now),
+    /paused|human review/,
+  );
+});

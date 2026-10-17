@@ -37,7 +37,18 @@ export function assertDryRun(env = process.env) {
 export function assertAuthorizedAccount(account, now = new Date()) {
   // Prisma DateTime is a native Date. Arbitrary strings/flags are not proof
   // of consent; malformed or future timestamps must never enable execution.
-  const granted = account?.authorizationGrantedAt;
+  // A Prisma consent timestamp is an OWN DATA field of the account row.
+  // Inherited properties and computed getters cannot be evidence of owner
+  // authorization; do not execute arbitrary getters while evaluating it.
+  let descriptor;
+  try {
+    descriptor = account == null ? undefined
+      : Object.getOwnPropertyDescriptor(account, 'authorizationGrantedAt');
+  } catch {
+    descriptor = undefined;
+  }
+  const granted = descriptor && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value : undefined;
   // A Date instance can shadow its getTime method. Authenticate the native
   // internal Date value instead of trusting instance-overridden methods.
   // In particular, an actual *future* consent may not claim an older value.
@@ -56,8 +67,18 @@ export function assertAuthorizedAccount(account, now = new Date()) {
   }
 
   // Account-level human stops override even previously valid consent.
-  // Unknown/empty pause reasons fail closed instead of being ignored.
-  if (account.pausedReason !== null && account.pausedReason !== undefined) {
+  // Trust only an own, stored pause state: an accessor (even if it returns
+  // null) or inherited value cannot prove that no human stop is pending.
+  let confirmedUnpaused = false;
+  try {
+    const pause = Object.getOwnPropertyDescriptor(account, 'pausedReason');
+    confirmedUnpaused = pause
+      ? Object.hasOwn(pause, 'value') && (pause.value === null || pause.value === undefined)
+      : !('pausedReason' in account);
+  } catch {
+    confirmedUnpaused = false;
+  }
+  if (!confirmedUnpaused) {
     throw new Error('Account paused for human review before worker execution.');
   }
 }
