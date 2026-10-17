@@ -18,7 +18,8 @@ async function until(predicate, timeoutMs = 4500) {
   return predicate();
 }
 
-test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
+for (const signal of ['SIGTERM', 'SIGINT']) {
+test(signal + ' reaches an npm-style grandchild, not only its direct parent', {
   skip: process.platform !== 'linux',
   timeout: 12000,
 }, async () => {
@@ -28,7 +29,7 @@ test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
   const grandchildScript = [
     'const fs = require("node:fs");',
     'fs.writeFileSync(process.argv[1], "ready");',
-    'process.on("SIGTERM", () => { fs.writeFileSync(process.argv[2], "terminated"); process.exit(0); });',
+    'process.on(' + JSON.stringify(signal) + ', () => { fs.writeFileSync(process.argv[2], "terminated"); process.exit(0); });',
     'setInterval(() => {}, 250);',
   ].join(' ');
   const parentScript = [
@@ -37,7 +38,7 @@ test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
       JSON.stringify(readyPath) + ', ' + JSON.stringify(stoppedPath) + '], { stdio: "ignore" });',
     'process.stdout.write(String(child.pid) + "\\n");',
     // Simulate npm shutting itself down without forwarding to its child.
-    'process.on("SIGTERM", () => process.exit(0));',
+    'process.on(' + JSON.stringify(signal) + ', () => process.exit(0));',
     'setInterval(() => {}, 250);',
   ].join(' ');
   const child = spawn(process.execPath, [launcher, process.execPath, '-e', parentScript], {
@@ -58,9 +59,9 @@ test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
     assert.equal(ready, true, 'test subprocesses must start: ' + stderr);
     grandchildPid = Number(stdout.match(/^(\d+)\n/)[1]);
     assert.ok(Number.isSafeInteger(grandchildPid) && grandchildPid > 1);
-    child.kill('SIGTERM');
+    child.kill(signal);
     assert.equal(await until(() => existsSync(stoppedPath), 2600), true,
-      'SIGTERM was swallowed by the direct npm-like child and never reached its Next-like grandchild');
+      signal + ' was swallowed by the direct npm-like child and never reached its Next-like grandchild');
     assert.doesNotMatch(stderr, /synthetic|postgresql:\/\//);
   } finally {
     if (child.exitCode === null) child.kill('SIGKILL');
@@ -72,3 +73,5 @@ test('SIGTERM reaches an npm-style grandchild, not only its direct parent', {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+}
