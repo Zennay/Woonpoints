@@ -55,7 +55,7 @@ test('both Compose services invoke the URL launcher without an implicit shell', 
     assert.ok(start>=0 && end>start, name+' service exists');
     const block = compose.slice(start,end);
     assert.match(block, /^      DATABASE_URL: ""$/m);
-    assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(?:dev|worker)"\]/);
+    assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(?:start|worker)"\]/);
   }
 });
 

@@ -13,7 +13,7 @@ function assertLockedContainerInstall(source) {
   const sourceCopy = source.indexOf('COPY . .');
   assert.ok(copy >= 0 && install > copy && sourceCopy > install,
     'install immutable lock before app source, never resolve dependencies from drifting ranges');
-  assert.equal((source.match(/^RUN npm /gm) || []).length, 1,
+  assert.equal((source.match(/^RUN npm (?:ci|install)(?:\s|$)/gm) || []).length, 1,
     'exactly one dependency installer is allowed across inherited build stages');
   assert.doesNotMatch(source, /^RUN npm install(?:\s|$)/m);
   assert.doesNotMatch(source, /^RUN npm ci.*(?:\|\||--package-lock=false|--ignore-scripts)/m);

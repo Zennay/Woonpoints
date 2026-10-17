@@ -7,8 +7,9 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 
 FROM base AS app
+RUN npm run build
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start"]
 
 FROM base AS worker
 CMD ["npm", "run", "worker"]

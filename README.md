@@ -61,8 +61,7 @@ The first baseline intentionally does **not** place live WoningNet reactions. Br
 5. Start PostgreSQL with `docker compose up -d db`, then run `npm install`
    and `npm run dev`.
 
-For the complete app + worker stack, use `docker compose up --build` only
-after the operator has configured matching credentials and authorized a
+The Compose app image runs a prebuilt production Next.js server (`npm run build` during\nthe app image build, `npm run start` inside the DB URL launcher). It does not\nserve from the Next.js development server; local non-Docker development still\nuses `npm run dev`. The Docker worker remains independently dry-run-only.\n\nFor the complete app + worker stack, use `docker compose up --build` only\nafter the operator has configured matching credentials and authorized a
 private local preview. Both dashboard and database ports default to host
 loopback; enabling an authenticated public gateway is a separate release.
 **These instructions are for a fresh local installation, not a production

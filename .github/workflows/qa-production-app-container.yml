@@ -1,0 +1,88 @@
+name: QA Woonpoints Production App Container
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - docker-compose.yml
+      - next.config.mjs
+      - package.json
+      - package-lock.json
+      - src/app/**
+      - src/lib/db-url-launcher.mjs
+      - tests/docker-production-app.qa.test.mjs
+      - .github/workflows/qa-production-app-container.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - docker-compose.yml
+      - next.config.mjs
+      - package.json
+      - package-lock.json
+      - src/app/**
+      - src/lib/db-url-launcher.mjs
+      - tests/docker-production-app.qa.test.mjs
+      - .github/workflows/qa-production-app-container.yml
+
+permissions:
+  contents: read
+
+jobs:
+  production-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed SHA without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Bind validation to exact source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          node --test tests/docker-production-app.qa.test.mjs
+      - name: Build application image in a disposable hosted runner
+        run: |
+          set -euo pipefail
+          docker build --target app -t woonpoints-app-qa:local .
+      - name: Launch unnetworked production server and prove real HTTP + privacy headers
+        run: |
+          set -euo pipefail
+          cid="$(docker run --network none -d --rm \
+            -e NEXT_TELEMETRY_DISABLED=1 \
+            -e WOONPOINTS_DB_PASSWORD=synthetic-offline-test-only \
+            --entrypoint node woonpoints-app-qa:local \
+            src/lib/db-url-launcher.mjs npm run start)"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker exec "$cid" node -e '
+            (async () => {
+              let lastError = "not ready";
+              for (let attempt=0; attempt<60; attempt++) {
+                try {
+                  const root = await fetch("http://127.0.0.1:3000/", {signal: AbortSignal.timeout(1200)});
+                  const absent = await fetch("http://127.0.0.1:3000/qa-missing-route", {signal: AbortSignal.timeout(1200)});
+                  if (root.status !== 200 || absent.status !== 404) {
+                    throw new Error("unexpected HTTP status");
+                  }
+                  for (const response of [root, absent]) {
+                    if (response.headers.get("x-frame-options") !== "DENY" ||
+                        response.headers.get("x-content-type-options") !== "nosniff" ||
+                        response.headers.get("referrer-policy") !== "no-referrer") {
+                      throw new Error("HTTP privacy headers missing");
+                    }
+                  }
+                  console.log("PASS isolated built Next app 200/404 with privacy headers");
+                  return;
+                } catch (error) {
+                  lastError = error.message;
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                }
+              }
+              throw new Error("production app did not pass bounded HTTP smoke: " + lastError);
+            })().catch(() => process.exit(1));
+          '

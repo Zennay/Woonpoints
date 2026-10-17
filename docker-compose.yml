@@ -24,7 +24,7 @@ services:
     # a second plaintext password in the Compose-resolved service config.
     environment:
       DATABASE_URL: ""
-    command: ["node", "src/lib/db-url-launcher.mjs", "npm", "run", "dev"]
+    command: ["node", "src/lib/db-url-launcher.mjs", "npm", "run", "start"]
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
