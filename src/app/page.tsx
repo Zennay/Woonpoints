@@ -17,14 +17,17 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="grid" aria-label="Projectstatus">
-        {cards.map(([label, value, detail]) => (
-          <article className="card" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-            <p>{detail}</p>
-          </article>
-        ))}
+      <section className="status-section" aria-labelledby="projectstatus-heading">
+        <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
+        <div className="grid">
+          {cards.map(([label, value, detail]) => (
+            <article className="card" key={label}>
+              <h3>{label}</h3>
+              <strong>{value}</strong>
+              <p>{detail}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="panel">
