@@ -155,7 +155,27 @@ test('cross-tab event handler discards failed-write fallback and refreshes only 
   const { readFile } = await import('node:fs/promises');
   const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
   assert.match(ui, /relevantManualStorageEvent\(event, window\.localStorage\)/);
-  assert.match(ui, /unsaved\.current = null;\s*setDeleteError\(false\);\s*refresh\(\)/);
+  assert.match(ui, /unsaved\.current = null;\s*setHasUnsaved\(false\);\s*setTransientDiscarded\(false\);\s*setDeleteError\(false\);\s*refresh\(\)/);
   assert.match(ui, /addEventListener\('storage', onStorage\)/);
   assert.match(ui, /removeEventListener\('storage', onStorage\)/);
+});
+
+
+test('storage denial exposes a distinct temporary-only erase without claiming durable deletion', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /Vergeet tijdelijke invoer/);
+  assert.match(ui, /function forgetTemporary\(\)/);
+  assert.match(ui, /unsaved\.current = null;\s*setCount\(null\)/);
+  assert.match(ui, /Alleen niet-opgeslagen invoer is gewist/);
+  assert.match(ui, /Opgeslagen gegevens kunnen nog aanwezig zijn/);
+  assert.match(ui, /onClick={forgetTemporary}/);
+});
+
+test('persistent erase still does not silently downgrade to in-memory-only success on storage denial', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /try \{\s*clearManualProgress\(window\.localStorage\)/);
+  assert.match(ui, /catch \{\s*setDeleteError\(true\)/);
+  assert.doesNotMatch(ui, /localStorage\.clear\(/);
 });
