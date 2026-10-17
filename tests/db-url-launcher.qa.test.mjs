@@ -54,7 +54,7 @@ test('both Compose services invoke the URL launcher without an implicit shell', 
     const end = compose.indexOf(name==='app'?'  worker:\n':'\nvolumes:', start);
     assert.ok(start>=0 && end>start, name+' service exists');
     const block = compose.slice(start,end);
-    assert.match(block, /DATABASE_URL: "postgresql:\/\/woonpoints:\$\{WOONPOINTS_DB_PASSWORD:/);
+    assert.match(block, /^      DATABASE_URL: ""$/m);
     assert.match(block, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "(?:dev|worker)"\]/);
   }
 });

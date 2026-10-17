@@ -44,7 +44,12 @@ The first baseline intentionally does **not** place live WoningNet reactions. Br
    Compose PostgreSQL, app and worker services all derive their private
    database password from **this single value**. An independent
    `DATABASE_URL` entry in `.env` is NOT trusted by the Compose app/worker;
-   their service environment overrides it to avoid credential drift.
+   their service environment forces an **empty bootstrap URL**, and the
+   `src/lib/db-url-launcher.mjs` entrypoint derives the encoded connection
+   URI for its child. An empty `DATABASE_URL` in `docker compose config`
+   is intentional; it is NOT a missing Compose database setup.
+   Treat `docker compose config` output as sensitive: it still includes the
+   required PostgreSQL password under `db.environment` and launcher input.
    For host-side Prisma or `npm run dev` outside Docker, configure
    `DATABASE_URL=postgresql://woonpoints:<same-password>@localhost:5432/woonpoints?schema=public`.
    Replace `<same-password>` locally, with no angle brackets. Only use
