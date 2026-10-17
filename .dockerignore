@@ -1,6 +1,6 @@
-# Strict source manifest: Docker COPY . . can only see the reviewed files below.
-# A new source/asset or Dockerfile dependency requires an explicit reviewed
-# manifest change. This also blocks arbitrary JSON/key files under src/prisma.
+# Exact file allowlist for Docker COPY . . : directories must be traversable,
+# but their contents are denied again before admitting reviewed files.
+# Both app and worker images must NOT ingest nested local JSON/backup/secrets.
 *
 !Dockerfile
 !package.json
@@ -9,14 +9,19 @@
 !next-env.d.ts
 !tsconfig.json
 !src
+src/*
 !src/app
+src/app/*
 !src/app/globals.css
 !src/app/layout.tsx
 !src/app/page.tsx
 !src/lib
+src/lib/*
 !src/lib/db-url-launcher.mjs
 !src/lib/safety.mjs
 !src/worker
+src/worker/*
 !src/worker/index.mjs
 !prisma
+prisma/*
 !prisma/schema.prisma
