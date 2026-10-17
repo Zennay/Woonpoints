@@ -10,7 +10,7 @@ import {spawnSync} from 'node:child_process';
 
 const root=path.resolve(import.meta.dirname,'..');
 
-test('app and worker use the actual configured DB secret despite stale env-file URL',()=>{
+test('app and worker defer DB URI construction until launcher, despite stale env-file URL',()=>{
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'woonpoints-db-parity-'));
   try {
     fs.copyFileSync(path.join(root,'docker-compose.yml'),path.join(tmp,'docker-compose.yml'));
@@ -31,13 +31,13 @@ test('app and worker use the actual configured DB secret despite stale env-file 
     assert.equal(result.status,0,'valid synthetic Compose must be parseable without daemon access');
     const services=JSON.parse(result.stdout).services;
     assert.equal(services.db.environment.POSTGRES_PASSWORD,secret);
-    const expected='postgresql://woonpoints:'+secret+'@db:5432/woonpoints?schema=public';
-    assert.notEqual(expected,'postgresql://woonpoints:'+wrong+
-      '@db:5432/woonpoints?schema=public','test fixture must genuinely differ');
-    assert.equal(services.app.environment.DATABASE_URL,expected,
-      'app must not trust mismatched externally supplied .env DATABASE_URL');
-    assert.equal(services.worker.environment.DATABASE_URL,expected,
-      'worker must not trust mismatched externally supplied .env DATABASE_URL');
+    assert.ok(wrong !== secret, 'test fixture must genuinely differ');
+    for (const name of ['app', 'worker']) {
+      assert.equal(services[name].environment.DATABASE_URL, '',
+        name+' must not expose an encoded or stale raw credential before launcher');
+      assert.equal(services[name].environment.WOONPOINTS_DB_PASSWORD, secret,
+        name+' launcher must still receive source-of-truth input');
+    }
     assert.equal(services.worker.environment.BOT_DRY_RUN,'true');
     for(const name of ['db','app']){
       assert.ok(services[name].ports?.every(p=>p.host_ip==='127.0.0.1'),
