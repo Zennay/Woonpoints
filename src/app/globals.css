@@ -22,7 +22,7 @@ h1 { margin: 8px 0 16px; font-size: clamp(40px, 7vw, 72px); line-height: .98; le
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 48px; }
 .card, .panel { background: white; border: 1px solid #dfe7e1; border-radius: 20px; box-shadow: 0 8px 28px rgba(26, 44, 33, .05); }
 .card { padding: 22px; }
-.card span { display: block; color: #647168; font-size: 13px; }
+.card h3 { display: block; margin: 0; color: #647168; font-size: 13px; font-weight: 400; }
 .card strong { display: block; margin: 8px 0; font-size: 30px; }
 .card p { margin: 0; color: #68746c; line-height: 1.45; font-size: 14px; }
 
@@ -30,6 +30,8 @@ h1 { margin: 8px 0 16px; font-size: clamp(40px, 7vw, 72px); line-height: .98; le
 h2 { margin: 6px 0 0; font-size: 30px; letter-spacing: -.02em; }
 ul { margin: 0; padding-left: 20px; color: #4f5b53; line-height: 1.8; }
 code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 800px) {
   .shell { padding-top: 40px; }
