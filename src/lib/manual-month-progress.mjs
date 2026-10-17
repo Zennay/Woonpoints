@@ -27,6 +27,19 @@ export function msUntilNextLocalMidnight(now = new Date()) {
   return delay;
 }
 
+/** Personal-only reminder; never represents validated WoningNet activity. */
+export function manualPlanningNudge(month, count, now = new Date()) {
+  if (typeof month !== 'string' || !Number.isSafeInteger(count) ||
+      count < 0 || count >= MANUAL_MONTHLY_GOAL) return null;
+  if (month !== localMonthKey(now)) return null;
+  const day = Date.prototype.getDate.call(now);
+  if (day < 15) return null;
+  const lastDay = new Date(Date.prototype.getFullYear.call(now),
+    Date.prototype.getMonth.call(now) + 1, 0).getDate();
+  return { missing: MANUAL_MONTHLY_GOAL - count,
+    urgency: lastDay - day <= 7 ? 'late' : 'midmonth' };
+}
+
 export function clearManualProgress(storage) {
   storage.removeItem(MANUAL_PROGRESS_STORAGE_KEY);
 }

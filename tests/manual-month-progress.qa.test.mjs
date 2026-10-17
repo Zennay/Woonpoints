@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   MANUAL_PROGRESS_STORAGE_KEY,
   msUntilNextLocalMidnight,
+  manualPlanningNudge,
   clearManualProgress,
   decodeManualProgress,
   encodeManualProgress,
@@ -102,4 +103,33 @@ test('privacy UI exposes erase controls, midnight refresh and an explicit storag
   assert.match(ui, /visibilitychange/);
   assert.match(ui, /Verwijderen niet gelukt/);
   assert.doesNotMatch(ui, /fetch\s*\(|XMLHttpRequest|WebSocket/);
+});
+
+
+test('monthly reminder is personal, only after halfway, never inferred for unknown/old/complete progress', () => {
+  const at = day => new Date(2026, 9, day, 12);
+  for (const count of [null, undefined, -1, 4, 5, '2', true]) {
+    assert.equal(manualPlanningNudge('2026-10', count, at(20)), null);
+  }
+  assert.equal(manualPlanningNudge('2026-09', 0, at(26)), null);
+  assert.equal(manualPlanningNudge('2026-10', 0, at(14)), null);
+  assert.deepEqual(manualPlanningNudge('2026-10', 1, at(15)), { missing: 3, urgency: 'midmonth' });
+  assert.deepEqual(manualPlanningNudge('2026-10', 2, at(24)), { missing: 2, urgency: 'late' });
+  assert.deepEqual(manualPlanningNudge('2026-10', 3, at(31)), { missing: 1, urgency: 'late' });
+});
+
+test('end-of-month urgency respects leap February, not a guessed 30-day calendar', () => {
+  const inLeap = new Date(2028, 1, 21, 12); // 8 days remain in February
+  const lastWeek = new Date(2028, 1, 22, 12); // 7 days remain
+  assert.deepEqual(manualPlanningNudge('2028-02', 0, inLeap), {missing:4, urgency:'midmonth'});
+  assert.deepEqual(manualPlanningNudge('2028-02', 0, lastWeek), {missing:4, urgency:'late'});
+});
+
+test('onscreen reminder is explicitly manual and never claims 4 verified reactions', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /manualPlanningNudge/);
+  assert.match(ui, /Eigen planning/);
+  assert.match(ui, /officiële WoningNet-stand is onbekend/);
+  assert.doesNotMatch(ui, /automatisch gereageerd|WoningNet-reacties bevestigd/);
 });

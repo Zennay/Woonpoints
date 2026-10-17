@@ -7,6 +7,7 @@ import {
   decodeManualProgress,
   clearManualProgress,
   msUntilNextLocalMidnight,
+  manualPlanningNudge,
   encodeManualProgress,
   localMonthKey
 } from '../lib/manual-month-progress.mjs';
@@ -14,6 +15,7 @@ import {
 /** Optional private notes, never a verified account counter or live instruction. */
 export default function ManualMonthProgress() {
   const [month, setMonth] = useState<string | null>(null);
+  const [observedAt, setObservedAt] = useState<Date | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [storageWorks, setStorageWorks] = useState(true);
   const [deleteError, setDeleteError] = useState(false);
@@ -23,8 +25,10 @@ export default function ManualMonthProgress() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     function refresh() {
-      const current = localMonthKey();
+      const observed = new Date();
+      const current = localMonthKey(observed);
       setMonth(current);
+      setObservedAt(observed);
       if (unsaved.current !== null && unsaved.current.month !== current) unsaved.current = null;
       try {
         const stored = decodeManualProgress(window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY), current);
@@ -50,7 +54,9 @@ export default function ManualMonthProgress() {
   }, []);
 
   function save(next: number) {
-    const current = localMonthKey();
+    const observed = new Date();
+    const current = localMonthKey(observed);
+    setObservedAt(observed);
     // A month rollover never carries last month's personal count into the new month.
     if (current !== month) {
       setMonth(current);
@@ -85,6 +91,8 @@ export default function ManualMonthProgress() {
     }
   }
 
+  const nudge = month && observedAt ? manualPlanningNudge(month, count, observedAt) : null;
+
   return (
     <section className="panel manual-progress" aria-labelledby="manual-progress-heading">
       <div>
@@ -111,6 +119,13 @@ export default function ManualMonthProgress() {
           </div>
         ))}
         {count !== null && <p>Zelf nog te plannen: {MANUAL_MONTHLY_GOAL - count}.</p>}
+        {nudge !== null && (
+          <p className="manual-reminder" role="status">
+            <strong>Eigen planning:</strong> {nudge.urgency === 'late' ? 'De maand loopt bijna af.' : 'Het is halverwege de maand.'}
+            {' '}Je hebt nog {nudge.missing} {nudge.missing === 1 ? 'reactie' : 'reacties'} niet zelf genoteerd;
+            de officiële WoningNet-stand is onbekend.
+          </p>
+        )}
         {month !== null && (
           <button type="button" className="manual-erase" onClick={erase}>Wis mijn notitie</button>
         )}
