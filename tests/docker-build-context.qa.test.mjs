@@ -19,9 +19,16 @@ test('docker context is opt-in only: no local .env, credentials or git history',
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
   assert.equal(rules[0], '*', 'deny all source files before selective inclusion');
-  const includes = rules.slice(1);
+  const includes = rules.slice(1).filter((line) => line.startsWith('!'));
+  const nestedSecretDenies = rules.slice(1).filter((line) => !line.startsWith('!'));
   assert.deepEqual(includes.slice().sort(), expected.slice().sort(),
     'review each added Docker build-context exception: no blanket !**');
+  assert.deepEqual(nestedSecretDenies, [
+    '**/.env', '**/.env.*', '**/.npmrc', '**/.netrc',
+    '**/*.pem', '**/*.key', '**/*.p12',
+  ], 'nested credentials under allowed src/prisma/public require final exclusions');
+  assert.equal(rules[rules.length - 1], '**/*.p12',
+    'secret exclusion rules must be AFTER the folder allowlist');
   for (const sensitive of [
     '.env', '.env.local', '.env.production', '.git/config',
     'secrets/private.key', 'keys/token.json', '.next/server/server.js',
