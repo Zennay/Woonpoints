@@ -30,3 +30,12 @@ test('worker does not log a fake dry-run-ready event for coercible objects', () 
   assert.throws(() => runWorker({BOT_DRY_RUN: hostile}),
     /Live WoningNet execution is disabled/);
 });
+
+test('dry-run approval must be an own environment field, never inherited via prototype', () => {
+  const inherited = Object.create({BOT_DRY_RUN: 'true'});
+  assert.equal(isDryRunEnabled(inherited), false);
+  assert.throws(() => assertDryRun(inherited), /Live WoningNet execution is disabled/);
+  assert.throws(() => runWorker(inherited), /Live WoningNet execution is disabled/);
+  const explicit = Object.assign(Object.create({BOT_DRY_RUN: 'false'}), {BOT_DRY_RUN: 'true'});
+  assert.equal(isDryRunEnabled(explicit), true);
+});
