@@ -1,0 +1,36 @@
+name: QA Woonpoints CI Provenance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'tests/ci-provenance.qa.mjs'
+      - '.github/workflows/qa-ci-provenance.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'tests/ci-provenance.qa.mjs'
+      - '.github/workflows/qa-ci-provenance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify immutable triggering source
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check tests/ci-provenance.qa.mjs
+      - run: node tests/ci-provenance.qa.mjs
