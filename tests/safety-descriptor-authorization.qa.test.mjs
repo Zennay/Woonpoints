@@ -109,7 +109,7 @@ test('computed or inherited human-stop fields cannot impersonate a clear account
 
   const inheritedClear = Object.assign(
     Object.create({pausedReason: null}),
-    {authorizationGrantedAt: past, pausedReason: null},
+    {authorizationGrantedAt: past},
   );
   assert.throws(
     () => assertAuthorizedAccount(inheritedClear, now),
