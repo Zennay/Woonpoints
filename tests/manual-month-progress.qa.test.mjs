@@ -10,7 +10,8 @@ import {
   encodeManualProgress,
   localMonthKey,
   writeManualProgressIfUnchanged,
-  eraseManualProgressIfUnchanged
+  eraseManualProgressIfUnchanged,
+  manualStorageWarning
 } from '../src/lib/manual-month-progress.mjs';
 
 test('local planning uses browser-local civil month and a scoped noncredential storage key', () => {
@@ -261,5 +262,32 @@ test('only successful persistent mutations restore the local write-availability 
   assert.match(ui, /if \(result\.status !== 'cleared'\)[\s\S]*?writeUnverified\.current = false; \/\/ confirmed removeItem success/);
   assert.match(ui, /if \(result\.status === 'changed'\)[\s\S]*?setStorageWorks\(!writeUnverified\.current\)/);
   assert.match(ui, /setDeleteError\(true\)/);
+  assert.doesNotMatch(ui, /localStorage\.clear\(/);
+});
+
+test('storage warning never claims local-only persistence when saved notes may remain', () => {
+  assert.equal(manualStorageWarning(true, false), null);
+  assert.equal(manualStorageWarning(true, true), null);
+  const localOnly = manualStorageWarning(false, true);
+  const priorStored = manualStorageWarning(false, false);
+  assert.match(localOnly, /tijdelijk|niet opgeslagen/i);
+  assert.match(localOnly, /eerder opgeslagen/i);
+  assert.match(priorStored, /eerder opgeslagen/i);
+  assert.match(priorStored, /schrijven|wissen/i);
+  assert.doesNotMatch(priorStored, /alleen op dit scherm|niets opgeslagen|definitief verwijderd/i);
+  assert.doesNotMatch(localOnly, /definitief verwijderd|alles gewist/i);
+  for (const bad of [null, undefined, 0, 1, {}, [], 'false']) {
+    assert.throws(() => manualStorageWarning(bad, false), TypeError);
+    assert.throws(() => manualStorageWarning(false, bad), TypeError);
+  }
+});
+
+test('read-only and delete-denied UI warns without falsely asserting memory-only data', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /manualStorageWarning\(storageWorks, hasUnsaved\)/);
+  assert.doesNotMatch(ui, /deze invoer blijft alleen op dit scherm/i);
+  assert.match(ui, /Verwijderen niet gelukt/);
+  assert.match(ui, /writeUnverified\.current = true/);
   assert.doesNotMatch(ui, /localStorage\.clear\(/);
 });

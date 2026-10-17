@@ -92,3 +92,20 @@ export function decodeManualProgress(raw, currentMonth) {
   // silently accepts duplicate keys and last-key-wins counter spoofing.
   return raw === encodeManualProgress(currentMonth, value.count) ? value.count : null;
 }
+
+/**
+ * Privacy-accurate UI message for an unverified browser write capability.
+ * A successful getItem may expose a *previously saved* note even after a
+ * failed setItem/removeItem. Never claim all data exists only in memory.
+ * This function never touches storage, accounts, or a network.
+ */
+export function manualStorageWarning(storageWorks, hasUnsaved) {
+  if (typeof storageWorks !== 'boolean' || typeof hasUnsaved !== 'boolean') {
+    throw new TypeError('Invalid private storage state');
+  }
+  if (storageWorks) return null;
+  if (hasUnsaved) {
+    return 'Opslaan is niet bevestigd. Deze wijziging is tijdelijk en niet opgeslagen; eerder opgeslagen notities kunnen nog in deze browser aanwezig zijn.';
+  }
+  return 'Schrijven of wissen in browseropslag is niet bevestigd. Eerder opgeslagen notities kunnen nog in deze browser aanwezig zijn.';
+}
