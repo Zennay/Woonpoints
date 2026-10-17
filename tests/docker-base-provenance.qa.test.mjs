@@ -11,9 +11,12 @@ function baseFrom(source) {
   return from;
 }
 
+function assertPinnedBase(source) {
+  assert.equal(baseFrom(source), 'FROM node:20-alpine@sha256:' + digest + ' AS base');
+}
+
 test('the Node 20 Alpine base uses the independently verified OCI index digest', () => {
-  assert.equal(baseFrom(dockerfile),
-    'FROM node:20-alpine@sha256:' + digest + ' AS base');
+  assertPinnedBase(dockerfile);
   assert.match(baseFrom(dockerfile), /^FROM node:20-alpine@sha256:[a-f0-9]{64} AS base$/);
 });
 
@@ -24,7 +27,7 @@ test('mutable Docker base tags and architecture-specific digests cannot satisfy 
     'FROM node:latest AS base',
     'FROM node:20-alpine@sha256:not-a-digest AS base',
   ]) {
-    assert.notEqual(bad, 'FROM node:20-alpine@sha256:' + digest + ' AS base');
+    assert.throws(() => assertPinnedBase(bad), /Expected values to be strictly equal/);
   }
 });
 
