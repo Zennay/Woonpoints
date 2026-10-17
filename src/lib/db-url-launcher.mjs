@@ -4,6 +4,7 @@
  */
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { constants } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 export function composeDatabaseUrl(password) {
@@ -41,7 +42,11 @@ export function launchDatabaseCommand(command, args, env = process.env) {
     process.exitCode = 1;
   });
   child.on('exit', (code, signal) => {
-    process.exitCode = typeof code === 'number' ? code : signal ? 128 + (signal === 'SIGINT' ? 2 : 15) : 1;
+    // Preserve the *actual* POSIX signal. Mapping all non-SIGINT signals
+    // to SIGTERM falsely reports SIGKILL/OOM (137) as graceful stop (143).
+    const signalNumber = typeof signal === 'string' ? constants.signals[signal] : undefined;
+    process.exitCode = typeof code === 'number' ? code
+      : Number.isInteger(signalNumber) && signalNumber > 0 ? 128 + signalNumber : 1;
   });
   return child;
 }
