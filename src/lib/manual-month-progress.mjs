@@ -50,6 +50,26 @@ export function clearManualProgress(storage) {
   storage.removeItem(MANUAL_PROGRESS_STORAGE_KEY);
 }
 
+/** Best-effort stale-tab guard, NOT an atomic browser-wide transaction. */
+export function writeManualProgressIfUnchanged(storage, expectedRaw, month, count) {
+  // Invalid count must fail before reading/writing browser state.
+  const next = encodeManualProgress(month, count);
+  if (expectedRaw !== null && typeof expectedRaw !== 'string') return { status: 'unknown' };
+  const actual = storage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
+  if (actual !== expectedRaw) return { status: 'changed', raw: actual };
+  storage.setItem(MANUAL_PROGRESS_STORAGE_KEY, next);
+  return { status: 'saved', raw: next };
+}
+
+/** Do not erase a newer tab's private note using a stale on-screen count. */
+export function eraseManualProgressIfUnchanged(storage, expectedRaw) {
+  if (expectedRaw !== null && typeof expectedRaw !== 'string') return { status: 'unknown' };
+  const actual = storage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
+  if (actual !== expectedRaw) return { status: 'changed', raw: actual };
+  clearManualProgress(storage);
+  return { status: 'cleared', raw: null };
+}
+
 export function encodeManualProgress(month, count) {
   if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
       !Number.isSafeInteger(count) || count < 0 || count > MANUAL_MONTHLY_GOAL) {

@@ -5,11 +5,11 @@ import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
   decodeManualProgress,
-  clearManualProgress,
   msUntilNextLocalMidnight,
   manualPlanningNudge,
   relevantManualStorageEvent,
-  encodeManualProgress,
+  writeManualProgressIfUnchanged,
+  eraseManualProgressIfUnchanged,
   localMonthKey
 } from '../lib/manual-month-progress.mjs';
 
@@ -20,10 +20,13 @@ export default function ManualMonthProgress() {
   const [count, setCount] = useState<number | null>(null);
   const [storageWorks, setStorageWorks] = useState(true);
   const [deleteError, setDeleteError] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [transientDiscarded, setTransientDiscarded] = useState(false);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
+  // Undefined means storage has not supplied an authoritative snapshot yet.
+  const lastObservedRaw = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -35,10 +38,20 @@ export default function ManualMonthProgress() {
       if (unsaved.current !== null && unsaved.current.month !== current) unsaved.current = null;
       setHasUnsaved(unsaved.current !== null);
       try {
-        const stored = decodeManualProgress(window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY), current);
+        const raw = window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
+        // Focus/visibility refresh must also notice tab changes if an event
+        // was delayed, even while this tab has a failed-write fallback.
+        if (lastObservedRaw.current !== undefined && lastObservedRaw.current !== raw) {
+          unsaved.current = null;
+          setHasUnsaved(false);
+          setTransientDiscarded(false);
+        }
+        lastObservedRaw.current = raw;
+        const stored = decodeManualProgress(raw, current);
         setCount(unsaved.current?.count ?? stored);
         setStorageWorks(unsaved.current === null);
       } catch {
+        lastObservedRaw.current = undefined;
         setCount(unsaved.current?.count ?? null);
         setStorageWorks(false);
       }
@@ -57,6 +70,7 @@ export default function ManualMonthProgress() {
       setHasUnsaved(false);
       setTransientDiscarded(false);
       setDeleteError(false);
+      setConflict(false);
       refresh();
     }
     refresh();
@@ -75,42 +89,84 @@ export default function ManualMonthProgress() {
     const observed = new Date();
     const current = localMonthKey(observed);
     setObservedAt(observed);
-    // A month rollover never carries last month's personal count into the new month.
+    // Month rollover never writes the previous month's stale counter.
     if (current !== month) {
       unsaved.current = null;
       setHasUnsaved(false);
       setTransientDiscarded(false);
       setMonth(current);
-      setCount(null);
-      return; // Start the new month explicitly, never carry over the old count.
+      try {
+        const raw = window.localStorage.getItem(MANUAL_PROGRESS_STORAGE_KEY);
+        lastObservedRaw.current = raw;
+        setCount(decodeManualProgress(raw, current));
+      } catch {
+        lastObservedRaw.current = undefined;
+        setCount(null);
+        setStorageWorks(false);
+      }
+      return;
     }
     if (!Number.isInteger(next) || next < 0 || next > MANUAL_MONTHLY_GOAL) return;
-    setMonth(current);
-    setCount(next);
-    setDeleteError(false);
-    setTransientDiscarded(false);
-    unsaved.current = { month: current, count: next };
-    setHasUnsaved(true);
     try {
-      window.localStorage.setItem(MANUAL_PROGRESS_STORAGE_KEY, encodeManualProgress(current, next));
+      const result = writeManualProgressIfUnchanged(window.localStorage, lastObservedRaw.current, current, next);
+      if (result.status !== 'saved') {
+        unsaved.current = null;
+        setHasUnsaved(false);
+        if (result.status === 'changed') {
+          lastObservedRaw.current = result.raw;
+          setCount(decodeManualProgress(result.raw, current));
+          setStorageWorks(true);
+        } else {
+          lastObservedRaw.current = undefined;
+          setCount(null);
+          setStorageWorks(false);
+        }
+        setConflict(true);
+        return;
+      }
+      lastObservedRaw.current = result.raw;
       unsaved.current = null;
       setHasUnsaved(false);
       setStorageWorks(true);
     } catch {
-      // Still usable in-memory if private browsing/storage writes fail.
+      // If getItem/setItem fails, keep a private temporary edit, never assume
+      // the durable browser note was safely replaced.
+      unsaved.current = { month: current, count: next };
+      setHasUnsaved(true);
       setStorageWorks(false);
     }
+    setCount(next);
+    setConflict(false);
+    setDeleteError(false);
+    setTransientDiscarded(false);
   }
 
   function erase() {
-    // Never claim deletion if persistent storage refused the operation.
+    // An old tab cannot erase a newer replacement without first displaying it.
     try {
-      clearManualProgress(window.localStorage);
+      const result = eraseManualProgressIfUnchanged(window.localStorage, lastObservedRaw.current);
+      if (result.status !== 'cleared') {
+        unsaved.current = null;
+        setHasUnsaved(false);
+        if (result.status === 'changed') {
+          lastObservedRaw.current = result.raw;
+          setCount(decodeManualProgress(result.raw, localMonthKey()));
+          setStorageWorks(true);
+        } else {
+          lastObservedRaw.current = undefined;
+          setCount(null);
+          setStorageWorks(false);
+        }
+        setConflict(true);
+        return;
+      }
+      lastObservedRaw.current = null;
       unsaved.current = null;
       setHasUnsaved(false);
       setCount(null);
       setStorageWorks(true);
       setTransientDiscarded(false);
+      setConflict(false);
       setDeleteError(false);
     } catch {
       setDeleteError(true);
@@ -172,6 +228,7 @@ export default function ManualMonthProgress() {
         {transientDiscarded && (
           <p role="status">Alleen niet-opgeslagen invoer is gewist. Opgeslagen gegevens kunnen nog aanwezig zijn.</p>
         )}
+        {conflict && <p role="alert">De notitie is gewijzigd in een ander tabblad of de opslagstatus is onbekend. De vorige actie is niet uitgevoerd; controleer de huidige stand en probeer opnieuw.</p>}
         {deleteError && <p role="alert">Verwijderen niet gelukt. Probeer opnieuw; opgeslagen gegevens kunnen nog aanwezig zijn.</p>}
         {!storageWorks && <p role="status">Opslaan is niet beschikbaar; deze invoer blijft alleen op dit scherm.</p>}
       </div>
