@@ -42,3 +42,17 @@ export function summarizePositionPairs(raw) {
     bestPosition: positions[0], worstPosition: positions[length - 1]
   };
 }
+
+/**
+ * Format a manually calculated percentile without claiming exact first/last
+ * place when the true fractional average is merely rounded to an endpoint.
+ * 100% and 0% are reserved for mathematically exact outcomes only.
+ */
+export function formatPositionPercentile(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+    throw new TypeError('Ongeldig positiepercentiel');
+  }
+  if (value > 0 && value < 0.1) return '<0,1%';
+  if (value > 99.9 && value < 100) return '>99,9%';
+  return new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 1 }).format(value) + '%';
+}
