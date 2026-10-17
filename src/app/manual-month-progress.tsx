@@ -5,6 +5,8 @@ import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
   decodeManualProgress,
+  clearManualProgress,
+  msUntilNextLocalMidnight,
   encodeManualProgress,
   localMonthKey
 } from '../lib/manual-month-progress.mjs';
@@ -14,10 +16,12 @@ export default function ManualMonthProgress() {
   const [month, setMonth] = useState<string | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [storageWorks, setStorageWorks] = useState(true);
+  const [deleteError, setDeleteError] = useState(false);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     function refresh() {
       const current = localMonthKey();
       setMonth(current);
@@ -30,13 +34,18 @@ export default function ManualMonthProgress() {
         setCount(unsaved.current?.count ?? null);
         setStorageWorks(false);
       }
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(refresh, msUntilNextLocalMidnight() + 50);
     }
     refresh();
     window.addEventListener('storage', refresh);
     window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
+      if (timer !== undefined) clearTimeout(timer);
       window.removeEventListener('storage', refresh);
       window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
     };
   }, []);
 
@@ -51,6 +60,7 @@ export default function ManualMonthProgress() {
     if (!Number.isInteger(next) || next < 0 || next > MANUAL_MONTHLY_GOAL) return;
     setMonth(current);
     setCount(next);
+    setDeleteError(false);
     unsaved.current = { month: current, count: next };
     try {
       window.localStorage.setItem(MANUAL_PROGRESS_STORAGE_KEY, encodeManualProgress(current, next));
@@ -59,6 +69,19 @@ export default function ManualMonthProgress() {
     } catch {
       // Still usable in-memory if private browsing/storage writes fail.
       setStorageWorks(false);
+    }
+  }
+
+  function erase() {
+    // Never claim deletion if persistent storage refused the operation.
+    try {
+      clearManualProgress(window.localStorage);
+      unsaved.current = null;
+      setCount(null);
+      setStorageWorks(true);
+      setDeleteError(false);
+    } catch {
+      setDeleteError(true);
     }
   }
 
@@ -88,6 +111,10 @@ export default function ManualMonthProgress() {
           </div>
         ))}
         {count !== null && <p>Zelf nog te plannen: {MANUAL_MONTHLY_GOAL - count}.</p>}
+        {month !== null && (
+          <button type="button" className="manual-erase" onClick={erase}>Wis mijn notitie</button>
+        )}
+        {deleteError && <p role="alert">Verwijderen niet gelukt. Probeer opnieuw; opgeslagen gegevens kunnen nog aanwezig zijn.</p>}
         {!storageWorks && <p role="status">Opslaan is niet beschikbaar; deze invoer blijft alleen op dit scherm.</p>}
       </div>
     </section>

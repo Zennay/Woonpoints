@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MANUAL_PROGRESS_STORAGE_KEY,
+  msUntilNextLocalMidnight,
+  clearManualProgress,
   decodeManualProgress,
   encodeManualProgress,
   localMonthKey
@@ -59,4 +61,45 @@ test('manual UI marks its status as unverified and contains no WoningNet API fet
   assert.match(ui, /unsaved\.current\?\.count \?\? stored/);
   assert.match(ui, /unsaved\.current\?\.count \?\? null/);
   assert.doesNotMatch(ui, /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bBOT_DRY_RUN\s*=/);
+});
+
+
+test('scheduled rollover accounts for calendar midnight and DST without carrying a stale counter', () => {
+  assert.equal(msUntilNextLocalMidnight(new Date(2026, 9, 17, 23, 59, 30)), 30_000);
+  assert.equal(msUntilNextLocalMidnight(new Date(2026, 10, 1, 0, 0, 0)), 86_400_000);
+  assert.throws(() => msUntilNextLocalMidnight(new Date(NaN)), RangeError);
+});
+
+test('local midnight timer honours spring and autumn DST, with an isolated Europe/Amsterdam zone', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const source = new URL('../src/lib/manual-month-progress.mjs', import.meta.url).href;
+  const code = `import { msUntilNextLocalMidnight } from ${JSON.stringify(source)};
+console.log(JSON.stringify([
+  msUntilNextLocalMidnight(new Date(2026,2,29,0,30)),
+  msUntilNextLocalMidnight(new Date(2026,9,25,0,30))
+]));`;
+  const child = spawnSync(process.execPath, ['--input-type=module','-e',code], {
+    env: { ...process.env, TZ: 'Europe/Amsterdam' }, encoding: 'utf8', timeout: 8000
+  });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), [22.5 * 3_600_000, 24.5 * 3_600_000]);
+});
+
+test('explicit local erasure removes only this planning key and propagates denied storage', () => {
+  const touched = [];
+  clearManualProgress({ removeItem(key) { touched.push(key); } });
+  assert.deepEqual(touched, [MANUAL_PROGRESS_STORAGE_KEY]);
+  assert.throws(() => clearManualProgress({ removeItem() { throw new Error('blocked'); } }), /blocked/);
+});
+
+test('privacy UI exposes erase controls, midnight refresh and an explicit storage-denied error', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const ui = await readFile(new URL('../src/app/manual-month-progress.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /Wis mijn notitie/);
+  assert.match(ui, /clearManualProgress\(window\.localStorage\)/);
+  assert.match(ui, /setTimeout\(refresh/);
+  assert.match(ui, /clearTimeout\(timer\)/);
+  assert.match(ui, /visibilitychange/);
+  assert.match(ui, /Verwijderen niet gelukt/);
+  assert.doesNotMatch(ui, /fetch\s*\(|XMLHttpRequest|WebSocket/);
 });
