@@ -13,6 +13,7 @@ jobs:
   # merge commit, which may contain changes from the target branch.
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
         with:
@@ -30,6 +31,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
+      # An install and unit suite alone cannot prove the Next production bundle.
+      - run: npm run build
 
   # Separate immutable PR HEAD proof. A passing synthetic merge test is not
   # evidence the contributor's exact source SHA was ever validated.
