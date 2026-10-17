@@ -34,7 +34,7 @@ export function prepareChildEnvironment(env = process.env) {
   }
 
   const password = Object.getOwnPropertyDescriptor(fields, 'WOONPOINTS_DB_PASSWORD')?.value;
-  if (!password || !Object.hasOwn(password, 'value') || typeof password.value !== 'string') {
+  if (!password || !password.enumerable || !Object.hasOwn(password, 'value') || typeof password.value !== 'string') {
     throw new Error('Invalid database environment.');
   }
   // Validate the operator value before returning any candidate child fields.
@@ -44,6 +44,9 @@ export function prepareChildEnvironment(env = process.env) {
     // Drop the original raw secret and any inherited/stale DATABASE_URL.
     // In particular, do not invoke an existing DATABASE_URL getter.
     if (key === 'WOONPOINTS_DB_PASSWORD' || key === 'DATABASE_URL') continue;
+    // Preserve object-spread's own-*enumerable* field policy. Hidden metadata
+    // must not be promoted into the process environment of app/worker.
+    if (!descriptor.enumerable) continue;
     if (!Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string') {
       throw new Error('Invalid database environment.');
     }
