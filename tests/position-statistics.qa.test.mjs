@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { summarizePositionPairs } from '../src/lib/position-statistics.mjs';
+import { summarizePositionPairs, formatPositionPercentile } from '../src/lib/position-statistics.mjs';
 
 const read = file => readFileSync(new URL('../' + file, import.meta.url), 'utf8');
 
@@ -60,5 +60,33 @@ test('offline UI is explicitly manual, memory-only, no network or account proof'
   assert.match(ui, /aria-live="polite"/);
   assert.match(ui, /role="alert"/);
   assert.match(ui, /maxLength=\{4096\}/);
+  assert.doesNotMatch(ui, /localStorage|sessionStorage|fetch\s*\(|XMLHttpRequest|WebSocket|navigator\.sendBeacon/);
+});
+
+test('rounded near-boundary percentiles cannot impersonate first or last place', () => {
+  const almostFirst = summarizePositionPairs('2/999999');
+  const almostLast = summarizePositionPairs('999998/999999');
+  assert.ok(almostFirst.averagePercentile < 100);
+  assert.ok(almostLast.averagePercentile > 0);
+  assert.equal(formatPositionPercentile(almostFirst.averagePercentile), '>99,9%');
+  assert.equal(formatPositionPercentile(almostLast.averagePercentile), '<0,1%');
+  assert.equal(formatPositionPercentile(100), '100%');
+  assert.equal(formatPositionPercentile(0), '0%');
+  assert.equal(formatPositionPercentile(80), '80%');
+  assert.equal(formatPositionPercentile(12.34), '12,3%');
+});
+
+test('percentile formatter rejects forged, non-finite and out-of-range values', () => {
+  for (const invalid of [NaN, Infinity, -Infinity, -0.1, 100.001,
+                         null, '99.99', {}, [], true, false]) {
+    assert.throws(() => formatPositionPercentile(invalid),
+      /Ongeldig positiepercentiel/);
+  }
+});
+
+test('manual-only UI uses truth-preserving percentile formatter without persistence', () => {
+  const ui = read('src/app/position-stats.tsx');
+  assert.match(ui, /formatPositionPercentile\(summary\.averagePercentile\)/);
+  assert.doesNotMatch(ui, /fmt\(summary\.averagePercentile\)/);
   assert.doesNotMatch(ui, /localStorage|sessionStorage|fetch\s*\(|XMLHttpRequest|WebSocket|navigator\.sendBeacon/);
 });

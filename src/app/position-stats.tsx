@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { summarizePositionPairs } from '../lib/position-statistics.mjs';
+import { summarizePositionPairs, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
 /** Ephemeral local arithmetic only: not a WoningNet account connection. */
 export default function PositionStats() {
@@ -34,9 +34,9 @@ export default function PositionStats() {
               <dl>
                 <div><dt>Gemiddelde eindpositie</dt><dd>{fmt(summary.averagePosition)}</dd></div>
                 <div><dt>Mediaan</dt><dd>{fmt(summary.medianPosition)}</dd></div>
-                <div><dt>Gemiddeld positiepercentiel</dt><dd>{fmt(summary.averagePercentile)}%</dd></div>
+                <div><dt>Gemiddeld positiepercentiel</dt><dd>{formatPositionPercentile(summary.averagePercentile)}</dd></div>
               </dl>
-              <p>Percentiel: 100% = eerste plaats, 0% = laatste plaats. Per woning even zwaar meegewogen, geen voorspelling.</p>
+              <p>Percentiel: exact 100% = telkens eerste, exact 0% = telkens laatste. Kleine afwijkingen bij de grenzen tonen we als &gt;99,9% of &lt;0,1%, niet als een exacte uiterste plaats. Per woning even zwaar meegewogen, geen voorspelling.</p>
             </div>
           )}
         </div>
