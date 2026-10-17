@@ -70,3 +70,20 @@ test('an obsolete DATABASE_URL getter must be ignored, never invoked', () => {
   assert.equal(calls, 0);
   assert.equal(new URL(child.DATABASE_URL).hostname, 'db');
 });
+
+test('non-enumerable private caller fields stay out of the child environment', () => {
+  const env = { WOONPOINTS_DB_PASSWORD: 'synthetic-only' };
+  Object.defineProperty(env, 'PRIVATE_CALLER_METADATA', {
+    configurable: true, enumerable: false, value: 'not-for-child',
+  });
+  const child = prepareChildEnvironment(env);
+  assert.equal(Object.hasOwn(child, 'PRIVATE_CALLER_METADATA'), false);
+});
+
+test('non-enumerable operator secret is not accepted as launch authority', () => {
+  const env = {};
+  Object.defineProperty(env, 'WOONPOINTS_DB_PASSWORD', {
+    enumerable: false, value: 'synthetic-hidden-secret',
+  });
+  assert.throws(() => prepareChildEnvironment(env), /invalid database environment/i);
+});
