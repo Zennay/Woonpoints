@@ -1,6 +1,6 @@
 const cards = [
-  ['Maanddoel', '0 / 4', 'Nog geen live account gekoppeld'],
-  ['Actieve reacties', '0', 'Data wordt pas getoond na veilige accountkoppeling'],
+  ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
+  ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
   ['Zoekpunten', '—', 'Nog geen puntensnapshot beschikbaar'],
   ['Worker', 'Dry-run', 'Live reageren is bewust geblokkeerd']
 ];
