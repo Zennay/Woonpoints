@@ -33,6 +33,8 @@ jobs:
       - run: npm test
       # An install and unit suite alone cannot prove the Next production bundle.
       - run: npm run build
+      # Verify real HTTP response headers from a disposable localhost Next server.
+      - run: node --test tests/dashboard-response-headers.runtime.qa.mjs
 
   # Separate immutable PR HEAD proof. A passing synthetic merge test is not
   # evidence the contributor's exact source SHA was ever validated.
