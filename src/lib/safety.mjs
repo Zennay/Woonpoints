@@ -72,9 +72,11 @@ export function assertAuthorizedAccount(account, now = new Date()) {
   let confirmedUnpaused = false;
   try {
     const pause = Object.getOwnPropertyDescriptor(account, 'pausedReason');
-    confirmedUnpaused = pause
-      ? Object.hasOwn(pause, 'value') && (pause.value === null || pause.value === undefined)
-      : !('pausedReason' in account);
+    // Prisma's nullable String field is always present on a full account
+    // projection. Missing/undefined means pause state was not loaded, not
+    // affirmative proof that a human stop has been cleared.
+    confirmedUnpaused = Boolean(pause && Object.hasOwn(pause, 'value')
+      && pause.value === null);
   } catch {
     confirmedUnpaused = false;
   }
