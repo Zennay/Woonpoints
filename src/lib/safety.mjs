@@ -18,9 +18,20 @@ export function assertDryRun(env = process.env) {
   }
 }
 
-export function assertAuthorizedAccount(account) {
-  if (!account?.authorizationGrantedAt) {
+export function assertAuthorizedAccount(account, now = new Date()) {
+  // Prisma DateTime is a native Date. Arbitrary strings/flags are not proof
+  // of consent; malformed or future timestamps must never enable execution.
+  const granted = account?.authorizationGrantedAt;
+  const grantedAt = granted instanceof Date ? granted.getTime() : NaN;
+  const checkedAt = now instanceof Date ? now.getTime() : NaN;
+  if (!Number.isFinite(grantedAt) || !Number.isFinite(checkedAt) || grantedAt > checkedAt) {
     throw new Error('Account owner authorization is required before worker execution.');
+  }
+
+  // Account-level human stops override even previously valid consent.
+  // Unknown/empty pause reasons fail closed instead of being ignored.
+  if (account.pausedReason !== null && account.pausedReason !== undefined) {
+    throw new Error('Account paused for human review before worker execution.');
   }
 }
 
