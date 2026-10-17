@@ -15,6 +15,22 @@ export function localMonthKey(now = new Date()) {
   return `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}`;
 }
 
+/** Delay until local midnight, including 23/25-hour DST days. */
+export function msUntilNextLocalMidnight(now = new Date()) {
+  if (!(now instanceof Date)) throw new TypeError('A real date is required');
+  const epoch = Date.prototype.getTime.call(now);
+  if (!Number.isFinite(epoch)) throw new RangeError('Invalid planning clock');
+  const next = new Date(Date.prototype.getFullYear.call(now),
+    Date.prototype.getMonth.call(now), Date.prototype.getDate.call(now) + 1);
+  const delay = Date.prototype.getTime.call(next) - epoch;
+  if (!Number.isFinite(delay) || delay <= 0 || delay > 26 * 3600000) throw new RangeError('Invalid local midnight');
+  return delay;
+}
+
+export function clearManualProgress(storage) {
+  storage.removeItem(MANUAL_PROGRESS_STORAGE_KEY);
+}
+
 export function encodeManualProgress(month, count) {
   if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
       !Number.isSafeInteger(count) || count < 0 || count > MANUAL_MONTHLY_GOAL) {
