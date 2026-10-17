@@ -44,6 +44,8 @@ jobs:
       - name: Verify real isolated worker dry run and live refusal
         run: |
           set -euo pipefail
+          uid="$(docker run --rm --network none --entrypoint node woonpoints-locked-qa:local -p 'process.getuid()')"
+          test "$uid" = "1000"
           receipt="$(docker run --rm --network none -e BOT_DRY_RUN=true --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs)"
           node -e 'const r=JSON.parse(process.argv[1]);if(r.mode!=="dry-run"||r.status!=="ready"||!r.action.includes("No live WoningNet reaction"))process.exit(1)' "$receipt"
           if docker run --rm --network none -e BOT_DRY_RUN=false --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs >/dev/null 2>&1; then
