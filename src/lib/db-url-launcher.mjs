@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { constants } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { types as utilTypes } from 'node:util';
 
 export function composeDatabaseUrl(password) {
   if (typeof password !== 'string' || !password || password.includes('\0')) {
@@ -25,7 +26,9 @@ export function composeDatabaseUrl(password) {
 export function prepareChildEnvironment(env = process.env) {
   let fields;
   try {
-    if (env === null || typeof env !== 'object') {
+    // A Proxy can return valid descriptors while executing user-defined
+    // traps. Reject it *before* any reflective access, including ownKeys.
+    if (env === null || typeof env !== 'object' || utilTypes.isProxy(env)) {
       throw new TypeError('environment is not an object');
     }
     fields = Object.getOwnPropertyDescriptors(env);
