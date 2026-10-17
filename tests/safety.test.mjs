@@ -24,6 +24,11 @@ test('worker fails closed when live execution is requested', () => {
 test('worker can run in dry-run mode without attempting a reaction', () => {
   const result = runWorker({ BOT_DRY_RUN: 'true' });
   assert.equal(result.mode, 'dry-run');
+  assert.equal(result.status, 'dry_run_only');
+  assert.equal(result.liveExecutionAllowed, false);
+  assert.equal(result.accountDataVerified, false);
+  assert.equal(result.providerAdapterAvailable, false);
+  assert.notEqual(result.status, 'ready', 'dry-run is never a recovered live worker');
   assert.match(result.action, /No live WoningNet reaction/);
 });
 
