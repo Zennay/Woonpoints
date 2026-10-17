@@ -24,7 +24,7 @@ h1 { margin: 8px 0 16px; font-size: clamp(40px, 7vw, 72px); line-height: .98; le
 .card { padding: 22px; }
 .card span { display: block; color: #647168; font-size: 13px; }
 .card strong { display: block; margin: 8px 0; font-size: 30px; }
-.card p { margin: 0; color: #6f7b73; line-height: 1.45; font-size: 14px; }
+.card p { margin: 0; color: #68746c; line-height: 1.45; font-size: 14px; }
 
 .panel { margin-top: 24px; padding: 28px; display: grid; grid-template-columns: 1fr 1.4fr; gap: 32px; }
 h2 { margin: 6px 0 0; font-size: 30px; letter-spacing: -.02em; }
