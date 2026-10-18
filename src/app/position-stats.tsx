@@ -1,5 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import ManualMonthProgress from './manual-month-progress';
+import { localMonthKey, MANUAL_MONTHLY_GOAL } from '../lib/manual-month-progress.mjs';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
   encodeHousingShortlist, decodeHousingShortlist, compareTwoManualHomes,
   exportManualHousingDecisionNote } from '../lib/position-statistics.mjs';
@@ -279,9 +281,19 @@ const statusNames: Record<JournalStatus, string> = {
   closed: 'Afgesloten', invited: 'Uitgenodigd', withdrawn: 'Ingetrokken'
 };
 
+export type PrivateJournalCountOffer = {
+  month: string;
+  count: number;
+  totalThisMonth: number;
+};
+
+/** Transfers only a voluntary aggregate; never source records or account data. */
 export function ManualReactionJournal({
-  onTransfer
-}: { onTransfer?: (data: string, count: number) => void } = {}) {
+  onTransfer, onMonthCountOffer
+}: {
+  onTransfer?: (data: string, count: number) => void;
+  onMonthCountOffer?: (offer: PrivateJournalCountOffer | null) => void;
+} = {}) {
   const [entries, setEntries] = useState<JournalItem[]>([]);
   const [nextId, setNextId] = useState(1);
   const [date, setDate] = useState('');
@@ -304,6 +316,41 @@ export function ManualReactionJournal({
     .filter(row => monthFilter === 'all' || row.date.slice(0, 7) === monthFilter)
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const rowCount = journal.total;
+  const currentJournalMonth = localMonthKey(new Date());
+  const todayJournalDate = (() => {
+    const now = new Date();
+    return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+      String(now.getDate()).padStart(2,'0')].join('-');
+  })();
+  const currentJournalEntries = entries.filter(item =>
+    item.date.slice(0,7) === currentJournalMonth && item.date <= todayJournalDate);
+  // Only the literal manually chosen "Zelf gereageerd" status counts. Invited,
+  // closed, future, withdrawn and planned are never guessed as registrations.
+  const journalReactedCount = currentJournalEntries.filter(item => item.status==='reacted').length;
+  useEffect(() => {
+    // A pending cross-panel proposal cannot survive a modification, restore
+    // request or deletion in its original source journal.
+    onMonthCountOffer?.(null);
+  }, [entries,pendingImport,onMonthCountOffer]);
+
+  function proposeMonthCount() {
+    if (!onMonthCountOffer) return;
+    const now = new Date();
+    const localDate = [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+      String(now.getDate()).padStart(2,'0')].join('-');
+    const month = localMonthKey(now);
+    const valid = entries.filter(item => item.date.slice(0,7) === month &&
+      item.date <= localDate);
+    const reacted=valid.filter(item=>item.status==='reacted').length;
+    if (pendingImport || editingId !== null || !valid.length ||
+        reacted>MANUAL_MONTHLY_GOAL || valid.length>100) {
+      setMessage('Geen veilig voorstel: sluit eerst de editor/import of controleer je eigen maandnotities. Meer dan vier als gereageerd gemarkeerde notities worden nooit stilzwijgend afgeknipt.');
+      return;
+    }
+    onMonthCountOffer({month,count:reacted,totalThisMonth:valid.length});
+    setMessage('Eigen telling ter beoordeling aan de maandplanning aangeboden. Controleer daar de huidige stand en bevestig of annuleer afzonderlijk.');
+    document.getElementById('manual-progress-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
 
   function add() {
     setMessage('');
@@ -551,6 +598,23 @@ export function ManualReactionJournal({
         </div>}
         <p><strong>{rowCount}</strong> eigen notities · <strong>{journal.recordedPositions}</strong> met
           zelf ingevoerde eindpositie. Nul officiële reacties geverifieerd.</p>
+        {onMonthCountOffer && <div className="journal-confirm">
+          <h3>Stel zelf een maandstand voor op basis van je dagboek</h3>
+          <p>Deze maand tot vandaag: <strong>{currentJournalEntries.length}</strong> eigen
+            notities, waarvan <strong>{journalReactedCount}</strong> letterlijk
+            'Zelf gereageerd'. Andere statussen en toekomstige datums tellen
+            bewust niet mee. Het dagboek kan onvolledig of dubbel ingevuld zijn;
+            dit is geen officiële bevestiging of geldig zoekpuntenbewijs.</p>
+          {journalReactedCount > MANUAL_MONTHLY_GOAL && <p role="alert">
+            Meer dan {MANUAL_MONTHLY_GOAL} notities met status 'Zelf gereageerd'.
+            Controleer ze zelf; Woonpoints kapt niets automatisch af.</p>}
+          <button type="button" disabled={!currentJournalEntries.length ||
+              journalReactedCount>MANUAL_MONTHLY_GOAL || Boolean(pendingImport) || editingId!==null}
+            onClick={proposeMonthCount}>Bied eigen maandtelling ter controle aan ↑</button>
+          <p>Je bestaande maandstand verandert pas na een tweede expliciete
+            bevestiging bovenaan. Een eigen reactie is niet noodzakelijk een
+            geldige geregistreerde WoningNet-reactie.</p>
+        </div>}
         {onTransfer && journal.recordedPositions > 0 && (
           <button type="button" onClick={proposePositions}>
             Toon genoteerde eindposities in maandgrafiek
@@ -667,11 +731,14 @@ export function ManualReactionJournal({
 
 
 /** Shared browser-memory-only handoff. No hidden cross-tab persistence/API. */
-export function ManualPositionsWorkspace() {
+export function ManualPositionsWorkspace({
+  onMonthCountOffer
+}: {onMonthCountOffer?: (offer: PrivateJournalCountOffer|null)=>void} = {}) {
   const [offer, setOffer] = useState<{ data: string; count: number } | null>(null);
   return (
     <>
-      <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })} />
+      <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })}
+        onMonthCountOffer={onMonthCountOffer} />
       <ManualPositionHistory journalOffer={offer} onJournalDecision={() => setOffer(null)} />
     </>
   );
@@ -3720,4 +3787,20 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
         Niets doet een woningreactie, inschrijving, betaling of contracthandeling.</p>
     </div>
   </section>;
+}
+
+
+/**
+ * No global event, cross-tab persistence or account bridge.
+ * The only shared context is an explicitly proposed private aggregate.
+ */
+export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
+  const [offer,setOffer]=useState<PrivateJournalCountOffer|null>(null);
+  const propose=useCallback((value:PrivateJournalCountOffer|null)=>setOffer(value),[]);
+  const decide=useCallback(()=>setOffer(null),[]);
+  return <>
+    <ManualMonthProgress journalOffer={offer} onJournalDecision={decide} />
+    {children}
+    <ManualPositionsWorkspace onMonthCountOffer={propose}/>
+  </>;
 }
