@@ -624,3 +624,38 @@ ongewijzigd. Bij een nieuwe kalendermaand of gewijzigde eigen voortgang
 vervalt een oud herstelvoorstel. Je eigen reactieteller en opgeslagen
 Woonpoints-notitie worden nooit door agenda-import geschreven of vervangen.
 Een gekozen downloadlocatie kan buiten deze app synchroniseren.
+
+
+## Handmatig reactiedagboek → eigen maandteller (tweemaal bevestigen)
+
+Het reactiedagboek kan een **eigen, ongeverifieerde maandtelling** voorstellen
+aan het reeds bestaande maanddoel. Dit gebeurt volledig in het huidige
+browsertabblad: er is geen account-API, geen backendrequest en geen automatische
+vervanging of opslag van reactiedagboekgegevens. De nieuwe knop toont alleen
+deze kalendermaand tot vandaag; alleen notities met de letterlijke eigen
+status **Zelf gereageerd** worden geteld. Ingetrokken, afgesloten,
+uitgenodigde, geplande of toekomstige notities worden **niet** automatisch
+als geldige reacties geïnterpreteerd. Iedere eigen notitie kan onvolledig,
+dubbel of onbevestigd zijn. Een teller is **nooit** bewijs dat WoningNet
+een reactie registreerde of dat er zoekpunten werden toegekend.
+
+- Een gebruiker kiest eerst **Bied eigen maandtelling ter controle aan**.
+  Er wordt geen telling stilzwijgend toegepast of afgerond op vier.
+  Als meer dan vier notities letterlijk als gereageerd zijn gemarkeerd,
+  wordt de overdracht geweigerd met een concrete waarschuwing.
+- De maandplanning toont vervolgens zijn **bestaande eigen stand en de
+  aangeboden telling naast elkaar** en vraagt afzonderlijk **Ja, gebruik
+  deze zelf genoteerde maandtelling** of **Nee, behoud mijn maandstand**.
+  Afwijzen houdt de huidige teller ongewijzigd.
+- Toepassen gebruikt de *bestaande* compare-and-set-beveiligde maandteller.
+  Een andere tabbladwijziging, oude/onleesbare opgeslagen bron of
+  maandwissel kan deze actie blokkeren: de gebruiker ziet bestaande
+  conflict-/opslagwaarschuwingen. Geweigerde persistente opslag wordt
+  niet als duurzaam bevestigd.
+- Als het dagboek later verandert of een CSV-import wordt voorbereid,
+  wordt een nog openstaand overdrachtsvoorstel ingetrokken. Sluiten van
+  het browsertabblad verliest de tijdelijke handoff.
+- De teller is een persoonlijke planningsnotitie, *geen* officiële
+  maandelijkse validatiestatus en triggert geen reacties, e-mails of
+  WoningNet-workers. `BOT_DRY_RUN=true` en alle rechten-/
+  productievoorwaarden blijven onveranderd.
