@@ -32,6 +32,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
   {id:'private-meter-handover-heading',title:'Meterstanden',category:'verhuizen'},
   {id:'private-utility-transfer-heading',title:'Nutsvoorzieningen overzetten',category:'verhuizen'},
+  {id:'private-utility-contacts-heading',title:'Mijn leverancierscontacten',category:'verhuizen'},
   {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
   {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
   {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
@@ -148,6 +149,7 @@ export default function HomePage() {
       <PrivateMovingHandover />
       <PrivateMeterHandover />
       <PrivateUtilityTransfer />
+      <PrivateUtilityContactLog />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
@@ -4822,6 +4824,361 @@ function PrivateUtilityTransfer() {
       Je agenda-app kan een bewust gedownload ICS-bestand synchroniseren; Woonpoints
       maakt nooit zelf afspraken, verzendt geen berichten en wijzigt geen contracten.
       Controleer officiële termijnen, voorwaarden en bevestigingen altijd zelf.</p>
+  </section>;
+}
+
+
+type PrivateContactChannel = 'phone' | 'email' | 'portal' | 'in-person' | 'other';
+type PrivateUtilityContact = {
+  id: number; utility: PrivateUtilityKey; day: string;
+  channel: PrivateContactChannel; note: string; followUp: string
+};
+type PrivateContactDraft = Omit<PrivateUtilityContact, 'id'>;
+const CONTACT_CHANNELS: { id: PrivateContactChannel; label: string }[] = [
+  { id: 'phone', label: 'Telefoon' }, { id: 'email', label: 'E-mail' },
+  { id: 'portal', label: 'Portaal' }, { id: 'in-person', label: 'Persoonlijk' },
+  { id: 'other', label: 'Anders' }
+];
+const CONTACT_NEW: PrivateContactDraft = {
+  utility: 'electricity', day: '', channel: 'phone', note: '', followUp: ''
+};
+const CONTACT_LIMIT = 60;
+const CONTACT_NOTE_LIMIT = 200;
+function privateContactValid(entry: PrivateUtilityContact): boolean {
+  return Number.isSafeInteger(entry.id) && entry.id > 0 && entry.id <= 1000000 &&
+    PRIVATE_UTILITIES.some(item => item.id === entry.utility) &&
+    CONTACT_CHANNELS.some(channel => channel.id === entry.channel) &&
+    handoverValidDay(entry.day) && typeof entry.followUp === 'string' &&
+    (entry.followUp === '' || handoverValidDay(entry.followUp)) &&
+    typeof entry.note === 'string' && entry.note.trim().length > 0 &&
+    entry.note.length <= CONTACT_NOTE_LIMIT &&
+    !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(entry.note);
+}
+function privateContactBackup(entries: PrivateUtilityContact[]): string {
+  return JSON.stringify({ kind: 'woonpoints-private-utility-contacts',
+    version: 1, contacts: entries }, null, 2) + '\n';
+}
+function privateContactReadBackup(raw: string): PrivateUtilityContact[] {
+  if (new TextEncoder().encode(raw).length > 24 * 1024)
+    throw Error('Backup size out of bounds');
+  const record = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v);
+  const exact = (v: Record<string, unknown>, fields: string[]) =>
+    Object.keys(v).sort().join('|') === [...fields].sort().join('|');
+  const data: unknown = JSON.parse(raw);
+  if (!record(data) || !exact(data, ['kind','version','contacts']) ||
+    data.kind !== 'woonpoints-private-utility-contacts' || data.version !== 1 ||
+    !Array.isArray(data.contacts) || data.contacts.length > CONTACT_LIMIT)
+    throw Error('Unsupported contact backup');
+  const ids = new Set<number>();
+  const entries: PrivateUtilityContact[] = [];
+  for (const value of data.contacts) {
+    if (!record(value) || !exact(value, ['id','utility','day','channel','note','followUp'])) {
+      throw Error('Invalid record');
+    }
+    const item = value as PrivateUtilityContact;
+    if (!privateContactValid(item) || ids.has(item.id)) throw Error('Invalid contact record');
+    ids.add(item.id);
+    entries.push(item);
+  }
+  if (privateContactBackup(entries) !== raw) throw Error('Noncanonical backup');
+  return entries;
+}
+function privateContactReport(entries: PrivateUtilityContact[], withNotes: boolean): string {
+  const lines = [
+    'WOONPOINTS · MIJN EIGEN LEVERANCIERSCONTACTEN',
+    'Ongeverifieerde privénotities. Geen bewijs van officiële aanmelding, afspraak of contract.',
+    'Geen berichten verzonden, niets gesynchroniseerd.',
+    ''
+  ];
+  for (const entry of [...entries].sort((a,b)=>b.day.localeCompare(a.day)||b.id-a.id)) {
+    const utility=PRIVATE_UTILITIES.find(item=>item.id===entry.utility)?.name||'Onbekend';
+    const channel=CONTACT_CHANNELS.find(item=>item.id===entry.channel)?.label||'Onbekend';
+    lines.push(entry.day + ' · ' + utility + ' · ' + channel);
+    lines.push('Eigen opvolgdatum: ' + (entry.followUp || 'nog niet gepland'));
+    if (withNotes) lines.push('Privénotitie: ' + entry.note);
+    lines.push('');
+  }
+  return lines.join('\r\n') + '\r\n';
+}
+
+/** Calendar export carries only reviewed category labels and civil dates, never private notes. */
+function privateContactCalendar(entries: PrivateUtilityContact[], today: string): string {
+  const output = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//Woonpoints//Eigen Leverancierscontacten//NL',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'
+  ];
+  const stamp = new Date().toISOString().replaceAll('-', '').replaceAll(':', '')
+    .replace(/\.\d{3}Z$/, 'Z');
+  for (const item of [...entries].sort((a,b)=>a.followUp.localeCompare(b.followUp)||a.id-b.id)) {
+    if(!handoverValidDay(item.followUp)||item.followUp<today)continue;
+    const label=PRIVATE_UTILITIES.find(x=>x.id===item.utility)?.name;
+    if(!label)continue;
+    const start=item.followUp.replaceAll('-', '');
+    const end=privateUtilityTomorrow(item.followUp).replaceAll('-', '');
+    output.push('BEGIN:VEVENT',
+      'UID:woonpoints-contact-' + item.id + '-' + start + '@offline.local',
+      'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start,
+      'DTEND;VALUE=DATE:' + end,
+      'SUMMARY:Eigen opvolging - ' + label,
+      'DESCRIPTION:Persoonlijke herinnering. Geen bevestigde afspraak.',
+      'END:VEVENT');
+  }
+  output.push('END:VCALENDAR');
+  return output.join('\r\n') + '\r\n';
+}
+
+/** A separate private contact timeline: no account sync, supplier calls or persistent records. */
+function PrivateUtilityContactLog() {
+  const [entries,setEntries] = useState<PrivateUtilityContact[]>([]);
+  const [draft,setDraft] = useState<PrivateContactDraft>({ ...CONTACT_NEW });
+  const [selected,setSelected] = useState<PrivateUtilityKey|'all'>('all');
+  const [includeNotes,setIncludeNotes] = useState(false);
+  const [preview,setPreview] = useState<{
+    source:string; text:string; mode:'txt'|'json'|'ics'; notes:boolean
+  }|null>(null);
+  const [approved,setApproved]=useState(false);
+  const [feedback,setFeedback]=useState('');
+  const [pendingDelete,setPendingDelete] = useState<number|null>(null);
+  const [undoDelete,setUndoDelete] = useState<{after:string;before:PrivateUtilityContact[]}|null>(null);
+  const [pendingImport,setPendingImport] = useState<{
+    from:string; incoming:PrivateUtilityContact[]
+  }|null>(null);
+  const [approvedImport,setApprovedImport] = useState(false);
+  const [undoImport,setUndoImport] = useState<{
+    after:string;before:PrivateUtilityContact[]
+  }|null>(null);
+  const source=JSON.stringify(entries);
+  const previewCurrent=preview!==null && preview.source===source &&
+    preview.notes===includeNotes;
+  const importCurrent=pendingImport!==null && pendingImport.from===source;
+  const undoCurrent=undoImport!==null&&undoImport.after===source;
+  const deleteUndoCurrent=undoDelete!==null&&undoDelete.after===source;
+  const visible=entries.filter(entry=>selected==='all'||entry.utility===selected)
+    .sort((a,b)=>b.day.localeCompare(a.day)||b.id-a.id);
+  const noteValid=draft.note.trim().length>0 && draft.note.length<=CONTACT_NOTE_LIMIT &&
+    !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(draft.note);
+  const draftValid=handoverValidDay(draft.day) &&
+    (draft.followUp===''||handoverValidDay(draft.followUp)) && noteValid;
+  const today=new Date();
+  const dayToday=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),
+    String(today.getDate()).padStart(2,'0')].join('-');
+  const upcoming=entries.filter(item=>item.followUp!==''&&item.followUp>=dayToday)
+    .sort((a,b)=>a.followUp.localeCompare(b.followUp));
+  function editDraft(patch:Partial<PrivateContactDraft>) {
+    setDraft(previous=>({...previous,...patch}));
+    setFeedback('');
+  }
+  function save() {
+    if(!draftValid||entries.length>=CONTACT_LIMIT)return;
+    const next=Math.max(0,...entries.map(e=>e.id))+1;
+    if(next>1000000)return;
+    const contact={...draft,id:next,note:draft.note.trim()};
+    if(!privateContactValid(contact))return;
+    setEntries(previous=>[...previous,contact]);
+    setDraft({...CONTACT_NEW,utility:draft.utility});
+    setPreview(null);setApproved(false);setPendingDelete(null);
+    setPendingImport(null);setApprovedImport(false);
+    setUndoDelete(null);setUndoImport(null);
+    setFeedback('Contactmoment uitsluitend in dit tabblad toegevoegd.');
+  }
+  function remove(id:number){
+    if(pendingDelete!==id){setPendingDelete(id);setFeedback('Bevestig de verwijdering hieronder.');return}
+    setUndoDelete({after:JSON.stringify(entries.filter(e=>e.id!==id)),before:entries});
+    setEntries(previous=>previous.filter(entry=>entry.id!==id));
+    setPendingDelete(null);setPendingImport(null);setApprovedImport(false);
+    setUndoImport(null);setPreview(null);setApproved(false);
+    setFeedback('Contact verwijderd. Herstel is één keer mogelijk zolang niets verandert.');
+  }
+  function revertDelete(){
+    if(!deleteUndoCurrent||undoDelete===null)return;
+    setEntries(undoDelete.before);setUndoDelete(null);
+    setPreview(null);setApproved(false);
+    setFeedback('Je eigen contactmoment is teruggezet.');
+  }
+  function openPreview(mode:'txt'|'json'|'ics'){
+    if(!entries.length||(mode==='ics'&&!upcoming.length))return;
+    setPreview({source,mode,notes:includeNotes,
+      text:mode==='json'?privateContactBackup(entries):
+        mode==='ics'?privateContactCalendar(entries,dayToday):
+          privateContactReport(entries,includeNotes)});
+    setApproved(false);setFeedback('');
+  }
+  function download(){
+    if(!previewCurrent||!approved||preview===null)return;
+    const blob=new Blob([preview.text],{type:preview.mode==='json'
+      ?'application/json;charset=utf-8':preview.mode==='ics'
+        ?'text/calendar;charset=utf-8':'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;
+    link.download=preview.mode==='json'
+      ?'woonpoints-prive-contacten.json':preview.mode==='ics'
+        ?'woonpoints-eigen-contactopvolging.ics':'woonpoints-prive-contacten.txt';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    setApproved(false);setFeedback('Alleen het door jou gecontroleerde bestand is aangeboden.');
+  }
+  async function chooseFile(file:File|undefined){
+    if(!file)return;
+    const from=source;
+    setPendingImport(null);setApprovedImport(false);setFeedback('');
+    if(file.size>24*1024){
+      setFeedback('Herstelbestand geweigerd: groter dan 24 KiB.');return;
+    }
+    try{
+      const incoming=privateContactReadBackup(await file.text());
+      setPendingImport({from,incoming});
+    }catch{setFeedback('Geen geldig eigen Woonpoints-contactenbestand.');}
+  }
+  function doImport(){
+    if(!importCurrent||!approvedImport||pendingImport===null)return;
+    const incoming=pendingImport.incoming;
+    setUndoImport({after:JSON.stringify(incoming),before:entries});
+    setEntries(incoming);setPendingImport(null);setApprovedImport(false);
+    setPendingDelete(null);setUndoDelete(null);setPreview(null);setApproved(false);
+    setFeedback('Volledige eigen contacttijdlijn vervangen; éénmalig privéherstel beschikbaar.');
+  }
+  function revertImport(){
+    if(!undoCurrent||undoImport===null)return;
+    setEntries(undoImport.before);setUndoImport(null);setPreview(null);setApproved(false);
+    setFeedback('Eerdere tabbladcontacten hersteld.');
+  }
+  return <section className="panel" aria-labelledby="private-utility-contacts-heading"
+    style={{display:'block'}}>
+    <p className="eyebrow">MIJN EIGEN NOTITIES</p>
+    <h2 id="private-utility-contacts-heading">Contacten en opvolging bijhouden</h2>
+    <p>Leg zelf een contactmoment vast voor energie, water, internet, verzekering, gemeente
+      of parkeren. Bewaar geen wachtwoorden, rekeningnummers, identiteitsnummers of andere
+      geheime gegevens. Niets wordt naar leveranciers, overheid of WoningNet verstuurd.</p>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,250px),1fr))',
+      gap:12}}>
+      <label>Onderdeel
+        <select value={draft.utility} onChange={e=>editDraft({utility:e.target.value as PrivateUtilityKey})}>
+          {PRIVATE_UTILITIES.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      <label>Mijn contactdatum
+        <input type="date" value={draft.day} min="2000-01-01" max="2099-12-31"
+          onChange={e=>editDraft({day:e.target.value.slice(0,10)})}/>
+      </label>
+      <label>Manier van contact
+        <select value={draft.channel}
+          onChange={e=>editDraft({channel:e.target.value as PrivateContactChannel})}>
+          {CONTACT_CHANNELS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </label>
+      <label>Eigen opvolgdatum (optioneel)
+        <input type="date" value={draft.followUp} min="2000-01-01" max="2099-12-31"
+          onChange={e=>editDraft({followUp:e.target.value.slice(0,10)})}/>
+      </label>
+    </div>
+    <label style={{display:'block',marginTop:12}}>Mijn privénotitie (maximaal 200 tekens)
+      <textarea rows={3} maxLength={CONTACT_NOTE_LIMIT} value={draft.note}
+        onChange={e=>editDraft({note:e.target.value})}
+        placeholder="Bijv. zelf nagevraagd; wacht op bevestiging." />
+    </label>
+    <button type="button" disabled={!draftValid||entries.length>=CONTACT_LIMIT}
+      onClick={save}>Bewaar dit contact uitsluitend in mijn tabblad</button>
+    <p>{entries.length} van maximaal {CONTACT_LIMIT} eigen contactmomenten.
+      {''} {upcoming.length} zelf geplande opvolgmomenten vanaf vandaag.</p>
+    <label style={{display:'block'}}>Filter mijn contacten
+      <select value={selected}
+        onChange={e=>setSelected(e.target.value as PrivateUtilityKey|'all')}>
+        <option value="all">Alle zes onderdelen</option>
+        {PRIVATE_UTILITIES.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    {upcoming.length>0&&<details>
+      <summary>Mijn {upcoming.length} toekomstige zelf gekozen opvolgdatums</summary>
+      <ol>{upcoming.map(entry=><li key={entry.id}>
+        <strong>{entry.followUp}</strong> — {
+          PRIVATE_UTILITIES.find(item=>item.id===entry.utility)?.name}
+        {' '}({CONTACT_CHANNELS.find(channel=>channel.id===entry.channel)?.label})
+      </li>)}</ol>
+      <p>Alleen zelf ingevulde data; geen officiële of geboekte afspraken.</p>
+    </details>}
+    {visible.length===0?<p>Geen contactmomenten voor deze selectie.</p>:
+      <ol>{visible.map(entry=><li key={entry.id} style={{margin:'14px 0',padding:'12px 0',
+        borderBottom:'1px solid #dce7e0'}}>
+        <strong>{entry.day}</strong> · {PRIVATE_UTILITIES.find(x=>x.id===entry.utility)?.name}
+        {' '}· {CONTACT_CHANNELS.find(x=>x.id===entry.channel)?.label}
+        <p>Zelf genoteerde opvolging: {entry.followUp||'niet ingepland'}</p>
+        <details><summary>Privénotitie tonen</summary>
+          <p style={{overflowWrap:'anywhere',whiteSpace:'pre-wrap'}}>{entry.note}</p></details>
+        <button type="button" className="secondary" onClick={()=>remove(entry.id)}>
+          {pendingDelete===entry.id?'Bevestig verwijdering':'Verwijder mijn contact'}
+        </button>
+      </li>)}</ol>}
+    {deleteUndoCurrent&&<button type="button" className="secondary"
+      onClick={revertDelete}>Herstel mijn laatst verwijderde contact</button>}
+    <fieldset style={{border:'1px solid #c4d6c9',borderRadius:12,padding:14,marginTop:16}}>
+      <legend><strong>Eigen privécontacten exporteren</strong></legend>
+      <label style={{display:'flex',gap:8,alignItems:'center'}}>
+        <input type="checkbox" checked={includeNotes}
+          onChange={e=>{setIncludeNotes(e.target.checked);setApproved(false);}}/>
+        Neem vrije privénotities bewust op in het leesbare TXT-overzicht.
+      </label>
+      <p>JSON-herstelback-up bevat altijd je volledige privénotities en vereist ook
+        afzonderlijke toestemming. TXT laat die standaard weg.
+        Een optionele ICS bevat uitsluitend datums en categorieën: geen privénotities.</p>
+      <button type="button" disabled={!entries.length} onClick={()=>openPreview('txt')}>
+        Bekijk exacte TXT-export</button>
+      <button type="button" className="secondary" disabled={!entries.length}
+        onClick={()=>openPreview('json')}>Bekijk volledige JSON-herstelback-up</button>
+      <button type="button" className="secondary" disabled={!upcoming.length}
+        onClick={()=>openPreview('ics')}>Bekijk mijn opvolgagenda (ICS)</button>
+      {preview!==null&&<div style={{padding:12,marginTop:12,border:'1px solid #c4d6c9',
+        borderRadius:10}}>
+        {!previewCurrent?<p role="alert">Bron of privacykeuze gewijzigd. Controleer opnieuw.</p>:<>
+          <p><strong>Volledige exacte inhoud, vóór downloaden:</strong></p>
+          <pre style={{maxHeight:300,overflowY:'auto',whiteSpace:'pre-wrap',
+            overflowWrap:'anywhere'}}>{preview.text}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start'}}>
+            <input type="checkbox" checked={approved}
+              onChange={e=>setApproved(e.target.checked)}/>
+            Ik heb het volledige bestand gezien en kies zelf waar ik het opsla of deel.
+          </label>
+          <button type="button" disabled={!approved} onClick={download}>
+            Download precies dit gecontroleerde {preview.mode.toUpperCase()}-bestand</button>
+        </>}
+      </div>}
+    </fieldset>
+    <fieldset style={{border:'1px solid #c4d6c9',borderRadius:12,padding:14,marginTop:16}}>
+      <legend><strong>Privécontacten uit mijn JSON-back-up herstellen</strong></legend>
+      <p>Vervangt de volledige eigen tijdlijn, nooit een gedeeltelijke samenvoeging.
+        Eerst controleren, dan apart bevestigen. Maximaal 24 KiB.</p>
+      <input type="file" accept=".json,application/json"
+        aria-label="Kies eigen Woonpoints-contactenback-up"
+        onChange={e=>{const f=e.target.files?.[0];e.target.value='';void chooseFile(f);}}/>
+      {pendingImport!==null&&<div style={{marginTop:12}}>
+        {!importCurrent?<p role="alert">Huidige contacten gewijzigd. Kies de back-up opnieuw.</p>:<>
+          <p>Vervang <strong>{entries.length}</strong> huidige contacten door
+            <strong> {pendingImport.incoming.length}</strong> contacten uit je bestand.</p>
+          <details><summary>Bekijk alle vervangende privécontacten</summary>
+            <pre style={{maxHeight:260,overflowY:'auto',whiteSpace:'pre-wrap',
+              overflowWrap:'anywhere'}}>
+              {privateContactReport(pendingImport.incoming,true)}
+            </pre></details>
+          <label style={{display:'flex',gap:8,alignItems:'start'}}>
+            <input type="checkbox" checked={approvedImport}
+              onChange={e=>setApprovedImport(e.target.checked)}/>
+            Ik heb de vervangende volledige tijdlijn gecontroleerd en wil mijn
+            huidige tabbladcontacten vervangen.
+          </label>
+          <button type="button" disabled={!approvedImport} onClick={doImport}>
+            Vervang mijn tijdlijn met de gecontroleerde back-up</button>
+        </>}
+      </div>}
+      {undoCurrent&&<button type="button" className="secondary" onClick={revertImport}>
+        Herstel éénmalig mijn vorige contacttijdlijn</button>}
+    </fieldset>
+    <p role="status" aria-live="polite">{feedback}</p>
+    <p>Geen automatische verificatie, communicatie, lokale opslag of synchronisatie.
+      Een bewust gedownload agenda-item kan door je agenda-app worden gesynchroniseerd;
+      ook dan zijn deze datums nooit officiële afspraken.
+      Bij sluiten of vernieuwen van het tabblad verdwijnt dit log; zelf gedownloade
+      bestanden kunnen persoonlijke details bevatten en vallen onder jouw beheer.</p>
   </section>;
 }
 
