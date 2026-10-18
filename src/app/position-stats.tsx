@@ -4677,7 +4677,21 @@ export function PrivateCommuteComparison() {
   });
   const [report,setReport]=useState<string|null>(null);
   const [message,setMessage]=useState('');
+  const [subjectiveTimeEuro,setSubjectiveTimeEuro]=useState('0');
   const a=calculateCommute(scenarios.A), b=calculateCommute(scenarios.B);
+  const timeInput=subjectiveTimeEuro.trim().replace(',', '.');
+  const timeValue=/^(?:\d+)(?:\.\d{1,2})?$/.test(timeInput)
+    ? Number(timeInput) : NaN;
+  const timeValid=Number.isFinite(timeValue)&&timeValue>=0&&timeValue<=100;
+  // Compare equal, self-entered travel patterns. These are financial break-even
+  // figures only, not real housing-market prices or travel-time monetisation.
+  const monthlyTravelSavingB=a&&b?(a.travelYear-b.travelYear)/12:null;
+  const monthlyHousingPremiumB=a&&b?(b.housingYear-a.housingYear)/12:null;
+  const extraHousingHeadroomB=monthlyTravelSavingB!==null&&monthlyHousingPremiumB!==null
+    ?monthlyTravelSavingB-monthlyHousingPremiumB:null;
+  const savedHoursB=a&&b?a.hoursYear-b.hoursYear:null;
+  const subjectiveYearDifference=a&&b&&timeValid
+    ?b.combinedYear-a.combinedYear+(b.hoursYear-a.hoursYear)*timeValue:null;
   const update=(side:'A'|'B', field:keyof CommuteScenario,value:string)=>{
     setScenarios(prev=>({...prev,[side]:{...prev[side],[field]:value}}));
     setReport(null);setMessage('');
@@ -4690,7 +4704,7 @@ export function PrivateCommuteComparison() {
     ['oneWayMinutes','Enkele reistijd per reisdag (min)','45']
   ];
   function prepareReport(){
-    if(!a||!b){setMessage('Corrigeer eerst beide scenario’s.');return;}
+    if(!a||!b||!timeValid){setMessage('Corrigeer beide scenario’s en je eigen tijdwaarde.');return;}
     const lines=[
       'WOONPOINTS · EIGEN WOON-WERKVERGELIJKING',
       'Alle bedragen en reistijden zijn zelf ingevulde aannames, geen extern gecontroleerde prijzen.',
@@ -4713,10 +4727,22 @@ export function PrivateCommuteComparison() {
         'Woonkosten plus eigen reizen per jaar: '+commuteEuro(c.combinedYear),
         '');
     }
-    lines.push('JAARVERSCHIL (WONING B MIN A)',
+    lines.push('BREAKEVEN EIGEN WOON-WERKKEUZE',
+      'Jaarlijkse reistijdwinst B tegenover A: '+commuteNumber(savedHoursB!)+' uur',
+      'Maximale EXTRA maandelijkse woonlast B die puur door het reisbudget wordt gecompenseerd: '+
+        commuteEuro(monthlyTravelSavingB!),
+      'Werkelijk ingevulde extra woonlast B per maand: '+commuteEuro(monthlyHousingPremiumB!),
+      'Resterende maandelijkse financiële marge B tegenover A: '+
+        commuteEuro(extraHousingHeadroomB!),
+      'Negatieve maximaal-extra-woonlast betekent dat B een woonkostendaling nodig heeft om financieel gelijk te komen.',
+      'Persoonlijk gekozen tijdwaarde: '+commuteEuro(timeValue)+'/uur (GEEN loon- of marktwaarde)',
+      'Alleen ter persoonlijke afweging: B-min-A jaarlijkse kosten incl. deze subjectieve tijdwaarde: '+
+        commuteEuro(subjectiveYearDifference!),
+      '',
+      'JAARVERSCHIL (WONING B MIN A)',
       'Totale jaarlijkse eigen kosten: '+commuteEuro(b.combinedYear-a.combinedYear),
       'Reisuren per jaar: '+commuteNumber(b.hoursYear-a.hoursYear),
-      'Dit model rekent geen loonwaarde van tijd, subsidies of fiscale voordelen mee.',
+      'De subjectieve tijdwaarde is een handmatige voorkeur, geen loonwaarde of fiscale berekening.',
       'Gebruikte werkdagen zijn handmatig gekozen en missen ziekte/feestdagen en variabele ritten.');
     setReport(lines.join('\n')+'\n');
     setMessage('Controleer de concepttekst. Pas na een tweede klik wordt een bestand aangeboden.');
@@ -4786,7 +4812,7 @@ export function PrivateCommuteComparison() {
             maxLength={10} value={s.employerEuro}
             onChange={e=>update(side,'employerEuro',e.target.value)} />
           {!c?<p role="alert">Controleer de getallen: geen negatieve waarden,
-            maximaal 7 reisdagen, 53 weken, 300 minuten en 10.000 commuteEuro huur.
+            maximaal 7 reisdagen, 53 weken, 300 minuten en €10.000 huur.
             Geldbedragen mogen maximaal twee decimalen hebben.</p>:
             <dl>
               <div><dt>Eigen reisdagen per jaar</dt><dd>{c.days}</dd></div>
@@ -4808,12 +4834,55 @@ export function PrivateCommuteComparison() {
         werkgeversvergoeding wordt nooit hoger afgetrokken dan de
         geraamde reiskosten per dag. Er is geen belastingberekening.</p>
     </div>}
+    {a&&b&&<div className="month-csv-confirm" aria-labelledby="commute-breakeven-heading">
+      <h3 id="commute-breakeven-heading">Wanneer verdient de kortere reis zichzelf terug?</h3>
+      <p>Vergelijk twee volledig zelf gekozen woning- en reisscenario’s.
+        De maximale extra woonlast van B komt uitsluitend uit het verschil
+        tussen de **eigen netto reiskosten** van A en B. Werkgeververgoeding
+        is per scenario al meegenomen; woonlasten worden los getoond.</p>
+      <dl>
+        <div><dt>Reiskostenbesparing B per maand</dt>
+          <dd>{commuteEuro(monthlyTravelSavingB!)}</dd></div>
+        <div><dt>Werkelijk ingevoerde extra woonlast B per maand</dt>
+          <dd>{commuteEuro(monthlyHousingPremiumB!)}</dd></div>
+        <div><dt>Overgebleven maandelijkse financiële marge voor B</dt>
+          <dd><strong>{commuteEuro(extraHousingHeadroomB!)}</strong></dd></div>
+        <div><dt>Reisuren die B per jaar uitspaart</dt>
+          <dd>{commuteNumber(savedHoursB!)} uur</dd></div>
+      </dl>
+      <p>{monthlyTravelSavingB!>=0
+        ?'Met deze reiskosten kan B maximaal '+commuteEuro(monthlyTravelSavingB!)+
+          ' extra woonlast per maand dragen voordat het totale eigen kostenplaatje A evenaart.'
+        :'B veroorzaakt in jouw scenario hogere reiskosten. Om A financieel te evenaren moet B minstens '+
+          commuteEuro(-monthlyTravelSavingB!)+' lagere maandelijkse woonlast hebben.'}</p>
+      <p>{extraHousingHeadroomB!>=0
+        ?'In dit scenario is B op alleen woon- plus reiskosten goedkoper of gelijk.'
+        :'In dit scenario is A op alleen woon- plus reiskosten goedkoper.'}</p>
+      <label htmlFor="commute-time-preference">
+        Optionele persoonlijke waarde van één reisuur (€0–€100) · geen salaris of belasting
+      </label>
+      <input id="commute-time-preference" type="text" inputMode="decimal"
+        maxLength={8} value={subjectiveTimeEuro}
+        onChange={e=>{setSubjectiveTimeEuro(e.target.value);setReport(null);setMessage('');}}/>
+      {timeValid?<div aria-live="polite">
+        <p>Alleen als persoonlijke afweging: het jaarverschil B − A,
+          inclusief {commuteEuro(timeValue)} per geschat reisuur, wordt
+          <strong> {commuteEuro(subjectiveYearDifference!)}</strong>.
+          Negatief is voordeliger voor B binnen je eigen voorkeuren.</p>
+        <p>De waarde van je tijd is bewust géén werkelijk betaalde uitgave.
+          Hij verandert de woon-/reiskostenberekening hierboven niet.</p>
+      </div>:<p role="alert">Geef een getal tussen 0 en 100 met maximaal twee decimalen.
+        Een ongeldige persoonlijke tijdwaarde beïnvloedt de basiskosten niet.</p>}
+      <p>Geen route- of offertegarantie: reisdagen, vervoer, reiskosten en
+        woonlasten kunnen veranderen. Verschillen in werkweken tussen A en B
+        zijn jouw aannames, geen geobserveerd woon-werkverkeer.</p>
+    </div>}
     <div className="month-csv-confirm">
       <h3>Bewaar een eigen berekening</h3>
       <p>Maak optioneel een leesbaar TXT-concept van je eigen aannames en
         uitkomsten. Controleer dat eerst; downloaden vraagt een tweede klik.
         Er worden geen namen, adressen of accounts verwerkt.</p>
-      <button type="button" onClick={prepareReport} disabled={!a||!b}>
+      <button type="button" onClick={prepareReport} disabled={!a||!b||!timeValid}>
         Toon privésamenvatting als concept…
       </button>
       {report!==null&&<div role="group" aria-label="Bevestig lokale reiskostenexport">
@@ -4826,7 +4895,7 @@ export function PrivateCommuteComparison() {
     </div>
     <button type="button" className="secondary" onClick={()=>{
       setScenarios({A:{...commuteDefaults.A},B:{...commuteDefaults.B}});
-      setReport(null);setMessage('Voorbeelden hersteld. Eventuele eigen invoer op dit scherm gewist.');
+      setSubjectiveTimeEuro('0');setReport(null);setMessage('Voorbeelden hersteld. Eventuele eigen invoer op dit scherm gewist.');
     }}>Wis eigen invoer en herstel voorbeelden</button>
     <p role="status">{message}</p>
     <p>Alles blijft tijdelijk in dit browsertabblad. Verversen of sluiten wist
