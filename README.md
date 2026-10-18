@@ -1615,3 +1615,20 @@ serverrequest, account-/WoningNet-verbinding, blijvende browseropslag, nieuwe
 bestandsrechten of automatische toestemming. Een browserrefresh wist
 niet-geëxporteerde wijzigingen in beide modules. Voor bewust bewaren bestaan
 in de labelstudio de afzonderlijk goedgekeurde JSON-back-up en CSV-/PDF-acties.
+
+
+### Dooscode-echte afdruk en selectieve A4-vellen (18 oktober 2026)
+
+In de labelstudio `/#dozenlabels` worden etiketten afkomstig uit de paklijst
+met hun **daadwerkelijke eigen dooscode** afgedrukt, bijvoorbeeld `DOOS K-03`.
+Die code wordt niet meer verborgen achter de generieke volgnummertekst `DOOS
+1 / 1`. Vrije paklijstomschrijvingen reizen nog steeds niet automatisch mee.
+Eigen handmatig gemaakte reeksen zonder een herkenbare dooscode behouden hun
+normale `DOOS 2 / 5`-volgnummer.
+
+De printvoorvertoning heeft nu filters voor kamer én urgentie. Alleen de actuele
+selectie verschijnt in de A4-voorvertoning en de browser-/PDF-afdruk; lege
+selecties kunnen niet geprint worden. De filters veranderen **nooit** de
+onderliggende labels, de volledige JSON-back-up of het volledige, apart
+privacy-goedgekeurde CSV-overzicht. Selectie en status zijn tijdelijk in het
+tabblad. Gebruik de complete back-up om werk later voort te zetten.
