@@ -64,7 +64,8 @@ export function ManualPositionHistory({
     text: string; count: number; originalSource: string
   } | null>(null);
   const [positionImportUndo, setPositionImportUndo] = useState<{
-    original: string; imported: string; mode: 'append'|'replace'
+    original: string; imported: string; mode: 'append'|'replace';
+    origin: 'csv'|'journal'
   } | null>(null);
   const positionImportSequence = useRef(0);
   const [fileMessage, setFileMessage] = useState('');
@@ -75,6 +76,13 @@ export function ManualPositionHistory({
   const importedPositionLines = pendingImport?.text.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
   const existingPositionLines = input.split('\n').map(v=>v.trim()).filter(Boolean);
   const samePositionLines = importedPositionLines.filter(v=>existingPositionLines.includes(v)).length;
+  const journalOfferLines=journalOffer?.data.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
+  const journalOfferCombined=[input.trim(),journalOffer?.data.trim()??''].filter(Boolean).join('\n');
+  const journalOfferOverlap=journalOfferLines.filter(v=>existingPositionLines.includes(v)).length;
+  const canAppendJournalPositions=Boolean(journalOffer && !pendingImport &&
+    journalOfferCombined.length<=8192 &&
+    existingPositionLines.length+journalOfferLines.length<=120);
+
   const combinedPositionText = [input.trim(),pendingImport?.text.trim()??'']
     .filter(Boolean).join('\n');
   const canAppendPositionImport = Boolean(pendingImport && importSourceCurrent &&
@@ -115,13 +123,34 @@ export function ManualPositionHistory({
     try {
       if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
         throw new Error('Not a supported month position list');
-      setPositionImportUndo({original:input,imported:candidate,mode});
+      setPositionImportUndo({original:input,imported:candidate,mode,origin:'csv'});
       setInput(candidate);
       setPendingImport(null);
       setFileMessage(mode==='append'?'CSV-posities toegevoegd; vorige tekst tijdelijk herstelbaar.':
         'Maandposities bewust vervangen; vorige tekst tijdelijk herstelbaar.');
     }catch{
       setFileMessage('De combinatie voldoet niet aan de grenzen voor geldige datums, posities, 120 regels of 24 maanden. Niets aangepast.');
+    }
+  }
+  function transferJournalPositions(mode:'append'|'replace'){
+    if(!journalOffer||pendingImport)return;
+    if(mode==='append'&&!canAppendJournalPositions){
+      setFileMessage('Aanvullen niet mogelijk door te veel posities of tekst. Je huidige gegevens blijven staan.');
+      return;
+    }
+    const candidate=mode==='append'?journalOfferCombined:journalOffer.data;
+    try{
+      if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
+        throw new Error('Invalid manual history');
+      setPositionImportUndo({original:input,imported:candidate,mode,origin:'journal'});
+      setInput(candidate);
+      setPendingImport(null);
+      setFileMessage(mode==='append'?
+        'Eigen dagboekposities veilig toegevoegd; eerdere grafiekgegevens behouden.':
+        'Posities bewust vervangen vanuit eigen dagboek; vorige tekst tijdelijk herstelbaar.');
+      onJournalDecision?.();
+    }catch{
+      setFileMessage('Overdracht niet mogelijk binnen de geldige datum-, positie- en maandgrenzen. Huidige historie behouden.');
     }
   }
   function undoPositionImport() {
