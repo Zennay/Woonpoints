@@ -5066,6 +5066,35 @@ export function PrivateMovingHelperRoster(){
   const [pendingRestore,setPendingRestore]=useState<PrivateMovingHelperArchive|null>(null);
   const [confirmReset,setConfirmReset]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'helpers',data:{helpers}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[helpers]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const raw=(event as CustomEvent<unknown>).detail;
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+      const envelope=raw as Record<string,unknown>;
+      if(envelope.format!=='woonpoints-private-moving-workspace'||
+        envelope.version!==5||!envelope.helpers||
+        typeof envelope.helpers!=='object'||Array.isArray(envelope.helpers))return;
+      const nested=envelope.helpers as Record<string,unknown>;
+      if(Object.keys(nested).join('|')!=='helpers')return;
+      const candidate={format:'woonpoints-private-moving-helpers',version:1,
+        helpers:nested.helpers};
+      if(!privateHelperValidArchive(candidate))return;
+      setHelpers(candidate.helpers);setDraft(privateHelperBlank());setEditing(null);
+      setPendingDelete(null);setPendingBackup(null);setPendingCalendar(null);
+      setPendingBriefing(null);setPendingRestore(null);setConfirmReset(false);
+      setNotice('Eigen verhuishulp uit v5-werkmap hersteld. Er is niemand automatisch benaderd.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
   const counter=useRef(0);
   const signature=JSON.stringify(helpers);
   const confirmed=helpers.filter(row=>row.state==='Bevestigd').length;

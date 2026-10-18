@@ -1191,3 +1191,39 @@ zelf gemarkeerde status. Onbevestigde afspraken blijven expliciet
 
 Dit is een persoonlijke planning voor eigen verhuishulp, geen
 garantie op aanwezigheid, boeking, verzekering of voltooide verhuizing.
+
+
+## Gecombineerde privé-verhuiswerkmap v5 · 8 onderdelen
+
+**Je verhuisoverzicht in één werkmap** bewaart nu ook de losse
+**Wie helpt wanneer?**-hulpplanning, inclusief maximaal twaalf eigen
+aliases, taken, datums/tijden, persoonlijke statussen en korte notities.
+Samen met de bestaande zeven modules en de zelfgenoteerde
+laad-/aflevermarkeringen ontstaat versie-5 JSON.
+
+- De acht formulieren publiceren alleen binnen hetzelfde browsertabblad
+  tijdelijke snapshots. **Volledige v5-export** laat eerst de aantallen
+  per onderdeel zien en biedt pas na een tweede klik één privé-JSON.
+- **V5-herstel** valideert bekende sleutels, datums/tijden,
+  rol/statuswaarden, dubbele IDs, eigen privacyregels en de gesloten
+  status-/doosgrenzen van de paklijst. Het bestand blijft begrensd op
+  64 KiB; zonder expliciete vervangingsbevestiging blijven alle
+  huidige gegevens onaangeraakt.
+- Herstel van een oude **v1, v2, v3 of v4** behoudt je huidige
+  helpersinformatie. V1 vervangt alleen de oorspronkelijke drie
+  modules; v2 alleen zes, v3 zeven inclusief paklijst zonder
+  transportmarkeringen; v4 zeven inclusief transport. Alleen v5
+  bevat de eigen hulpplanning als achtste module.
+- De prioriteitsinbox laat nog onbevestigde of niet-ingeplande
+  eigen hulp zien. Het optionele, volledig vooraf in te zien
+  TXT-verhuisdossier kan apart **verhuishulp** meenemen,
+  inclusief roepnamen, eigen tijdvakken, taken en opmerkingen.
+  Deze privacygevoelige sectie staat standaard UIT.
+- Er is geen automatische opslag, API-aanroep, uitnodiging,
+  WoningNet-koppeling, vervoerdersscan of juridisch verifieerbare
+  afspraak. Bestanden kunnen buiten Woonpoints via een door jou
+  gekozen opslaglocatie synchroniseren.
+
+Controleer zelf afspraken, woningrechten en betalingen bij de
+betrokken organisaties/personen. De bestaande `BOT_DRY_RUN=true`-
+en autorisatievoorwaarden blijven onaangeraakt.
