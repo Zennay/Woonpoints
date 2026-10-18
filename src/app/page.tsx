@@ -22,6 +22,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-viewing-title',title:'Bezichtiging',category:'woning'},
   {id:'private-photo-comparison-heading',title:'Fotovergelijking',category:'woning'},
   {id:'private-plan-title',title:'Planner',category:'essentieel'},
+  {id:'private-journey-heading',title:'Mijn woonreis',category:'essentieel'},
   {id:'private-moving-heading',title:'Verhuizen',category:'verhuizen'},
   {id:'private-moving-volume-heading',title:'Verhuisvolume',category:'verhuizen'},
   {id:'private-moving-workspace-heading',title:'Verhuiswerkmap',category:'verhuizen'},
@@ -127,6 +128,8 @@ export default function HomePage() {
         <p>Alle categorieën en zoekwoorden werken uitsluitend in dit tabblad; er worden geen
           persoonlijke gegevens naar een server verstuurd.</p>
       </nav>
+
+      <PrivateHousingJourney />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
         <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
@@ -5237,3 +5240,214 @@ function PrivateUtilityContactLog({intent}:{
   </section>;
 }
 
+
+
+/**
+ * Handmatige woonreis. Deze status is uitsluitend een eigen afvinklijst:
+ * geen WoningNet-account, taakbewijs, serverpersistente opslag of toestemming.
+ */
+type JourneyPhase = 'zoeken' | 'kiezen' | 'voorbereiden' | 'verhuizen' | 'nazorg';
+type JourneyStep = { id: string; label: string; target: string; help: string };
+const HOUSING_JOURNEY: { id: JourneyPhase; label: string; detail: string; steps: JourneyStep[] }[] = [
+  { id: 'zoeken', label: '1 · Zoeken', detail: 'Breng je eigen woonzoektocht in kaart.', steps: [
+    {id:'maanddoel',label:'Bekijk mijn maanddoel',target:'manual-progress-heading',help:'Leg zelf vast wat je al hebt gedaan; dit bewijst geen geldige reactie.'},
+    {id:'maandplan',label:'Maak een reactieplanning',target:'private-reaction-pacing-heading',help:'Verdeel je eigen acties zonder automatisch te reageren.'},
+    {id:'dagboek',label:'Werk mijn reactiedagboek bij',target:'reaction-journal-title',help:'Alleen zelf ingevoerde, niet-geverifieerde waarnemingen.'},
+    {id:'posities',label:'Bekijk mijn positiegeschiedenis',target:'monthly-positions-heading',help:'Gebruik alleen de handmatig ingevoerde resultaten.'}
+  ]},
+  { id: 'kiezen', label: '2 · Kiezen', detail: 'Vergelijk eigen opties voordat je beslist.', steps: [
+    {id:'woningen',label:'Vergelijk woningen',target:'housing-shortlist-heading',help:'Persoonlijke voorkeuren, geen officiële toewijzingskans.'},
+    {id:'woonkosten',label:'Controleer mijn woonkosten',target:'private-budget-title',help:'Bereken de lasten met eigen aannames.'},
+    {id:'reistijd',label:'Vergelijk woon-werkreistijd',target:'private-commute-heading',help:'Gebruik je eigen reistijdschattingen.'},
+    {id:'bezichtiging',label:'Bereid een bezichtiging voor',target:'private-viewing-title',help:'Maak een eigen checklist zonder extern contact.'}
+  ]},
+  { id: 'voorbereiden', label: '3 · Voorbereiden', detail: 'Maak je eigen verhuizing beheersbaar.', steps: [
+    {id:'planner',label:'Werk de actieplanner bij',target:'private-plan-title',help:'Controleer zelf of afspraken definitief zijn.'},
+    {id:'werkmap',label:'Bewaar mijn verhuiswerkmap',target:'private-moving-workspace-heading',help:'Kies zelf wanneer je privégegevens exporteert.'},
+    {id:'kosten',label:'Werk mijn kostenoverzicht bij',target:'private-moving-expenses-heading',help:'Werkelijke bedragen zijn alleen wat je zelf hebt vastgelegd.'},
+    {id:'documenten',label:'Controleer benodigde documenten',target:'private-document-readiness-heading',help:'Geen automatische beoordeling door verhuurder of gemeente.'}
+  ]},
+  { id: 'verhuizen', label: '4 · Verhuizen', detail: 'Regel de overdracht en de verhuisdag.', steps: [
+    {id:'paklijst',label:'Controleer de paklijst',target:'private-packing-heading',help:'Controleer zelf de spullen en hoeveelheden.'},
+    {id:'helpers',label:'Stem mijn verhuishulp af',target:'private-moving-helpers-heading',help:'Geen automatische berichten naar helpers.'},
+    {id:'verhuisdag',label:'Plan mijn verhuisdag',target:'private-moving-day-heading',help:'Geen externe reserveringen of bevestigingen.'},
+    {id:'sleutels',label:'Maak een eigen sleutelrapport',target:'private-handover-heading',help:'Alleen persoonlijke overdrachtsnotities.'}
+  ]},
+  { id: 'nazorg', label: '5 · Nazorg', detail: 'Houd eigen controlepunten bij na de verhuizing.', steps: [
+    {id:'meters',label:'Controleer meterstanden',target:'private-meter-handover-heading',help:'Geen automatische leveranciersmelding.'},
+    {id:'nuts',label:'Controleer nutsvoorzieningen',target:'private-utility-transfer-heading',help:'Contracten worden niet namens jou gewijzigd.'},
+    {id:'nazorgplan',label:'Bekijk mijn nazorgweekplan',target:'nazorg-weekplan-title',help:'Datums zijn zelfgekozen, niet officieel vastgesteld.'},
+    {id:'gebreken',label:'Werk mijn nazorgdossier bij',target:'nazorg',help:'Eigen waarnemingen; er wordt geen melding verstuurd.'}
+  ]}
+];
+const JOURNEY_IDS = new Set(HOUSING_JOURNEY.flatMap(phase => phase.steps.map(step => step.id)));
+const JOURNEY_BACKUP_KIND = 'woonpoints-private-woonreis';
+const JOURNEY_BACKUP_LIMIT = 4096;
+
+function PrivateHousingJourney() {
+  const [checked,setChecked] = useState<string[]>([]);
+  const [selectedPhase,setSelectedPhase] = useState<JourneyPhase>('zoeken');
+  const [onlyOpen,setOnlyOpen] = useState(false);
+  const [pendingImport,setPendingImport] = useState<string[] | null>(null);
+  const [undoImport,setUndoImport] = useState<string[] | null>(null);
+  const [exportPreview,setExportPreview] = useState(false);
+  const [confirmReset,setConfirmReset] = useState(false);
+  const [message,setMessage] = useState('');
+  const total = JOURNEY_IDS.size;
+  const complete = checked.length;
+  const currentPhase = HOUSING_JOURNEY.find(phase => phase.id === selectedPhase)!;
+  const next = HOUSING_JOURNEY.flatMap(phase => phase.steps)
+    .find(step => !checked.includes(step.id));
+  const backup = JSON.stringify({
+    kind: JOURNEY_BACKUP_KIND, version: 1,
+    checked: HOUSING_JOURNEY.flatMap(phase => phase.steps)
+      .filter(step => checked.includes(step.id)).map(step => step.id)
+  },null,2);
+
+  function changeProgress(nextChecked: string[]) {
+    setChecked(nextChecked);
+    setPendingImport(null);
+    setUndoImport(null);
+    setExportPreview(false);
+    setConfirmReset(false);
+    setMessage('Eigen voortgang bijgewerkt. Niets is extern bevestigd of opgeslagen.');
+  }
+  function toggleStep(id: string) {
+    changeProgress(checked.includes(id) ? checked.filter(item => item !== id) : [...checked,id]);
+  }
+  async function readBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    setPendingImport(null);
+    setUndoImport(null);
+    setMessage('');
+    if (!file) return;
+    try {
+      if (file.size > JOURNEY_BACKUP_LIMIT || file.size === 0) throw new Error('size');
+      const raw: unknown = JSON.parse(await file.text());
+      if (!isRecord(raw) || !exactKeys(raw,['kind','version','checked']) ||
+          raw.kind !== JOURNEY_BACKUP_KIND || raw.version !== 1 ||
+          !Array.isArray(raw.checked) || raw.checked.length > total ||
+          !raw.checked.every((id: unknown) => typeof id === 'string' && JOURNEY_IDS.has(id)) ||
+          new Set(raw.checked).size !== raw.checked.length) throw new Error('schema');
+      setPendingImport(raw.checked as string[]);
+      setExportPreview(false);
+      setConfirmReset(false);
+      setMessage('Bestand gecontroleerd. Je huidige voortgang is nog niet vervangen.');
+    } catch {
+      setMessage('Herstel geweigerd: dit is geen geldige, kleine Woonpoints-woonreisback-up. Bestaande voortgang behouden.');
+    }
+  }
+  function downloadBackup() {
+    if (!exportPreview) return;
+    const blob = new Blob([backup+'\n'],{type:'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'woonpoints-mijn-woonreis.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setMessage('Privébestand aangeboden aan je browser. Bewaar het zelf op een veilige plek.');
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url),1000);
+      setExportPreview(false);
+    }
+  }
+  const shownSteps = currentPhase.steps.filter(step => !onlyOpen || !checked.includes(step.id));
+  const phaseDone = currentPhase.steps.filter(step => checked.includes(step.id)).length;
+
+  return <section className="panel" aria-labelledby="private-journey-heading" style={{display:'block'}}>
+    <p className="eyebrow">MIJN WOONREIS · HANDMATIG</p>
+    <h2 id="private-journey-heading">Van woning zoeken tot nazorg</h2>
+    <p>Een persoonlijke routekaart langs de bestaande Woonpoints-hulpmiddelen.
+      Vink zelf stappen af; dit zegt niets over geldige WoningNet-reacties, afspraken,
+      vergunningen of woningtoewijzing. Je voortgang blijft uitsluitend in dit browsertabblad.</p>
+    <div role="status" aria-live="polite">
+      <strong>{complete} van {total} stappen zelf afgevinkt</strong>
+      <p><progress value={complete} max={total} aria-label="Eigen woonreisvoortgang" style={{width:'100%',maxWidth:560}}/>
+        {' '}{Math.round(100*complete/total)}% persoonlijke voortgang</p>
+      {next ? <p>Volgende open stap: <a href={'#'+next.target}>{next.label} →</a></p> :
+        <p>Alle persoonlijke stappen afgevinkt. Controleer belangrijke zaken nog zelf bij de betreffende organisatie.</p>}
+    </div>
+    <div role="group" aria-label="Fasen van de woonreis"
+      style={{display:'flex',gap:8,flexWrap:'wrap',margin:'16px 0'}}>
+      {HOUSING_JOURNEY.map(phase => {
+        const done = phase.steps.filter(step => checked.includes(step.id)).length;
+        return <button type="button" key={phase.id} aria-pressed={selectedPhase===phase.id}
+          onClick={()=>setSelectedPhase(phase.id)}
+          style={{minHeight:44,padding:'8px 12px',borderRadius:8,
+            border:'1px solid #355e42',
+            background:selectedPhase===phase.id?'#355e42':'white',
+            color:selectedPhase===phase.id?'white':'#355e42'}}>
+          {phase.label} · {done}/{phase.steps.length}
+        </button>;
+      })}
+    </div>
+    <h3>{currentPhase.label}</h3>
+    <p>{currentPhase.detail} <strong>{phaseDone}/{currentPhase.steps.length}</strong> zelf gedaan.</p>
+    <label style={{display:'flex',alignItems:'center',gap:8,margin:'12px 0'}}>
+      <input type="checkbox" checked={onlyOpen}
+        onChange={event=>setOnlyOpen(event.target.checked)}/> Toon alleen open stappen
+    </label>
+    {shownSteps.length===0?<p>In deze fase zijn geen open stappen meer.</p>:
+      <ul style={{listStyle:'none',padding:0,display:'grid',gap:10}}>
+        {shownSteps.map(step=><li key={step.id} style={{padding:12,border:'1px solid #d4dfd5',borderRadius:8}}>
+          <label style={{display:'flex',alignItems:'center',gap:10,fontWeight:700}}>
+            <input type="checkbox" checked={checked.includes(step.id)}
+              onChange={()=>toggleStep(step.id)} aria-label={'Zelf voltooid: '+step.label}/>
+            {step.label}
+          </label>
+          <p style={{margin:'6px 0'}}>{step.help}</p>
+          <a href={'#'+step.target}>Open bestaand onderdeel ↓</a>
+        </li>)}
+      </ul>}
+    <details style={{marginTop:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>Zelf bewaren, terugzetten of wissen</summary>
+      <p>Een bestand bevat uitsluitend de twintig stap-ID’s die je zelf hebt afgevinkt.
+        Er worden geen notities uit andere onderdelen, accounts of contactgegevens verzameld.
+        Een door jou gekozen opslaglocatie kan extern synchroniseren.</p>
+      <button type="button" onClick={()=>{setExportPreview(!exportPreview);setPendingImport(null);}}
+        style={{minHeight:44,marginRight:8}}>Bekijk privéback-up</button>
+      {exportPreview && <div>
+        <p>Controleer de exacte inhoud voordat je een eigen bestand opslaat:</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:200,overflow:'auto'}}>{backup}</pre>
+        <button type="button" onClick={downloadBackup} style={{minHeight:44}}>Download dit gecontroleerde JSON-bestand</button>
+        <button type="button" onClick={()=>setExportPreview(false)} style={{minHeight:44,marginLeft:8}}>Annuleren</button>
+      </div>}
+      <label style={{display:'block',margin:'16px 0 6px'}} htmlFor="journey-import">Open eigen woonreisback-up (max. 4 KiB)</label>
+      <input id="journey-import" type="file" accept=".json,application/json"
+        onChange={readBackup} style={{maxWidth:'100%'}}/>
+      {pendingImport && <div>
+        <p>Te herstellen: <strong>{pendingImport.length} afgevinkte stappen</strong>.
+          Momenteel {complete}; na vervangen {pendingImport.filter(id=>!checked.includes(id)).length} nieuw
+          afgevinkt en {checked.filter(id=>!pendingImport.includes(id)).length} opnieuw open.
+          Dit vervangt alleen de woonreis, niet andere Woonpoints-notities.</p>
+        <button type="button" onClick={()=>{
+          setUndoImport([...checked]);setChecked([...pendingImport]);setPendingImport(null);
+          setExportPreview(false);setConfirmReset(false);
+          setMessage('Eigen woonreis hersteld. Eenmalig terugdraaien mogelijk tot een volgende wijziging.');
+        }} style={{minHeight:44}}>Vervang mijn woonreis</button>
+        <button type="button" onClick={()=>setPendingImport(null)}
+          style={{minHeight:44,marginLeft:8}}>Behoud huidige voortgang</button>
+      </div>}
+      {undoImport && <button type="button" onClick={()=>{
+        setChecked(undoImport);setUndoImport(null);setMessage('Vorige woonreisvoortgang hersteld.');
+      }} style={{minHeight:44,marginTop:12}}>Draai laatste import eenmalig terug</button>}
+      <div style={{marginTop:16}}>
+        <button type="button" onClick={()=>{setConfirmReset(true);setPendingImport(null);setExportPreview(false);}}
+          style={{minHeight:44}}>Wis mijn woonreisvoortgang</button>
+        {confirmReset && <div>
+          <p>Weet je zeker dat je de {complete} zelf afgevinkte stappen wilt wissen?
+            Alleen deze routekaart wordt gewist.</p>
+          <button type="button" onClick={()=>changeProgress([])}
+            style={{minHeight:44}}>Ja, wis mijn routekaart</button>
+          <button type="button" onClick={()=>setConfirmReset(false)}
+            style={{minHeight:44,marginLeft:8}}>Annuleren</button>
+        </div>}
+      </div>
+    </details>
+    {message && <p role="status" aria-live="polite">{message}</p>}
+  </section>;
+}
