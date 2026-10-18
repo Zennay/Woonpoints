@@ -1272,6 +1272,39 @@ function calculatePrivateCosts(input: CostDraft): CostResult | null {
     firstYear: monthly * 12 + start, followingYear: monthly * 12};
 }
 
+
+/** Voluntary, session-only scenario modelling; no lending, benefits or eligibility claims. */
+type BudgetDraft = {income: string; essentials: string; savings: string; dip: string; rise: string};
+type BudgetInputs = {income: number; essentials: number; savings: number; dip: number; rise: number};
+type BudgetForecast = {
+  availableAfterMove: number; baselineMonthly: number; stressedMonthly: number;
+  baselineYear: number; stressedYear: number; stressedRunwayMonths: number | null;
+};
+function readBudgetInputs(draft: BudgetDraft): BudgetInputs | null {
+  const income = readCostCents(draft.income, 1, 20000);
+  const essentials = readCostCents(draft.essentials, 0, 20000);
+  const savings = readCostCents(draft.savings, 0, 50000);
+  if (!/^(?:0|[1-9]\d{0,2})$/.test(draft.dip) || !/^(?:0|[1-9]\d{0,2})$/.test(draft.rise)) return null;
+  const dip = Number(draft.dip);
+  const rise = Number(draft.rise);
+  if (income === null || essentials === null || savings === null || dip > 90 || rise > 100) return null;
+  return {income, essentials, savings, dip, rise};
+}
+function calculateBudgetForecast(cost: CostResult, plan: BudgetInputs): BudgetForecast {
+  const availableAfterMove = plan.savings - cost.start;
+  const baselineMonthly = plan.income - plan.essentials - cost.monthly;
+  const stressedMonthly = Math.round(plan.income * (100 - plan.dip) / 100)
+    - plan.essentials - Math.round(cost.monthly * (100 + plan.rise) / 100);
+  return {
+    availableAfterMove, baselineMonthly, stressedMonthly,
+    baselineYear: availableAfterMove + 12 * baselineMonthly,
+    stressedYear: availableAfterMove + 12 * stressedMonthly,
+    stressedRunwayMonths: availableAfterMove < 0 ? 0
+      : stressedMonthly >= 0 ? null
+      : Math.floor(availableAfterMove / -stressedMonthly)
+  };
+}
+
 type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
 
 /** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
@@ -1298,6 +1331,10 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
   const [fromShortlist, setFromShortlist] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState<BudgetDraft>({
+    income: '', essentials: '0', savings: '0', dip: '15', rise: '10'
+  });
+
 
   useEffect(() => {
     if (!handoff) return;
@@ -1317,6 +1354,51 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const left = calculatePrivateCosts(a);
   const right = calculatePrivateCosts(b);
   const ready = !!left && !!right;
+  const budgetInputs = readBudgetInputs(budgetDraft);
+  const forecastA = left && budgetInputs ? calculateBudgetForecast(left, budgetInputs) : null;
+  const forecastB = right && budgetInputs ? calculateBudgetForecast(right, budgetInputs) : null;
+  const forecastRows: [string, number, number][] = forecastA && forecastB ? [
+    ['Eigen spaargeld na verhuiskosten', forecastA.availableAfterMove, forecastB.availableAfterMove],
+    ['Maandruimte met huidig inkomen', forecastA.baselineMonthly, forecastB.baselineMonthly],
+    ['Maandruimte bij tegenslag', forecastA.stressedMonthly, forecastB.stressedMonthly],
+    ['Verwachte buffer na 12 maanden, basis', forecastA.baselineYear, forecastB.baselineYear],
+    ['Verwachte buffer na 12 maanden, tegenslag', forecastA.stressedYear, forecastB.stressedYear]
+  ] : [];
+  function exportBudgetForecast() {
+    if (!left || !right || !budgetInputs || !forecastA || !forecastB || !show) return;
+    const formatScenario = (cost: CostResult, data: BudgetForecast) => [
+      'Eigen scenariolabel: ' + cost.label,
+      'Eigen woonlasten per maand: ' + currencyCost(cost.monthly),
+      'Eigen eenmalige startkosten: ' + currencyCost(cost.start),
+      'Buffer direct na verhuizing: ' + currencyCost(data.availableAfterMove),
+      'Maandruimte basis: ' + currencyCost(data.baselineMonthly),
+      'Maandruimte tegenslag: ' + currencyCost(data.stressedMonthly),
+      'Buffer na twaalf maanden basis: ' + currencyCost(data.baselineYear),
+      'Buffer na twaalf maanden tegenslag: ' + currencyCost(data.stressedYear),
+      'Buffer houdt bij ongewijzigde tegenslag: ' +
+        (data.stressedRunwayMonths === null ? 'geen berekende uitputting bij gelijkblijvende bedragen'
+          : data.stressedRunwayMonths + ' volledige maanden')
+    ];
+    const lines = [
+      'WOONPOINTS - PRIVATE BETAALBAARHEIDSVERGELIJKING',
+      'Alle bedragen zijn uitsluitend handmatig ingevoerd en niet geverifieerd.',
+      'Netto besteedbaar maandinkomen: ' + currencyCost(budgetInputs.income),
+      'Andere vaste maandlasten: ' + currencyCost(budgetInputs.essentials),
+      'Beschikbaar spaargeld bij start: ' + currencyCost(budgetInputs.savings),
+      'Inkomensdaling in tegenslag: ' + budgetInputs.dip + '%',
+      'Stijging gezamenlijke woonlasten in tegenslag: ' + budgetInputs.rise + '%',
+      '', ...formatScenario(left, forecastA), '', ...formatScenario(right, forecastB),
+      '', 'Rekenmodel: buffer = spaargeld - verhuiskosten + 12 x maandruimte.',
+      'Tegenslag is een zelfgekozen scenario, geen voorspelling. Geen toeslagen, schulden,',
+      'onverwachte uitgaven, wettelijke huur-/inkomenstoets of inflatiepad inbegrepen.',
+      'Controleer werkelijke bedragen en rechten zelf. Extern bewaren kan synchroniseren.'
+    ];
+    const content = lines.join('\n') + '\n';
+    if (new TextEncoder().encode(content).length > 8192) return;
+    downloadPrivatePlanFile(content, 'text/plain;charset=utf-8', 'woonpoints-eigen-betaalbaarheidsprognose.txt');
+    setNotice('Eigen prognose aangeboden om te bewaren; gekozen opslaglocaties kunnen synchroniseren.');
+  }
+
   // Explicitly imported source facts are frozen. Cost edits never mutate
   // suitability or quietly rewrite the saved shortlist snapshot.
   const sourceRanking = handoff && fromShortlist
@@ -1484,6 +1566,77 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
         <p>Rekensom: 12 × (huur + service + energie + vervoer) + eigen startkosten.
           Dit zegt niets over beschikbaarheid, toekomstige prijsstijging of recht op huurtoeslag.</p>
         <button type="button" onClick={saveNote}>Download eigen TXT-kostenvergelijking</button>
+        <section className="private-budget-provenance" aria-labelledby="private-runway-heading">
+          <h4 id="private-runway-heading">Kan ik verhuizen en een tegenvaller opvangen?</h4>
+          <p>Bereken voor dezelfde twee woningen hoe je zelf ingeschatte maandinkomen,
+            andere vaste lasten en spaargeld zich verhouden tot je woonkosten.
+            Kies een inkomensdaling en stijging van woonlasten voor een apart stressscenario.
+            Er wordt niets opgezocht, opgeslagen of verzonden.</p>
+          <div className="private-budget-grid">
+            <fieldset>
+              <legend>Mijn financiële aannames (privé)</legend>
+              {([
+                {key:'income', label:'Netto besteedbaar inkomen per maand (€)', max:20000, min:1},
+                {key:'essentials', label:'Overige vaste maandlasten (€)', max:20000, min:0},
+                {key:'savings', label:'Spaargeld beschikbaar voor verhuizing (€)', max:50000, min:0},
+                {key:'dip', label:'Tegenslag: inkomensdaling (%)', max:90, min:0},
+                {key:'rise', label:'Tegenslag: stijging woonkosten (%)', max:100, min:0}
+              ] as {key:keyof BudgetDraft; label:string; max:number; min:number}[]).map(field =>
+                <div key={field.key}>
+                  <label htmlFor={'runway-'+field.key}>{field.label}</label>
+                  <input id={'runway-'+field.key} type="number" min={field.min} max={field.max}
+                    step={field.key === 'dip' || field.key === 'rise' ? '1' : '0.01'}
+                    inputMode="decimal" autoComplete="off" value={budgetDraft[field.key]}
+                    onChange={event => setBudgetDraft(current => ({...current, [field.key]:event.target.value}))} />
+                </div>
+              )}
+              <button type="button" className="secondary" onClick={() => setBudgetDraft({
+                income:'', essentials:'0', savings:'0', dip:'15', rise:'10'
+              })}>Wis financiële invoer</button>
+            </fieldset>
+            <div>
+              <h4>Hoe wordt gerekend?</h4>
+              <p>Maandruimte = zelf ingevuld netto inkomen − andere maandlasten −
+                huur, service, energie en vervoer. Bij tegenslag wordt het inkomen
+                verlaagd en de volledige woonlastenpost verhoogd. Verhuiskosten
+                gaan eerst van je spaargeld af.</p>
+              <p>Dit model neemt géén huurtoeslag, belasting, leningen, onzekere kosten,
+                toekomstige indexering of individuele omstandigheden mee. Een positief
+                bedrag is geen garantie dat een woning betaalbaar of beschikbaar is.</p>
+            </div>
+          </div>
+          {!budgetInputs && <p role="status">Vul eerst een geldig netto inkomen van €1–€20.000,
+            andere maandlasten €0–€20.000, spaargeld €0–€50.000,
+            inkomensdaling 0–90% en woonkostenstijging 0–100% in.</p>}
+          {forecastA && forecastB && <div aria-live="polite">
+            <div className="private-budget-table-wrap">
+              <table>
+                <caption>Persoonlijke bufferprognose, uitsluitend op basis van eigen aannames</caption>
+                <thead><tr><th scope="col">Prognose</th><th scope="col">{left.label}</th>
+                  <th scope="col">{right.label}</th></tr></thead>
+                <tbody>{forecastRows.map(([label, amountA, amountB]) =>
+                  <tr key={label}><th scope="row">{label}</th>
+                    <td>{currencyCost(amountA)}</td><td>{currencyCost(amountB)}</td></tr>
+                )}</tbody>
+              </table>
+            </div>
+            <p><strong>Hoe lang houdt het spaargeld stand bij ongewijzigde tegenslag?</strong>
+              {' '}{left.label}: {forecastA.stressedRunwayMonths === null ?
+                'geen berekende uitputting' : forecastA.stressedRunwayMonths + ' volledige maanden'};
+              {' · '}{right.label}: {forecastB.stressedRunwayMonths === null ?
+                'geen berekende uitputting' : forecastB.stressedRunwayMonths + ' volledige maanden'}.
+            </p>
+            {(forecastA.stressedYear < 0 || forecastB.stressedYear < 0 ||
+              forecastA.availableAfterMove < 0 || forecastB.availableAfterMove < 0) &&
+              <p role="alert">Let op: minstens één scenario heeft onvoldoende spaargeld voor
+                de startkosten of een negatieve buffer binnen twaalf maanden.
+                Dit is een indicatie op basis van je eigen invoer, geen financieel advies.</p>}
+            <button type="button" onClick={exportBudgetForecast}>Bewaar eigen bufferprognose als TXT…</button>
+            <p>Bestand alleen na jouw klik; een gekozen cloudbestandslocatie kan je
+              zelf ingevoerde financiële gegevens synchroniseren.</p>
+          </div>}
+        </section>
+
         {sourceRows?.length === 2 && <div className="private-budget-provenance">
           <h4>Hoe passen deze woningen bij je oorspronkelijke voorkeuren?</h4>
           <p>Momentopname uit jouw woninglijst; gewijzigde kosten veranderen de oorspronkelijke
