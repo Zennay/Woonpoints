@@ -274,3 +274,9 @@ zelf de bestaande privé-JSON of ICS downloaden (een gekozen kalenderprovider ka
 synchroniseren). Woninglijst, kosten en actieplanning blijven uitsluitend in het
 huidige browsertabblad; wis je de woninglijst, dan worden eerder aangemaakte
 handmatige acties niet automatisch uit de agenda of planning verwijderd.
+
+### Eigen betaalbaarheid en buffer bij tegenslag (handmatige preview)
+
+Onder **Wat kost wonen je écht per maand?** kun je na vergelijking van twee handmatig ingevulde woningen nu je netto besteedbaar inkomen, overige maandlasten en voor verhuizing beschikbaar spaargeld invoeren. Dezelfde twee scenario's tonen naast hun maand- en jaarkosten direct de buffer ná verhuiskosten, het maandoverschot/-tekort en het geschatte saldo na 12 maanden, zowel bij huidige aannames als bij een zelfgekozen inkomensdaling en stijging van de gezamenlijke woonlasten. Bij een negatief maandbedrag wordt ook de geschatte uitputtingsduur in volle maanden getoond. Een tekort of negatieve buffer krijgt een expliciete waarschuwing.
+
+Alles blijft uitsluitend in React-tabbladgeheugen; **geen serververzoek, storage-synchronisatie, accountcontrole of financiële toestemming**. De gebruiker kan financiële invoer los van de twee woningen wissen of vrijwillig een TXT van de ingevoerde aannames en prognoses opslaan; een gekozen bestandsprovider kan wel synchroniseren. Het rekenmodel is een deterministische momentopname, **geen bewijs van betaalbaarheid, wettelijke huurtoets, huurtoeslagberekening of voorspelling**. Je werkelijke persoonlijke uitgaven, schulden, jaarlijkse wijzigingen en andere risico's kunnen afwijken. Een bestaande woninglijst-naar-kostenoverdracht blijft uitsluitend opt-in; andere financiële waarden worden nooit mee geïmporteerd.
