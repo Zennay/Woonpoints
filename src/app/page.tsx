@@ -625,7 +625,7 @@ function movingFallbackDownload(name:string,body:string,mime:string){
 }
 function PrivateMovingFallbackPlan(){
   const [entries,setEntries]=useState<MovingFallbackEntry[]>(defaultMovingFallbacks);
-  const [preview,setPreview]=useState<'txt'|'json'|null>(null);
+  const [preview,setPreview]=useState<'txt'|'json'|'ics'|null>(null);
   const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
   const [undo,setUndo]=useState<{before:MovingFallbackEntry[];after:string}|null>(null);
   const [confirmReset,setConfirmReset]=useState(false);
@@ -636,6 +636,26 @@ function PrivateMovingFallbackPlan(){
   const today=(()=>{const now=new Date();const pad=(n:number)=>String(n).padStart(2,'0');
     return now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());})();
   const dated=entries.filter(row=>row.day&&row.day<=today&&!row.done);
+  const futureReminders=entries.filter(row=>row.day&&!row.done);
+  // Intentionally export only known generic labels: never leak user-entered action/contact text.
+  const calendar=(()=>{
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}Z$/,'Z');
+    const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Woonpoints//Private Plan B//NL',
+      'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+    for(const row of futureReminders){
+      const scenario=MOVING_FALLBACKS.find(item=>item.id===row.id)!;
+      const compact=row.day.replace(/-/g,'');
+      const next=new Date(row.day+'T00:00:00.000Z');
+      next.setUTCDate(next.getUTCDate()+1);
+      lines.push('BEGIN:VEVENT','UID:woonpoints-planb-'+row.id+'-'+compact+'@local.invalid',
+        'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+compact,
+        'DTEND;VALUE=DATE:'+next.toISOString().slice(0,10).replace(/-/g,''),
+        'SUMMARY:Zelf controleren - '+scenario.title,
+        'DESCRIPTION:Persoonlijke Woonpoints-controledatum. Open het eigen plan B. Geen externe bevestiging.',
+        'END:VEVENT');
+    }
+    return [...lines,'END:VCALENDAR',''].join('\\r\\n');
+  })();
   const backup=JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries},null,2)+'\n';
   const printable=[
     'WOONPOINTS · MIJN PRIVÉ VERHUISDAG PLAN B',
@@ -712,24 +732,32 @@ function PrivateMovingFallbackPlan(){
     </div>
     <details style={{marginTop:16}}>
       <summary style={{cursor:'pointer',fontWeight:700}}>Privéoverzicht downloaden of herstellen</summary>
-      <p>Een export bevat alle ingevulde alternatieven, roepnamen en datums. Controleer de
-        inhoud en kies zelf een veilige opslagplek; die kan extern synchroniseren.</p>
+      <p>TXT/JSON bevatten alle ingevulde alternatieven, roepnamen en datums.
+        De optionele agenda-export bevat uitsluitend vaste scenariotitels en datums,
+        <strong> nooit roepnamen of privéacties</strong>. Controleer ieder bestand en
+        kies zelf een veilige opslagplek; die kan extern synchroniseren.
+        Agenda-import is volledig handmatig en maakt geen afspraken.</p>
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         <button type="button" disabled={!valid} onClick={()=>{setPreview('txt');setIncoming(null);}}
           style={{minHeight:44}}>Bekijk afdrukbaar TXT-overzicht</button>
         <button type="button" disabled={!valid} onClick={()=>{setPreview('json');setIncoming(null);}}
           style={{minHeight:44}}>Bekijk volledige privéback-up</button>
+        <button type="button" disabled={!valid||futureReminders.length===0}
+          onClick={()=>{setPreview('ics');setIncoming(null);}}
+          style={{minHeight:44}}>Bekijk agenda-export ({futureReminders.length} open datums)</button>
       </div>
       {preview&&<div>
         <p>Dit is de <strong>exacte inhoud</strong> van je eigen download:</p>
         <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflow:'auto'}}>
-          {preview==='txt'?printable:backup}
+          {preview==='txt'?printable:preview==='json'?backup:calendar}
         </pre>
         <button type="button" onClick={()=>{
           if(preview==='txt')movingFallbackDownload('woonpoints-verhuisdag-plan-b.txt',
             printable,'text/plain;charset=utf-8');
-          else movingFallbackDownload('woonpoints-verhuisdag-plan-b.json',
+          else if(preview==='json')movingFallbackDownload('woonpoints-verhuisdag-plan-b.json',
             backup,'application/json;charset=utf-8');
+          else movingFallbackDownload('woonpoints-verhuisdag-plan-b.ics',
+            calendar,'text/calendar;charset=utf-8');
           setPreview(null);setNotice('Privébestand aan je browser aangeboden; je bewaart het zelf.');
         }} style={{minHeight:44}}>Download precies dit bestand</button>
         <button type="button" onClick={()=>setPreview(null)}
