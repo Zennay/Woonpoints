@@ -1172,3 +1172,177 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
       of garantie op geldige maandreacties.</p>
   </div>;
 }
+
+
+/** User-estimated geometry, not a vehicle/load authorization or a physical fit guarantee. */
+export function PrivateMovingVolume() {
+  type Item = { id:number; name:string; width:string; depth:string; height:string; quantity:string };
+  const initial: Item[] = [
+    {id:1,name:'Eigen verhuisdoos (voorbeeld)',width:'60',depth:'40',height:'40',quantity:'8'},
+    {id:2,name:'Eigen tafel (voorbeeld)',width:'140',depth:'80',height:'75',quantity:'1'},
+    {id:3,name:'Eigen kast (voorbeeld)',width:'100',depth:'50',height:'200',quantity:'1'}
+  ];
+  const [items,setItems]=useState<Item[]>(initial);
+  const nextId=useRef(4);
+  const [margin,setMargin]=useState('15');
+  const [capacity,setCapacity]=useState('10');
+  const [message,setMessage]=useState('');
+  const [preview,setPreview]=useState<string|null>(null);
+  const parse=(raw:string,min:number,max:number,integer=false):number|null=>{
+    const value=raw.trim();
+    if(!/^\d+(?:[.,]\d{1,2})?$/.test(value))return null;
+    const n=Number(value.replace(',','.'));
+    if(!Number.isFinite(n)||n<min||n>max||(integer&&!Number.isInteger(n)))return null;
+    return n;
+  };
+  const measured=items.map(item=>{
+    const w=parse(item.width,1,400),d=parse(item.depth,1,400),
+      h=parse(item.height,1,400),q=parse(item.quantity,0,100,true);
+    const safeName=item.name.trim().length>0&&item.name.trim().length<=48&&
+      !/[\u0000-\u001F\u007F]/.test(item.name);
+    return {item,volume:safeName&&w!==null&&d!==null&&h!==null&&q!==null
+      ? w*d*h*q/1000000 : null};
+  });
+  const overhead=parse(margin,0,50),vanCapacity=parse(capacity,1,30);
+  const valid=items.length>0&&items.length<=25&&overhead!==null&&vanCapacity!==null&&
+    measured.every(row=>row.volume!==null);
+  const rawTotal=measured.reduce((sum,row)=>sum+(row.volume??0),0);
+  const loadEstimate=valid?rawTotal*(1+overhead!/100):0;
+  const safeTotal=valid&&loadEstimate<=200;
+  const trips=safeTotal&&loadEstimate>0?Math.ceil(loadEstimate/vanCapacity!):0;
+  const fmt=(n:number)=>new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(n);
+  const change=(id:number,key:keyof Omit<Item,'id'>,value:string)=>{
+    setItems(previous=>previous.map(row=>row.id===id?{...row,[key]:value}:row));
+    setPreview(null);setMessage('');
+  };
+  const add=(name:string,width:string,depth:string,height:string)=>{
+    if(items.length>=25){setMessage('Maximaal 25 eigen itemregels.');return;}
+    setItems(previous=>[...previous,{
+      id:nextId.current++,name,width,depth,height,quantity:'1'
+    }]);
+    setPreview(null);setMessage('');
+  };
+  function makePreview(){
+    if(!safeTotal){setMessage('Controleer eerst alle afmetingen, aantallen en de capaciteit.');return;}
+    const lines=[
+      'WOONPOINTS · EIGEN VERHUISVOLUME-INSCHATTING',
+      'Alleen eigen metingen, geen professionele laadplanning of vervoersadvies.',
+      'Lengte, breedte en hoogte zijn in centimeter en worden als rechthoekige omhulling benaderd.',
+      'Geen garantie voor passen, stapelen, veilige lading, tillen, gewicht of rijbewijsregels.',
+      '',
+      ...measured.map(({item,volume},i)=> (i+1)+'. '+item.name.trim()+
+        ' | '+item.width+'×'+item.depth+'×'+item.height+' cm | aantal '+item.quantity+
+        ' | rechthoekig volume '+fmt(volume!)+' m3'),
+      '',
+      'Som geschatte omhullingen: '+fmt(rawTotal)+' m3',
+      'Zelfgekozen extra laadruimte: '+margin+'%',
+      'Volume inclusief reserveruimte: '+fmt(loadEstimate)+' m3',
+      'Zelf ingevulde bruikbare ruimte per rit: '+capacity+' m3',
+      'ALLEEN VOLUMEMATIGE ONDERGRENS: '+trips+' rit(ten).',
+      'Gewicht, hoogte, deurmaten, laadvolgorde en ladingzekering zijn NIET berekend.',
+      'Voor een echte verhuizing zelf het voertuig en lading controleren.'
+    ];
+    setPreview(lines.join('\n')+'\n');
+    setMessage('Controleer eerst het persoonlijke rapport en je eigen itemnamen.');
+  }
+  function download(){
+    if(!preview||!safeTotal)return;
+    const url=URL.createObjectURL(new Blob([preview],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-eigen-verhuisvolume.txt';link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setPreview(null);
+    setMessage('Eigen TXT ter download aangeboden; je opslaglocatie kan synchroniseren.');
+  }
+  return <section className="panel" aria-labelledby="private-moving-volume-heading">
+    <div>
+      <p className="eyebrow">PRIVÉ VERHUISPLAN · ALLEEN IN DIT TABBLAD</p>
+      <h2 id="private-moving-volume-heading">Hoeveel verhuisruimte heb je ongeveer nodig?</h2>
+      <p>Voer afmetingen in <strong>centimeters</strong> en aantallen in.
+        Woonpoints telt uitsluitend de rechthoekige omhulling van eigen dozen en
+        meubels. De voorbeeldregels zijn fictief en vrij te wijzigen of verwijderen.</p>
+      <p><strong>Geen beladingadvies.</strong> Een aantal ritten op volume is
+        slechts een ondergrens: meubels kunnen niet in elkaar passen of gestapeld
+        worden, en massa, aslast, maximale belading, lift-, deur- en trapmaten,
+        veiligheid en rijbewijsregels zijn niet meegenomen.</p>
+      <p>Gebruik geen volledige adressen of andere persoonsgegevens als itemnaam.
+        Alle notities blijven alleen op dit scherm totdat je zelf een TXT bewaart.</p>
+    </div>
+    <div>
+      <p aria-live="polite">{items.length} van maximaal 25 eigen regels.</p>
+      {items.map((item,index)=><fieldset key={item.id}>
+        <legend>Item {index+1}</legend>
+        <label htmlFor={'mv-'+item.id+'-name'}>Eigen itemnaam (max. 48 tekens)</label>
+        <input id={'mv-'+item.id+'-name'} type="text" maxLength={48}
+          value={item.name} onChange={e=>change(item.id,'name',e.target.value)}/>
+        {([
+          ['width','Breedte (cm)'],
+          ['depth','Diepte (cm)'],
+          ['height','Hoogte (cm)'],
+          ['quantity','Aantal stuks']
+        ] as const).map(([key,label])=><div key={key}>
+          <label htmlFor={'mv-'+item.id+'-'+key}>{label}</label>
+          <input id={'mv-'+item.id+'-'+key} type="text" inputMode="decimal"
+            maxLength={10} value={item[key]}
+            onChange={e=>change(item.id,key,e.target.value)}/>
+        </div>)}
+        <p>Omhullend totaal voor deze regel: {
+          measured[index].volume===null?'Onbekend (invoer corrigeren)':
+          fmt(measured[index].volume!)+' m³'
+        }</p>
+        <button type="button" className="secondary" onClick={()=>{
+          setItems(previous=>previous.filter(row=>row.id!==item.id));
+          setPreview(null);setMessage('Eigen item verwijderd.');
+        }}>Verwijder item {index+1}</button>
+      </fieldset>)}
+      <button type="button" disabled={items.length>=25}
+        onClick={()=>add('Nieuw eigen item','50','50','50')}>
+        Voeg eigen meubel of doos toe
+      </button>
+      <label htmlFor="mv-overhead">Extra laadruimte (%) · 0–50</label>
+      <input id="mv-overhead" type="text" inputMode="decimal" maxLength={8}
+        value={margin} onChange={e=>{setMargin(e.target.value);setPreview(null);}}/>
+      <label htmlFor="mv-capacity">Zelf geverifieerde bruikbare m³ per rit · 1–30</label>
+      <input id="mv-capacity" type="text" inputMode="decimal" maxLength={8}
+        value={capacity} onChange={e=>{setCapacity(e.target.value);setPreview(null);}}/>
+      {!safeTotal?<p role="alert">Controleer alle namen en meetwaarden:
+        1–400 cm, aantallen 0–100, maximaal 200 m³ inclusief reserveruimte.
+        Geef een bruikbare voertuigcapaciteit en extra laadruimte binnen de grenzen op.</p>:
+        <div aria-live="polite">
+          <h3>Jouw voorlopige volumeberekening</h3>
+          <dl>
+            <div><dt>Omhullend volume</dt><dd>{fmt(rawTotal)} m³</dd></div>
+            <div><dt>Inclusief eigen reserveruimte</dt><dd>{fmt(loadEstimate)} m³</dd></div>
+            <div><dt>Minimumritten naar alleen volume</dt>
+              <dd><strong>{trips}</strong> (zonder pas-/gewichtsgarantie)</dd></div>
+          </dl>
+          <p>Een nulhoeveelheid telt niet mee. Een ritindicatie kan te laag zijn
+            als goederen niet stapelbaar zijn of de bus een lagere gewichtslimiet heeft.</p>
+        </div>}
+      <div className="month-csv-confirm">
+        <h3>Bewaar eventueel je eigen overzicht</h3>
+        <button type="button" onClick={makePreview} disabled={!safeTotal}>
+          Toon privé-TXT eerst ter controle…
+        </button>
+        {preview!==null&&<div role="group" aria-label="Bevestig eigen verhuisoverzicht">
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{preview}</pre>
+          <button type="button" onClick={download}>
+            Ja, bewaar alleen dit eigen TXT…
+          </button>
+          <button type="button" className="secondary" onClick={()=>{
+            setPreview(null);setMessage('Export geannuleerd. Geen bestand gemaakt.');
+          }}>Nee, maak geen bestand</button>
+        </div>}
+      </div>
+      <button type="button" className="secondary" onClick={()=>{
+        setItems(initial.map(row=>({...row})));setMargin('15');setCapacity('10');
+        setPreview(null);setMessage('Eigen invoer gewist; fictieve voorbeelden hersteld.');
+      }}>Wis mijn invoer en herstel voorbeelden</button>
+      <p role="status">{message}</p>
+      <p>Geen browseropslag, externe data, upload of automatisch overzicht:
+        de eigen berekening verdwijnt bij verversen/sluiten. Dit wijzigt geen
+        WoningNet-account, woningreactie, verhuisafspraak of andere Woonpoints-sectie.</p>
+    </div>
+  </section>;
+}
