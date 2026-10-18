@@ -516,3 +516,25 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 }
 .manual-reminder-suggest button { margin: 6px 8px 6px 0; min-height: 44px; }
 .manual-reminder-suggest button:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+
+
+/* Time-of-day choices for wholly personal ICS appointments. */
+.manual-reminder-slot {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #b9d1be;
+  border-radius: 12px;
+  min-width: 0;
+  background: #fff;
+}
+.manual-reminder-slot legend { padding: 0 6px; font-weight: 700; }
+.manual-reminder-slot label, .manual-reminder-duration { display: block; margin: 10px 0; font-weight: 700; }
+.manual-reminder-slot input, .manual-reminder-duration select {
+  display: block; box-sizing: border-box; width: 100%; min-height: 44px; min-width: 0;
+  padding: 8px; border: 2px solid #536d5a; border-radius: 9px;
+  background: #fff; color: #18231c; font: inherit;
+}
+.manual-reminder-slot input:focus-visible,
+.manual-reminder-duration select:focus-visible {
+  outline: 3px solid #173d25; outline-offset: 3px;
+}
