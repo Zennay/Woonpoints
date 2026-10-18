@@ -7,6 +7,43 @@ import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
+type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
+const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
+  {id:'projectstatus-heading',title:'Status',category:'essentieel'},
+  {id:'manual-progress-heading',title:'Maanddoel',category:'essentieel'},
+  {id:'private-month-pulse-heading',title:'Maandoverzicht en rapport',category:'essentieel'},
+  {id:'private-reaction-pacing-heading',title:'Maandplan',category:'reacties'},
+  {id:'private-points-heading',title:'Zoekpunten',category:'reacties'},
+  {id:'reaction-journal-title',title:'Reactiedagboek',category:'reacties'},
+  {id:'housing-shortlist-heading',title:'Woningen vergelijken',category:'woning'},
+  {id:'private-budget-title',title:'Woonkosten',category:'woning'},
+  {id:'private-commute-heading',title:'Woon-werk',category:'woning'},
+  {id:'private-longterm-title',title:'Meerjarenkosten',category:'woning'},
+  {id:'private-viewing-title',title:'Bezichtiging',category:'woning'},
+  {id:'private-photo-comparison-heading',title:'Fotovergelijking',category:'woning'},
+  {id:'private-plan-title',title:'Planner',category:'essentieel'},
+  {id:'private-moving-heading',title:'Verhuizen',category:'verhuizen'},
+  {id:'private-moving-volume-heading',title:'Verhuisvolume',category:'verhuizen'},
+  {id:'private-moving-workspace-heading',title:'Verhuiswerkmap',category:'verhuizen'},
+  {id:'private-moving-day-heading',title:'Verhuisdag',category:'verhuizen'},
+  {id:'private-packing-heading',title:'Paklijst',category:'verhuizen'},
+  {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
+  {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
+  {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
+  {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
+  {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
+  {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
+  {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
+  {id:'position-stats-heading',title:'Posities',category:'inzichten'},
+  {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
+  {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
+];
+const homeCategoryOptions=[
+  {id:'snel',label:'Snelstart'},{id:'alles',label:'Alles'},
+  {id:'reacties',label:'Reacties'},{id:'woning',label:'Woningen'},
+  {id:'verhuizen',label:'Verhuizen'},{id:'inzichten',label:'Inzichten'}
+] as const;
+
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
   ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
@@ -15,6 +52,14 @@ const cards = [
 ];
 
 export default function HomePage() {
+  const [navigationCategory,setNavigationCategory]=useState<'snel'|'alles'|HomeNavCategory>('snel');
+  const [navigationSearch,setNavigationSearch]=useState('');
+  const searchTerm=navigationSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const navigationResults=homepageDestinations.filter(destination=>{
+    if(searchTerm)return destination.title.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(searchTerm);
+    return navigationCategory==='alles'||(navigationCategory==='snel'?
+      destination.category==='essentieel':destination.category===navigationCategory);
+  });
   return (
     <main className="shell">
       <section className="hero">
@@ -29,42 +74,45 @@ export default function HomePage() {
 
       <nav className="quick-nav" aria-label="Direct naar een Woonpoints-onderdeel">
         <div className="quick-nav-head">
-          <strong>Direct naar</strong>
-          <span>Alleen handmatige hulpmiddelen · geen live account</span>
+          <strong>Vind je onderdeel</strong>
+          <span>Handmatige hulpmiddelen · zonder live accountverbinding</span>
         </div>
-        <ul className="quick-nav-links">
-          {([
-            ['projectstatus-heading', 'Status'],
-            ['manual-progress-heading', 'Maanddoel'],
-            ['private-reaction-pacing-heading', 'Maandplan'],
-            ['private-points-heading', 'Zoekpunten'],
-            ['reaction-journal-title', 'Reacties'],
-            ['housing-shortlist-heading', 'Woningen'],
-            ['private-budget-title', 'Woonkosten'],
-            ['private-commute-heading', 'Woon-werk'],
-            ['private-longterm-title', 'Meerjarenkosten'],
-            ['private-viewing-title', 'Bezichtiging'],
-            ['private-photo-comparison-heading', 'Fotovergelijking'],
-            ['private-plan-title', 'Planner'],
-            ['private-moving-heading', 'Verhuizen'],
-            ['private-moving-volume-heading', 'Verhuisvolume'],
-            ['private-moving-workspace-heading', 'Verhuiswerkmap'],
-            ['private-moving-day-heading', 'Verhuisdag'],
-            ['private-packing-heading', 'Paklijst'],
-            ['private-moving-helpers-heading', 'Verhuishulp'],
-            ['private-address-change-heading', 'Adreswijzigingen'],
-            ['private-handover-heading', 'Sleutelrapport'],
-            ['private-document-readiness-heading', 'Documenten'],
-            ['private-moving-expenses-heading', 'Werkelijke kosten'],
-            ['private-moving-quotes-heading', 'Verhuisoffertes'],
-            ['private-cost-split-heading', 'Kosten delen'],
-            ['position-stats-heading', 'Posities'],
-            ['monthly-positions-heading', 'Maandtrend']
-          ] as const).map(([id, title]) =>
-            <li key={id}><a href={'#'+id}>{title}</a></li>
-          )}
-          <li><a href="#nazorg">Nazorg &amp; gebreken</a></li>
-        </ul>
+        <label htmlFor="woonpoints-nav-search"
+          style={{display:'block',margin:'12px 0 5px',fontWeight:700}}>
+          Zoek een onderdeel
+        </label>
+        <input id="woonpoints-nav-search" type="search" value={navigationSearch}
+          onChange={event=>setNavigationSearch(event.target.value)}
+          maxLength={60} autoComplete="off"
+          placeholder="Bijv. paklijst, maandrapport of nazorg"
+          style={{display:'block',width:'100%',maxWidth:480,minHeight:44,
+            border:'2px solid #536d5a',borderRadius:9,padding:10}}/>
+        <div role="group" aria-label="Woonpoints-categorieën"
+          style={{display:'flex',flexWrap:'wrap',gap:8,margin:'12px 0'}}>
+          {homeCategoryOptions.map(category=><button type="button" key={category.id}
+            aria-pressed={!searchTerm&&navigationCategory===category.id}
+            onClick={()=>{setNavigationCategory(category.id);setNavigationSearch('');}}
+            style={{minHeight:44,minWidth:74,padding:'8px 12px',borderRadius:9,
+              border:'1px solid #355e42',cursor:'pointer',
+              background:!searchTerm&&navigationCategory===category.id?'#355e42':'white',
+              color:!searchTerm&&navigationCategory===category.id?'white':'#355e42'}}>
+            {category.label}
+          </button>)}
+        </div>
+        <p role="status" aria-live="polite">{navigationResults.length} van
+          {' '}{homepageDestinations.length} onderdelen zichtbaar{searchTerm?' · alle categorieën doorzocht':''}.</p>
+        {navigationResults.length===0?<p>Geen onderdeel gevonden. Wis je zoektekst of kies Alles.</p>:
+          <ul className="quick-nav-links">{navigationResults.map(item=><li key={item.id}>
+            <a href={'#'+item.id}>{item.title}</a>
+          </li>)}</ul>}
+        {!searchTerm&&navigationCategory!=='alles'&&<button type="button"
+          onClick={()=>setNavigationCategory('alles')}
+          style={{minHeight:44,marginTop:12,padding:'8px 14px',
+            color:'#355e42',background:'white',border:'1px solid #355e42',borderRadius:9}}>
+          Toon alle {homepageDestinations.length} onderdelen
+        </button>}
+        <p>Alle categorieën en zoekwoorden werken uitsluitend in dit tabblad; er worden geen
+          persoonlijke gegevens naar een server verstuurd.</p>
       </nav>
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
