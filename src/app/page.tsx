@@ -30,6 +30,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
   {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
+  {id:'private-meter-handover-heading',title:'Meterstanden',category:'verhuizen'},
   {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
   {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
   {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
@@ -144,6 +145,7 @@ export default function HomePage() {
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
+      <PrivateMeterHandover />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
@@ -4057,5 +4059,359 @@ function PrivateAftercareWeekPlan({
         of met een derde afgesproken termijn. Agenda-apps kunnen een bewust opgeslagen
         ICS-bestand buiten deze app synchroniseren; er zijn geen automatische agenda-acties.</p>
     </div>
+  </section>;
+}
+
+type HandoverMeterKey = 'powerDay' | 'powerNight' | 'gas' | 'water' | 'heat';
+type HandoverHomeKey = 'old' | 'new';
+type HandoverReading = { day: string; values: Record<HandoverMeterKey, string> };
+const HANDOVER_METERS: { key: HandoverMeterKey; label: string; unit: string }[] = [
+  { key: 'powerDay', label: 'Elektriciteit normaal', unit: 'kWh' },
+  { key: 'powerNight', label: 'Elektriciteit dal', unit: 'kWh' },
+  { key: 'gas', label: 'Gas', unit: 'm³' },
+  { key: 'water', label: 'Water', unit: 'm³' },
+  { key: 'heat', label: 'Warmte (indien aanwezig)', unit: 'GJ' }
+];
+const HANDOVER_EMPTY_VALUES: Record<HandoverMeterKey, string> =
+  { powerDay: '', powerNight: '', gas: '', water: '', heat: '' };
+const HANDOVER_EMPTY: Record<HandoverHomeKey, HandoverReading> = {
+  old: { day: '', values: { ...HANDOVER_EMPTY_VALUES } },
+  new: { day: '', values: { ...HANDOVER_EMPTY_VALUES } }
+};
+
+function handoverValidDay(day: string): boolean {
+  if (!/^20\d{2}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(day)) return false;
+  const date = new Date(day + 'T12:00:00Z');
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === day;
+}
+function handoverValidReading(value: string): boolean {
+  return /^(?:0|[1-9]\d{0,8})(?:[,.]\d{1,3})?$/.test(value);
+}
+function handoverExportedReport(readings: Record<HandoverHomeKey, HandoverReading>, included: Record<HandoverMeterKey, boolean>): string {
+  const lines = [
+    'WOONPOINTS · PERSOONLIJK METERSTANDENOVERZICHT',
+    'Eigen notities · niet geverifieerd door verhuurder of energieleverancier.',
+    'Dit document is niet automatisch verzonden en bewijst geen formele overdracht.',
+    ''
+  ];
+  for (const home of ['old', 'new'] as HandoverHomeKey[]) {
+    const entry = readings[home];
+    lines.push(home === 'old' ? 'OUDE WONING' : 'NIEUWE WONING');
+    lines.push('Zelf genoteerde datum: ' + (entry.day || 'onbekend'));
+    for (const meter of HANDOVER_METERS) {
+      if (!included[meter.key]) continue;
+      const number = entry.values[meter.key];
+      lines.push(meter.label + ': ' + (number ? number.replace(',', '.') + ' ' + meter.unit : 'niet ingevuld'));
+    }
+    lines.push('');
+  }
+  lines.push('Controleer de gegevens persoonlijk bij sleuteloverdracht.');
+  return lines.join('\r\n') + '\r\n';
+}
+
+
+/** A canonical small private backup: exact keys, dates and decimal strings only. */
+function handoverBackup(readings: Record<HandoverHomeKey, HandoverReading>,
+  included: Record<HandoverMeterKey, boolean>): string {
+  return JSON.stringify({
+    kind: 'woonpoints-private-meter-handover', version: 1, readings, included
+  }, null, 2) + '\n';
+}
+function handoverRestore(raw: string): {
+  readings: Record<HandoverHomeKey, HandoverReading>;
+  included: Record<HandoverMeterKey, boolean>
+} {
+  if (new TextEncoder().encode(raw).length > 4096) throw Error('Bestand te groot.');
+  const object: unknown = JSON.parse(raw);
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const keys = (value: Record<string, unknown>, required: string[]) =>
+    Object.keys(value).sort().join('|') === [...required].sort().join('|');
+  if (!isObject(object) || !keys(object, ['kind', 'version', 'readings', 'included']) ||
+      object.kind !== 'woonpoints-private-meter-handover' || object.version !== 1 ||
+      !isObject(object.readings) || !isObject(object.included) ||
+      !keys(object.readings, ['old', 'new']) ||
+      !keys(object.included, HANDOVER_METERS.map(meter => meter.key))) {
+    throw Error('Ongeldig eigen meterstandenbestand.');
+  }
+  const included = { ...HANDOVER_EMPTY_VALUES } as unknown as Record<HandoverMeterKey, boolean>;
+  for (const meter of HANDOVER_METERS) {
+    const flag = object.included[meter.key];
+    if (typeof flag !== 'boolean') throw Error('Ongeldige meterkeuze.');
+    included[meter.key] = flag;
+  }
+  if (!HANDOVER_METERS.some(meter => included[meter.key])) throw Error('Geen gekozen meter.');
+  const readings = { old: { day: '', values: { ...HANDOVER_EMPTY_VALUES } },
+    new: { day: '', values: { ...HANDOVER_EMPTY_VALUES } } };
+  for (const home of ['old', 'new'] as HandoverHomeKey[]) {
+    const entry = object.readings[home];
+    if (!isObject(entry) || !keys(entry, ['day', 'values']) ||
+        typeof entry.day !== 'string' ||
+        (entry.day !== '' && !handoverValidDay(entry.day)) ||
+        !isObject(entry.values) ||
+        !keys(entry.values, HANDOVER_METERS.map(meter => meter.key))) {
+      throw Error('Ongeldige overdrachtsdatum of stand.');
+    }
+    readings[home].day = entry.day;
+    for (const meter of HANDOVER_METERS) {
+      const value = entry.values[meter.key];
+      if (typeof value !== 'string' || (value !== '' && !handoverValidReading(value))) {
+        throw Error('Ongeldige meterstand.');
+      }
+      readings[home].values[meter.key] = value;
+    }
+  }
+  if (handoverBackup(readings, included) !== raw) {
+    throw Error('Geen canoniek door Woonpoints aangemaakt privébestand.');
+  }
+  return { readings, included };
+}
+
+/**
+ * Private moving-day worksheet; no WoningNet API, account, localStorage,
+ * third-party sync, automatic supplier submission, or energy-usage inference.
+ */
+function PrivateMeterHandover() {
+  const [readings, setReadings] = useState<Record<HandoverHomeKey, HandoverReading>>(HANDOVER_EMPTY);
+  const [included, setIncluded] = useState<Record<HandoverMeterKey, boolean>>({
+    powerDay: true, powerNight: false, gas: true, water: true, heat: false
+  });
+  const [preview, setPreview] = useState<{
+    source: string; text: string; format: 'txt' | 'json'
+  } | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<{
+    baseline: string; data: ReturnType<typeof handoverRestore>
+  } | null>(null);
+  const [restoreApproved, setRestoreApproved] = useState(false);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    from: string; readings: Record<HandoverHomeKey, HandoverReading>;
+    included: Record<HandoverMeterKey, boolean>
+  } | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const source = JSON.stringify({ readings, included });
+  const previewCurrent = preview !== null && preview.source === source;
+  const restoreCurrent = pendingRestore !== null && pendingRestore.baseline === source;
+  const undoCurrent = restoreUndo !== null && restoreUndo.from === source;
+  const selected = HANDOVER_METERS.filter(meter => included[meter.key]);
+  const status = useMemo(() => {
+    const complete = (['old', 'new'] as HandoverHomeKey[]).flatMap(home =>
+      HANDOVER_METERS.filter(meter => included[meter.key] && handoverValidReading(readings[home].values[meter.key])))
+      .length;
+    const total = selected.length * 2;
+    const invalid = (['old', 'new'] as HandoverHomeKey[]).some(home =>
+      (readings[home].day !== '' && !handoverValidDay(readings[home].day)) ||
+      HANDOVER_METERS.some(meter => included[meter.key] && readings[home].values[meter.key] !== '' &&
+        !handoverValidReading(readings[home].values[meter.key])));
+    return { complete, total, invalid };
+  }, [readings, included, selected.length]);
+
+  function editDay(home: HandoverHomeKey, day: string) {
+    setReadings(previous => ({
+      ...previous, [home]: { ...previous[home], day: day.slice(0, 10) }
+    }));
+    setConfirmed(false); setFeedback('');
+  }
+  function editMeter(home: HandoverHomeKey, meter: HandoverMeterKey, value: string) {
+    setReadings(previous => ({
+      ...previous,
+      [home]: { ...previous[home],
+        values: { ...previous[home].values, [meter]: value.slice(0, 16) } }
+    }));
+    setConfirmed(false); setFeedback('');
+  }
+  function buildPreview() {
+    if (!selected.length || status.invalid) {
+      setFeedback('Controleer eerst de gekozen meters en ongeldige invoer.');
+      setPreview(null); setConfirmed(false); return;
+    }
+    setPreview({ source, text: handoverExportedReport(readings, included), format: 'txt' });
+    setConfirmed(false); setFeedback('');
+  }
+  function backupPreview() {
+    const allValid = (['old', 'new'] as HandoverHomeKey[]).every(home =>
+      (readings[home].day === '' || handoverValidDay(readings[home].day)) &&
+      HANDOVER_METERS.every(meter => readings[home].values[meter.key] === '' ||
+        handoverValidReading(readings[home].values[meter.key])));
+    if (!selected.length || !allValid) {
+      setFeedback('Controleer ook eerder verborgen standen vóór een herstelback-up.');
+      setPreview(null); setConfirmed(false); return;
+    }
+    setPreview({ source, text: handoverBackup(readings, included), format: 'json' });
+    setConfirmed(false); setFeedback('');
+  }
+  async function chooseRestore(file: File | undefined) {
+    if (!file) return;
+    const baseline = source;
+    setPendingRestore(null); setRestoreApproved(false); setFeedback('');
+    if (file.size > 4096) {
+      setFeedback('Herstel geweigerd: meer dan 4 KiB.');
+      return;
+    }
+    try {
+      const data = handoverRestore(await file.text());
+      setPendingRestore({ baseline, data });
+    } catch {
+      setFeedback('Herstel geweigerd: geen exact geldig eigen Woonpoints-meterbestand.');
+    }
+  }
+  function confirmRestore() {
+    if (!restoreCurrent || !restoreApproved || pendingRestore === null) return;
+    const next = pendingRestore.data;
+    const newSource = JSON.stringify({ readings: next.readings, included: next.included });
+    setRestoreUndo({ from: newSource, readings, included });
+    setReadings(next.readings); setIncluded(next.included);
+    setPreview(null); setConfirmed(false);
+    setPendingRestore(null); setRestoreApproved(false);
+    setFeedback('Privébestand geladen. De vorige invoer kun je één keer herstellen zolang niets verandert.');
+  }
+  function undoRestore() {
+    if (!undoCurrent || restoreUndo === null) return;
+    setReadings(restoreUndo.readings); setIncluded(restoreUndo.included);
+    setRestoreUndo(null); setPreview(null); setConfirmed(false);
+    setFeedback('De vorige tabbladinvoer is hersteld.');
+  }
+  function download() {
+    if (!previewCurrent || !confirmed || preview === null) return;
+    const blob = new Blob([preview.text], { type: preview.format === 'json'
+      ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = preview.format === 'json'
+      ? 'woonpoints-private-meterstanden.json' : 'woonpoints-eigen-meterstanden.txt';
+    document.body.appendChild(link);
+    link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setConfirmed(false);
+    setFeedback('Eigen bestand aangevraagd. Controleer zelf de inhoud voordat je iets deelt.');
+  }
+  function reset() {
+    setReadings({
+      old: { day: '', values: { ...HANDOVER_EMPTY_VALUES } },
+      new: { day: '', values: { ...HANDOVER_EMPTY_VALUES } }
+    });
+    setPreview(null); setConfirmed(false); setPendingRestore(null);
+    setRestoreApproved(false); setRestoreUndo(null);
+    setFeedback('Je invoer is uitsluitend uit dit tabblad gewist.');
+  }
+
+  return <section className="panel" aria-labelledby="private-meter-handover-heading"
+    style={{ display: 'block' }}>
+    <p className="eyebrow">PRIVÉ SLEUTELOVERDRACHT</p>
+    <h2 id="private-meter-handover-heading">Meterstanden oude en nieuwe woning</h2>
+    <p>Leg op de overdrachtsdag zelf de standen vast. Vul alleen meters in die echt bij de
+      betreffende woning horen. Standen van twee verschillende woningen worden nooit van
+      elkaar afgetrokken. Er is geen accountkoppeling of automatische leveranciersmelding.</p>
+    <fieldset style={{ border: '1px solid #c4d6c9', borderRadius: 12, padding: 14 }}>
+      <legend><strong>Welke meters wil je opnemen?</strong></legend>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        {HANDOVER_METERS.map(meter => <label key={meter.key} style={{ display: 'inline-flex',
+          alignItems: 'center', gap: 7, minHeight: 44 }}>
+          <input type="checkbox" checked={included[meter.key]}
+            onChange={event => {
+              setIncluded(previous => ({ ...previous, [meter.key]: event.target.checked }));
+              setConfirmed(false); setFeedback('');
+            }} />
+          {meter.label}
+        </label>)}
+      </div>
+    </fieldset>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 270px), 1fr))',
+      gap: 16, marginTop: 16 }}>
+      {(['old', 'new'] as HandoverHomeKey[]).map(home => <fieldset key={home}
+        style={{ border: '1px solid #c4d6c9', borderRadius: 12, padding: 16,
+          minWidth: 0 }}>
+        <legend><strong>{home === 'old' ? 'Oude woning' : 'Nieuwe woning'}</strong></legend>
+        <label style={{ display: 'block', fontWeight: 700 }}>
+          Datum zelf genoteerd
+          <input type="date" min="2000-01-01" max="2099-12-31"
+            value={readings[home].day} onChange={event => editDay(home, event.target.value)}
+            style={{ display: 'block', width: '100%', minHeight: 44, marginTop: 6 }} />
+        </label>
+        {selected.map(meter => {
+          const value = readings[home].values[meter.key];
+          const invalid = value !== '' && !handoverValidReading(value);
+          return <label key={meter.key} style={{ display: 'block', marginTop: 14,
+            fontWeight: 700 }}>
+            {meter.label} ({meter.unit})
+            <input type="text" inputMode="decimal" autoComplete="off"
+              aria-invalid={invalid} value={value} maxLength={16}
+              placeholder="Niet ingevuld" onChange={event => editMeter(home, meter.key, event.target.value)}
+              style={{ display: 'block', width: '100%', minHeight: 44, marginTop: 6 }} />
+            {invalid && <small style={{ color: '#a32a20', display: 'block' }}>
+              Gebruik maximaal negen cijfers en hoogstens drie decimalen, zonder minteken.
+            </small>}
+          </label>;
+        })}
+      </fieldset>)}
+    </div>
+    <p role="status" aria-live="polite">
+      {status.complete} van {status.total} geselecteerde standen ingevuld.
+      {' '}Lege standen blijven nadrukkelijk onbekend.
+    </p>
+    {status.invalid && <p role="alert">Een datum of stand is ongeldig. Controleer de invoer.</p>}
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+      <button type="button" disabled={!selected.length || status.invalid}
+        onClick={buildPreview}>Bekijk volledig overdrachtsbestand</button>
+      <button type="button" className="secondary" disabled={!selected.length}
+        onClick={backupPreview}>Bekijk volledige privéback-up (.json)</button>
+      <button type="button" className="secondary" onClick={reset}>Wis mijn invoer</button>
+    </div>
+    {preview !== null && <div style={{ marginTop: 16, padding: 16, border: '1px solid #91a99a',
+      borderRadius: 12 }}>
+      {!previewCurrent && <p role="alert">De invoer is gewijzigd. Controleer een nieuwe export.</p>}
+      {previewCurrent && <>
+        <p><strong>Controleer alles wat je straks downloadt:</strong></p>
+        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 340,
+          overflowY: 'auto' }}>{preview.text}</pre>
+        <label style={{ display: 'flex', gap: 9, alignItems: 'start', marginTop: 12 }}>
+          <input type="checkbox" checked={confirmed}
+            onChange={event => setConfirmed(event.target.checked)} />
+          Ik heb dit volledige privébestand bekeken en kies bewust of en met wie ik het deel.
+        </label>
+        <button type="button" disabled={!confirmed} onClick={download}
+          style={{ marginTop: 12 }}>Download exact dit gecontroleerde {preview.format.toUpperCase()}-bestand</button>
+      </>}
+    </div>}
+    <fieldset style={{ marginTop: 20, border: '1px solid #c4d6c9',
+      borderRadius: 12, padding: 16 }}>
+      <legend><strong>Mijn privébackup terugzetten</strong></legend>
+      <p>Kies uitsluitend je eerder met dit onderdeel gedownloade JSON. Er gebeurt
+        niets totdat je de vervanging goedkeurt. Een bestand mag maximaal 4 KiB zijn.</p>
+      <input type="file" accept=".json,application/json"
+        aria-label="Kies mijn eigen meterstanden-back-up"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void chooseRestore(file);
+        }} />
+      {pendingRestore !== null && <div style={{ marginTop: 12 }}>
+        {!restoreCurrent && <p role="alert">Je tabbladinvoer is veranderd; kies het bestand opnieuw.</p>}
+        {restoreCurrent && <>
+          <p>Dit bestand vervangt <strong>beide woningen</strong>, hun datums en de gekozen meters.
+            {''} De bestaande niet-opgeslagen invoer wordt vervangen.</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            maxHeight: 240, overflowY: 'auto' }}>
+            {handoverExportedReport(pendingRestore.data.readings, pendingRestore.data.included)}
+          </pre>
+          <label style={{ display: 'flex', gap: 9, alignItems: 'start' }}>
+            <input type="checkbox" checked={restoreApproved}
+              onChange={event => setRestoreApproved(event.target.checked)} />
+            Ik heb de vervangende standen bekeken en geef toestemming om de huidige
+            tabbladinvoer te vervangen.
+          </label>
+          <button type="button" disabled={!restoreApproved} onClick={confirmRestore}>
+            Vervang mijn invoer met dit gecontroleerde bestand
+          </button>
+        </>}
+      </div>}
+      {undoCurrent && <button type="button" className="secondary"
+        onClick={undoRestore}>Herstel mijn vorige tabbladinvoer één keer</button>}
+    </fieldset>
+    <p role="status" aria-live="polite">{feedback}</p>
+    <p>Alle gegevens blijven alleen in het huidige browsertabblad totdat je zelf een
+      TXT- of JSON-bestand aanvraagt. Vernieuwen of sluiten wist de invoer. Een gedownload bestand
+      kan privégegevens bevatten: bewaar en deel dit uitsluitend zelf. Geen synchronisatie,
+      accountbewijs, officiële meterregistratie of koppeling aan energieleveranciers.</p>
   </section>;
 }
