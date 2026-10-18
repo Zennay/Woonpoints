@@ -1,7 +1,7 @@
 import ManualMonthProgress from './manual-month-progress';
 import PositionStats from './position-stats';
 import { ManualPositionsWorkspace } from './position-stats';
-import { ManualHousingShortlist } from './position-stats';
+import { ManualHousingShortlist, ManualDeadlinePlanner } from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -39,6 +39,7 @@ export default function HomePage() {
       <PositionStats />
       <ManualPositionsWorkspace />
       <ManualHousingShortlist />
+      <ManualDeadlinePlanner />
 
       <section className="panel">
         <div>
