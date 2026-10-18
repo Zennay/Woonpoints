@@ -30,6 +30,10 @@ export default function ManualMonthProgress() {
   const [transientDiscarded, setTransientDiscarded] = useState(false);
   const [reminderDates, setReminderDates] = useState<string[]>(['', '', '', '']);
   const [reminderMessage, setReminderMessage] = useState('');
+  const [scheduleMessage,setScheduleMessage] = useState('');
+  const [pendingSchedule,setPendingSchedule] = useState<{
+    month:string; openSlots:number; dates:string[]; times:string[]; duration:15|30|60
+  } | null>(null);
   const [pendingTransfer, setPendingTransfer] = useState<{month:string;count:number}|null>(null);
   const [transferMessage, setTransferMessage] = useState('');
   const [suggestedDates, setSuggestedDates] = useState<string[] | null>(null);
@@ -58,6 +62,8 @@ export default function ManualMonthProgress() {
         setReminderMessage('');
         setPendingTransfer(null);
         setTransferMessage('');
+        setPendingSchedule(null);
+        setScheduleMessage('');
       }
       setMonth(current);
       setObservedAt(observed);
@@ -119,6 +125,7 @@ export default function ManualMonthProgress() {
 
   function save(next: number) {
     setPendingTransfer(null);
+    setPendingSchedule(null);
     const observed = new Date();
     const current = localMonthKey(observed);
     setObservedAt(observed);
@@ -376,6 +383,77 @@ export default function ManualMonthProgress() {
     setSuggestedDates(null);
     setReminderMessage('Voorgestelde eigen datums ingevuld. Controleer en wijzig ze gerust; er is nog geen kalenderbestand gemaakt.');
   }
+
+  // Explicit, bounded personal backup: never alters account data or places events.
+  const scheduleFormat='woonpoints-private-month-calendar-v1';
+  function saveScheduleDraft() {
+    const current=localMonthKey(new Date());
+    if (!month || month !== current || opaqueStoredNote || count===null ||
+        remainingPersonalPlans<1) {
+      setScheduleMessage('Geen actuele eigen agendaplanning beschikbaar.');return;
+    }
+    const data={format:scheduleFormat,month:current,openSlots:remainingPersonalPlans,
+      dates:reminderDates.slice(0,remainingPersonalPlans),
+      times:reminderTimes.slice(0,remainingPersonalPlans),duration:reminderDuration};
+    const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],
+      {type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-agendaconcept-'+current+'.json';link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setScheduleMessage('Privé-JSON aangeboden om zelf te bewaren; jouw bestandslocatie kan extern synchroniseren.');
+  }
+  async function prepareScheduleDraft(file:File|undefined) {
+    setPendingSchedule(null);
+    if (!file) return;
+    if (file.size<1 || file.size>4096) {
+      setScheduleMessage('Ongeldig bestand: maximaal 4 KiB.');return;
+    }
+    try {
+      const raw=await file.text();
+      if (new TextEncoder().encode(raw).byteLength>4096) throw new Error('large');
+      const input:unknown=JSON.parse(raw);
+      if (!input || typeof input!=='object' || Array.isArray(input)) throw new Error('shape');
+      const obj=input as Record<string,unknown>;
+      if (Object.keys(obj).sort().join('|')!=='dates|duration|format|month|openSlots|times' ||
+          obj.format!==scheduleFormat || typeof obj.month!=='string' ||
+          obj.month!==localMonthKey(new Date()) || obj.month!==month ||
+          typeof obj.openSlots!=='number' || !Number.isSafeInteger(obj.openSlots) ||
+          obj.openSlots!==remainingPersonalPlans || obj.openSlots<1 || obj.openSlots>4 ||
+          !Array.isArray(obj.dates) || !Array.isArray(obj.times) ||
+          obj.dates.length!==obj.openSlots || obj.times.length!==obj.openSlots ||
+          (obj.duration!==15 && obj.duration!==30 && obj.duration!==60)) throw new Error('fields');
+      const duration=obj.duration as 15|30|60;
+      const dates=obj.dates as unknown[], times=obj.times as unknown[];
+      if (dates.some(day=>typeof day!=='string' ||
+            (day!=='' && !validLocalReminderDay(day,obj.month as string))) ||
+          times.some(time=>typeof time!=='string' ||
+            !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ||
+            Number(time.slice(0,2))*60+Number(time.slice(3,5))+duration>=1440) ||
+          new Set(dates.filter(day=>day!=='')).size!==dates.filter(day=>day!=='').length)
+        throw new Error('invalid');
+      setPendingSchedule({month:obj.month,openSlots:obj.openSlots,
+        dates:dates as string[],times:times as string[],duration});
+      setScheduleMessage('Eigen concept ingelezen. Bevestig expliciet vóór vervangen.');
+    } catch {
+      setScheduleMessage('Bestand geweigerd: alleen geldige datum-/tijdkeuzes voor deze maand en hetzelfde aantal open momenten. Bestaand concept behouden.');
+    }
+  }
+  function applyScheduleDraft() {
+    if (!pendingSchedule) return;
+    const plan=pendingSchedule;
+    if (plan.month!==localMonthKey(new Date()) || plan.month!==month ||
+        plan.openSlots!==remainingPersonalPlans || opaqueStoredNote || count===null) {
+      setPendingSchedule(null);
+      setScheduleMessage('Maand of voortgang gewijzigd: import niet toegepast.');
+      return;
+    }
+    setReminderDates(Array.from({length:MANUAL_MONTHLY_GOAL},(_,i)=>plan.dates[i]??''));
+    setReminderTimes(Array.from({length:MANUAL_MONTHLY_GOAL},(_,i)=>plan.times[i]??'09:00'));
+    setReminderDuration(plan.duration);setPendingSchedule(null);setSuggestedDates(null);
+    setScheduleMessage('Agendaconcept lokaal hersteld. De reactieteller bleef ongewijzigd; agenda-ICS wordt niet automatisch gemaakt.');
+  }
+
   function exportPersonalCalendar() {
     const currentMonth = localMonthKey(new Date());
     if (!month || month !== currentMonth || !remainingPersonalPlans) {
@@ -524,6 +602,40 @@ export default function ManualMonthProgress() {
                       setReminderMessage('Voorstel geannuleerd; bestaande datums behouden.');
                     }}>Behoud mijn huidige datums</button>
                   </div>}
+                </div>
+
+                <div className="manual-reminder-suggest">
+                  <h4>Bewaar je voorlopige agenda-keuzes apart</h4>
+                  <p>Privé-JSON met alleen datums, tijden en afspraakduur.
+                    Geen automatische opslag of kalenderkoppeling.</p>
+                  <button type="button" onClick={saveScheduleDraft}>
+                    Bewaar agendaconcept als privé-JSON…
+                  </button>
+                  <label htmlFor="manual-schedule-restore">
+                    Open eigen agendaconcept (JSON, maximaal 4 KiB)
+                  </label>
+                  <input id="manual-schedule-restore" type="file" accept=".json,application/json"
+                    onChange={e=>{const file=e.currentTarget.files?.[0];e.currentTarget.value='';
+                      void prepareScheduleDraft(file);}} />
+                  {pendingSchedule && <div className="month-csv-confirm" role="group"
+                    aria-label="Bevestig vervangen voorlopig agendaconcept">
+                    <p>Dit bevat {pendingSchedule.openSlots} eigen momenten
+                      voor {pendingSchedule.month} van {pendingSchedule.duration} minuten.
+                      Alleen tijdelijke afspraken worden vervangen, nooit de reactieteller.</p>
+                    <ol>{pendingSchedule.dates.map((day,i)=>
+                      <li key={i}>{day||'Nog geen datum'} · {pendingSchedule.times[i]}</li>)}</ol>
+                    <button type="button" onClick={applyScheduleDraft}>
+                      Vervang mijn agenda-keuzes
+                    </button>
+                    <button type="button" onClick={()=>{
+                      setPendingSchedule(null);
+                      setScheduleMessage('Herstel geannuleerd: bestaande agenda-keuzes behouden.');
+                    }}>Behoud mijn agenda-keuzes</button>
+                  </div>}
+                  {scheduleMessage && <p role="status">{scheduleMessage}</p>}
+                  <p>Oude maanden, vervallen datums, vreemde velden of andere
+                    aantallen open momenten worden geweigerd. Een gekozen
+                    bestandslocatie kan buiten Woonpoints synchroniseren.</p>
                 </div>
                 <button type="button" onClick={exportPersonalCalendar}>
                   Bewaar {remainingPersonalPlans} privémomenten als agenda-ICS…
