@@ -189,3 +189,22 @@ Legacy product prototype: https://woningkompas-amsterdam.lizellay.chatgpt.site
 1. GitHub repository for executable behavior.
 2. Notion Woonpoints Project HQ for product decisions, roadmap and handoff.
 3. WoningKompas Site for historical UI/product reference only.
+
+
+### Eigen reactiedeadlines en bezichtigingen (alleen tabbladgeheugen)
+Onder **Reactiedeadlines en bezichtigingen zelf plannen** kun je maximaal twaalf
+eigen acties invoeren: een anoniem herkenningslabel, het soort actie en de lokale
+datum/tijd. De eerstvolgende open actie en verstreken deadlines staan zichtbaar
+in de tijdlijn. Je kunt een actie bewerken, zelf afvinken of heropenen, een
+verwijdering bevestigen en optioneel alleen open acties bekijken.
+**Zelf afgevinkt betekent nooit bij WoningNet bevestigd.**
+
+Je kunt op verzoek een JSON-bestand downloaden, later een gecontroleerde JSON
+(maximaal 16 KB) importeren en de vervanging apart bevestigen. Een ICS-bestand
+biedt uitsluitend nog open acties aan je eigen agenda-app aan; de ICS bevat
+je eigen anonieme labels en vraagt je agenda-app om een herinnering één dag
+vooraf. Woonpoints plant zelf geen achtergrondmeldingen, heeft geen toegang
+tot je agenda of WoningNet en verstuurt geen reactie. Externe bestands- en
+agendaproviders kunnen bestanden synchroniseren. De planner bewaart geen invoer
+in localStorage, cookies of een server: sluit je het tabblad zonder JSON-export,
+dan vervalt de tabbladplanning.
