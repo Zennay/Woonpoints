@@ -93,6 +93,34 @@ authenticatie, accounttoestemming, backend, browserworker of
 `BOT_DRY_RUN=true`. Geverifieerde read-only brondata en afzonderlijke
 live-capability ontbreken nog.
 
+## Handmatige woningkeuze — lokaal, transparant en zonder WoningNet-toegang
+
+Een nieuw dashboardpaneel **Welke woningen passen bij jouw wensen?** laat je
+zelf maximaal twaalf woningen vergelijken. Geef elke woning een neutraal
+label (geen adres), huur, aantal kamers, eigen geschatte reistijd en balkon
+op. Kies eerst je maximale huur, minimumkamers en maximale reistijd.
+
+- Kandidaten buiten een harde grens krijgen **Past niet** met een concrete reden.
+  Alleen passende woningen worden op basis van een **persoonlijke rekenregel**
+  gerangschikt: maximaal 40 punten huurruimte, 35 reistijdruimte, 15 extra
+  kamers en optioneel 10 balkonpunten. Dit is **geen woningkans,
+  WoningNet-ranking, inkomenscheck of gegarandeerde toelating**.
+- Bewaar een vergelijking uitsluitend via **Bewaar JSON…** naar een zelfgekozen
+  bestand. De bronversie, voorkeuren en maximaal twaalf kandidaten zitten in
+  een begrensde JSON (maximaal 16 KiB). **Open eerder bewaarde privévergelijking**
+  leest een gekozen bestand met strikte structuur-/waardelimieten. De huidige
+  invoer wordt uitsluitend na **Vervang vergelijking** gewijzigd.
+- Met **Wis vergelijking** en een aparte bevestiging verwijder je de lokale
+  kandidaten. Alle niet-geëxporteerde gegevens blijven alleen in het
+  tabbladgeheugen; geen cookies, localStorage, database, analytics, server-
+  of WoningNet-aanroepen. Bestandsproviders kunnen gekozen exports zelf
+  buiten Woonpoints synchroniseren.
+
+**Fase:** dit is een autonome, handmatige M2-verkenning naast het nog open
+M1 read-only accounttraject. Er is **geen kandidaatimport, live bron,
+woningreactie, nieuw recht, vergunning of automatiseringsactivatie**.
+`BOT_DRY_RUN=true` en menselijke account-/toestemmingsgates blijven intact.
+
 ## Repository layout
 
 - `src/app/` — Next.js dashboard shell.
