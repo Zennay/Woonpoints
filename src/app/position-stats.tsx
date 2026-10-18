@@ -3918,6 +3918,84 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const diaryTotal=sameMonth?journal?.total??0:0;
   const monthCount=month?.month===activeMonth?month?.count??null:null;
   const discrepancy=monthCount!==null && diaryTotal>0 && diaryReacted!==monthCount;
+  const [reportIncludePoints,setReportIncludePoints]=useState(false);
+  const [reportPreview,setReportPreview]=useState<{signature:string;text:string}|null>(null);
+  const [reportApproved,setReportApproved]=useState(false);
+  const [reportMessage,setReportMessage]=useState('');
+  const localNow=new Date();
+  const todayKey=[localNow.getFullYear(),String(localNow.getMonth()+1).padStart(2,'0'),
+    String(localNow.getDate()).padStart(2,'0')].join('-');
+  const currentCalendarMonth=localMonthKey(localNow);
+  const reportSignature=JSON.stringify({
+    activeMonth,todayKey,month:month?.month===activeMonth?month:null,
+    journal:sameMonth?journal:null,includePoints:reportIncludePoints,
+    points:reportIncludePoints?pointsSnapshot:null
+  });
+  const reportCurrent=reportPreview!==null&&reportPreview.signature===reportSignature;
+  const reportReady=monthCount!==null||(sameMonth&&journal!==null)||
+    (reportIncludePoints&&pointsSnapshot?.last!=null);
+  const midmonthNudge=currentCalendarMonth===activeMonth&&localNow.getDate()>=15&&
+    (monthCount===null||monthCount<MANUAL_MONTHLY_GOAL||
+      (sameMonth&&journal!==null&&diaryReacted<MANUAL_MONTHLY_GOAL));
+  function preparePrivateMonthReport(){
+    if(!reportReady){setReportMessage('Vul eerst handmatige gegevens in om een eigen maandrapport te maken.');return;}
+    const lines=[
+      'WOONPOINTS — PERSOONLIJK MAANDRAPPORT '+activeMonth,
+      'Zelf samengesteld op '+todayKey+' · geen officiële woningportaalgegevens',
+      '',
+      'EIGEN MAANDTELLER',
+      monthCount===null?'Geen eigen maandteller voor deze maand beschikbaar.':
+        monthCount+' / '+MANUAL_MONTHLY_GOAL+' door jou genoteerd, niet officieel geregistreerd.',
+      month?.month===activeMonth?'Opslagstatus eigen teller: '+month.storage+'.':
+        'Opslagstatus van de eigen teller onbekend.',
+      '',
+      'EIGEN REACTIEDAGBOEK',
+      sameMonth&&journal!==null?
+        'Notities t/m vandaag: '+diaryTotal+' · zelf als gereageerd: '+diaryReacted+
+        ' · overige statussen: '+(diaryTotal-diaryReacted)+'.':
+        'Actueel dagboekoverzicht ontbreekt.',
+      discrepancy?'Eigen teller en dagboek verschillen; controleer allebei handmatig.':
+        'Een overeenkomst tussen eigen tellingen is geen bronverificatie.',
+      '',
+      'ZELF GENOTEERDE ZOEKPUNTEN',
+      !reportIncludePoints?'Bewust niet opgenomen voor privacy.':
+        pointsSnapshot?.last?'Laatste eigen maand '+pointsSnapshot.last.month+': '+
+          pointsSnapshot.last.points+' zelf genoteerde punten.':
+          'Geen eigen puntenstand beschikbaar.',
+      ...(reportIncludePoints&&pointsSnapshot?.previous&&pointsSnapshot?.last?[
+        'Eerdere eigen maand '+pointsSnapshot.previous.month+': '+pointsSnapshot.previous.points+
+        ' punten. Verschil: '+(pointsSnapshot.last.points-pointsSnapshot.previous.points)+'.'
+      ]:[]),
+      '',
+      'PERSOONLIJKE ACTIES (NIET AUTOMATISCH)',
+      monthCount!==null&&monthCount>=MANUAL_MONTHLY_GOAL?
+        'Controleer bij de echte aanbieder of jouw maanddoel officieel geldig is.':
+        'Controleer zelf je echte account en of je nog passende woningen wilt bekijken.',
+      ...(discrepancy?['Herstel eventuele verschillen tussen je twee eigen bronnen.']:[]),
+      ...(midmonthNudge?['De maand is halverwege; controleer je eigen planning en deadlines.']:[]),
+      'Controleer eventuele eigen punten en reactiegegevens altijd bij de originele aanbieder.',
+      '',
+      'Geen officiële verificatie, accountkoppeling, automatische reactie of',
+      'garantie op zoekpunten, selectie, toewijzing of een geldig maanddoel.',
+      'Dit overzicht wordt uitsluitend na eigen toestemming als lokaal TXT-bestand aangeboden.'
+    ];
+    const text=lines.join('\n')+'\n';
+    if(text.length>7000){setReportMessage('Rapport te groot; niet aangeboden.');return;}
+    setReportPreview({signature:reportSignature,text});
+    setReportApproved(false);
+    setReportMessage('Voorvertoning gemaakt. Lees de exacte tekst en keur bewust goed.');
+  }
+  function downloadPrivateMonthReport(){
+    if(!reportCurrent||!reportApproved||!reportPreview)return;
+    const url=URL.createObjectURL(new Blob([reportPreview.text],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-prive-maandrapport-'+activeMonth+'.txt';
+    link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setReportMessage('Eigen rapport aangeboden. Je gekozen bestandsprovider kan dit elders synchroniseren.');
+  }
   return <>
     <section className="panel private-month-pulse" aria-labelledby="private-month-pulse-heading">
       <div>
@@ -3971,6 +4049,47 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
         {diaryReacted>4 && <p role="status">Meer dan vier eigen notities zijn als
           gereageerd gemarkeerd. Ze worden niet automatisch tot het maanddoel
           teruggebracht.</p>}
+        <section aria-labelledby="private-month-report-title" style={{border:'1px solid #d0e0d4',borderRadius:12,padding:16,marginTop:18}}>
+          <h3 id="private-month-report-title">Mijn eigen maandrapport</h3>
+          <p>Maak één privéoverzicht van de zelf ingevulde maandteller en reactienotities. Dit is
+            geen officieel WoningNet-rapport, bevat geen adressen of accountgegevens en wordt
+            niet automatisch opgeslagen of gedeeld.</p>
+          {midmonthNudge&&<p role="status"><strong>Persoonlijke maandcheck:</strong> de maand is
+            minimaal halverwege en je eigen voortgang kan aandacht vragen. Dit is geen melding
+            van een woningplatform en controleert geen officiële reactie.</p>}
+          <label htmlFor="monthly-review-include-points" style={{display:'flex',alignItems:'center',gap:10}}>
+            <input id="monthly-review-include-points" type="checkbox" checked={reportIncludePoints}
+              onChange={event=>{setReportIncludePoints(event.target.checked);setReportApproved(false);}}/>
+            Voeg mijn zelf genoteerde puntenhistorie toe (optioneel)
+          </label>
+          <p>Eigen punten zijn standaard uitgesloten. Een handmatig genoteerde puntenstand kan
+            uit een andere maand komen.</p>
+          <button type="button" disabled={!reportReady} onClick={preparePrivateMonthReport}>
+            Maak huidige TXT-voorvertoning
+          </button>
+          {reportPreview&&<div role="group" aria-label="Maandrapport controleren"
+            style={{marginTop:14,border:'1px solid #a4b8a9',padding:12,borderRadius:8}}>
+            {!reportCurrent&&<p role="status">Je eigen gegevens, datum of privacykeuze veranderden.
+              De eerdere toestemming geldt niet meer. Maak eerst een actuele voorvertoning.</p>}
+            <label htmlFor="monthly-review-preview">Lees de exacte exporttekst</label>
+            <textarea id="monthly-review-preview" value={reportPreview.text} readOnly rows={15}
+              style={{display:'block',width:'100%',maxWidth:'100%',minHeight:230,marginTop:8}}/>
+            <label htmlFor="monthly-review-approve" style={{display:'flex',alignItems:'center',gap:10,marginTop:12}}>
+              <input id="monthly-review-approve" type="checkbox" checked={reportApproved}
+                disabled={!reportCurrent} onChange={event=>setReportApproved(event.target.checked)}/>
+              Ik heb de inhoud en eventuele privégegevens zelf nagekeken
+            </label>
+            <button type="button" disabled={!reportCurrent||!reportApproved}
+              onClick={downloadPrivateMonthReport}>Download gecontroleerd maandrapport als TXT</button>
+            <button type="button" onClick={()=>{
+              setReportPreview(null);setReportApproved(false);
+              setReportMessage('Voorvertoning gesloten zonder download.');
+            }}>Sluit voorvertoning</button>
+          </div>}
+          {reportMessage&&<p role="status">{reportMessage}</p>}
+          <p>Een eigen 4/4 is nooit bewijs van vier geldige reacties. Een gekozen
+            bestandsprovider kan de bewust gedownloade TXT buiten deze app synchroniseren.</p>
+        </section>
         <p><a href="#manual-progress-heading">Open mijn maandplanning</a>
           {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a>
           {' · '}<a href="#private-points-heading">Open mijn zoekpuntenhistorie</a></p>
