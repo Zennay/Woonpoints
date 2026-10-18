@@ -2916,7 +2916,7 @@ export function PrivateSearchPointsHistory() {
           downloadPrivatePointsCsv(sorted);
           setMessage('Eigen numerieke CSV aangeboden. Controleer de gekozen bestandslocatie.');
         }}>Bewaar eigen maandstanden als CSV…</button>
-        <button type="button" className="secondary" disabled={!rows.length>
+        <button type="button" className="secondary" disabled={!rows.length}
           onClick={()=>setConfirmClear(true)}>Wis alle maandstanden…</button>
       </div>
       {confirmClear && <div className="private-points-confirm" role="group" aria-label="Bevestig alle notities wissen">
