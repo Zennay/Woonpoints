@@ -261,6 +261,10 @@ function PrivateDepositLedger() {
   const [txtConfirmed, setTxtConfirmed] = useState(false);
   const [calendarPreview, setCalendarPreview] = useState<{source: string; contents: string; count: number} | null>(null);
   const [calendarConfirmed, setCalendarConfirmed] = useState(false);
+  const [oneStepUndo, setOneStepUndo] = useState<{
+    previousDeposit: string; previousEntries: DepositEvent[];
+    expectedState: string; action: string;
+  } | null>(null);
   const depositCents = parseEuro(deposit);
   const current: DepositBackup | null = depositCents === null ? null : {
     kind: KIND, schema: 2, depositCents, entries
@@ -280,8 +284,33 @@ function PrivateDepositLedger() {
     return { refunded, deducted, planned, plannedOverdue, legacyFuture, rest };
   }, [entries, depositCents]);
 
+  // Only the exact state created by the most recent destructive step can be undone.
+  function ownState(value = deposit, events = entries) {
+    return JSON.stringify({ deposit: value, entries: events });
+  }
+  function saveUndo(action: string, nextDeposit: string, nextEntries: DepositEvent[]) {
+    setOneStepUndo({
+      previousDeposit: deposit, previousEntries: entries,
+      expectedState: ownState(nextDeposit, nextEntries), action
+    });
+  }
+  function restoreOneStep() {
+    if (!oneStepUndo || oneStepUndo.expectedState !== ownState()) {
+      setOneStepUndo(null);
+      setNotice('De huidige gegevens zijn veranderd. Terugzetten is uitgeschakeld om nieuwe invoer te behouden.');
+      return;
+    }
+    if (!window.confirm('De vorige eigen wijziging terugzetten? Dit herstelt uitsluitend de tijdelijke tabbladgegevens.')) return;
+    setDeposit(oneStepUndo.previousDeposit);
+    setEntries(oneStepUndo.previousEntries);
+    setOneStepUndo(null);
+    setPending(null);
+    setTxtConfirmed(false);
+    setCalendarConfirmed(false);
+    setNotice('Vorige eigen tabbladstatus eenmalig hersteld. Maak nieuwe exports opnieuw.');
+  }
   function changeDeposit(value: string) {
-    setDeposit(value); setPending(null); setNotice('');
+    setDeposit(value); setPending(null); setOneStepUndo(null); setNotice('');
   }
   function addEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -297,23 +326,30 @@ function PrivateDepositLedger() {
       id: crypto.randomUUID(), kind: eventKind, date: eventDate,
       label: eventLabel.trim(), amountCents: cents
     }]);
+    setOneStepUndo(null);
     setEventLabel(''); setEventAmount(''); setNotice('Eigen gebeurtenis toegevoegd.');
     setPending(null);
   }
   function confirmPlannedReceipt(id: string) {
     const planned = entries.find(item => item.id === id && item.kind === 'gepland');
     if (!planned || !window.confirm('Heb je dit bedrag daadwerkelijk ontvangen? De verwachte datum wordt vervangen door vandaag. Controleer eerst je eigen bankoverzicht.')) return;
-    setEntries(previous => previous.map(item =>
+    const nextEntries = entries.map(item =>
       item.id === id && item.kind === 'gepland' ?
-        { ...item, kind: 'terugontvangen', date: depositToday() } : item
-    ));
+        { ...item, kind: 'terugontvangen' as const, date: depositToday() } : item
+    );
+    saveUndo('ontvangstbevestiging', deposit, nextEntries);
+    setEntries(nextEntries);
     setPending(null);
     setTxtConfirmed(false);
     setNotice('Eigen verwachting handmatig als ontvangen genoteerd. Dit is geen bankverificatie.');
   }
   function removeEvent(id: string) {
-    setEntries(previous => previous.filter(item => item.id !== id));
-    setPending(null); setNotice('Eigen regel verwijderd.');
+    const entry = entries.find(item => item.id === id);
+    if (!entry || !window.confirm('Deze eigen boekingsregel verwijderen? Je kunt direct daarna eenmaal terugzetten.')) return;
+    const nextEntries = entries.filter(item => item.id !== id);
+    saveUndo('verwijdering', deposit, nextEntries);
+    setEntries(nextEntries);
+    setPending(null); setNotice('Eigen regel verwijderd. Eenmalig herstel is beschikbaar zolang niets verandert.');
   }
   function downloadJson() {
     if (!current) { setNotice('Vul eerst een geldig oorspronkelijk borgbedrag in.'); return; }
@@ -397,9 +433,12 @@ function PrivateDepositLedger() {
       setNotice('Eigen gegevens zijn gewijzigd. Kies de back-up opnieuw om die te beoordelen.');
       return;
     }
-    setDeposit((pending.data.depositCents / 100).toFixed(2).replace('.', ','));
+    const nextDeposit = (pending.data.depositCents / 100).toFixed(2).replace('.', ',');
+    saveUndo('complete privé-import', nextDeposit, pending.data.entries);
+    setDeposit(nextDeposit);
     setEntries(pending.data.entries);
-    setPending(null); setNotice('Back-up hersteld in dit tabblad. Oude regels zijn vervangen.');
+    setPending(null);
+    setNotice('Back-up hersteld. Vorige tabbladstatus is eenmaal herstelbaar zolang je niets wijzigt.');
   }
   return (
     <section className="panel" aria-labelledby="private-deposit-heading">
@@ -511,6 +550,19 @@ function PrivateDepositLedger() {
             Dit vervangt alle eigen notities in deze sessie, niet je eerdere bestanden.</p>
           <button type="button" onClick={restoreBackup}>Ja, vervang mijn borgboek</button>{' '}
           <button type="button" onClick={() => { setPending(null); setNotice('Herstel geannuleerd.'); }}>Annuleer</button>
+        </div>}
+        {oneStepUndo && <div role="group" aria-label="Eenmalig privé-herstel">
+          <h3>Vorige eigen wijziging eenmalig herstellen</h3>
+          <p>Laatste actie: {oneStepUndo.action}. Vorige tabbladstatus:
+            {' '}{oneStepUndo.previousEntries.length} notities.
+            Als er daarna iets is gewijzigd, wordt herstel uitgeschakeld.
+            Een terugzetactie is alleen tijdelijk en verandert nooit een eerder opgeslagen bestand.</p>
+          {oneStepUndo.expectedState === ownState() ?
+            <button type="button" onClick={restoreOneStep}>Herstel mijn vorige tabbladstatus…</button> :
+            <p role="alert">Nieuwe wijzigingen gedetecteerd. Vorige tabbladstatus wordt niet overschreven.</p>}
+          <button type="button" onClick={() => setOneStepUndo(null)}>
+            Wis tijdelijk herstelpunt
+          </button>
         </div>}
         {notice && <p role="status" aria-live="polite">{notice}</p>}
       </div>
