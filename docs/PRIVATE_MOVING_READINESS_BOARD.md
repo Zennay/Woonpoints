@@ -98,3 +98,50 @@ De actie heeft geen externe netwerk- of serverkant, raakt geen andere
 browseropslag wordt geen onterechte verwijderbevestiging geclaimd. De
 bestaande individuele herstelfuncties en handmatige JSON-imports blijven
 onveranderd.
+
+## Eén gecombineerde privéback-up — vier echte bronmodules
+
+Op **Mijn verhuisregie → Mijn vier verhuisdelen samen back-uppen of herstellen**
+kun je nu één volledig privé-JSON downloaden en later weer terugzetten. Dit
+vervangt niet de vier zelfstandige handmatige back-ups en is ook geen
+account-/cloudsynchronisatie. De gezamenlijke back-up omvat uitsluitend:
+
+- De woonreis: exact de zelf afgevinkte, bekende stapcodes.
+- Verhuisdag plan B: vier eigen actie-/contactrol-/datumregels en vinkjes.
+- Meterstanden: beide woningdelen en alle getoonde/verborgen meterkeuzes en
+  waarden (zodat verborgen invoer niet onbedoeld verdwijnt).
+- Nutsvoorzieningen: zes eigen status-/datumregels.
+
+**Zo gebruik je dit:**
+
+1. Wacht totdat de vier onderdelen zijn geladen. Bekijk met één klik de
+   **exacte inhoud** van het volledige JSON-bestand (maximaal 32 KiB).
+2. Bevestig dat je het gevoelige privébestand hebt bekeken en kies bewust een
+   veilige locatie voor de optionele download. Het bestand bevat mogelijk
+   meterstanden, roepnamen, privéacties en zelfgekozen datums. Bewaar het
+   zelf; Woonpoints verstuurt niets naar een server of derde partij.
+3. Kies later het eigen gecombineerde JSON-bestand om de vier schermen samen
+   te herstellen. De volledige versie-, sleutel-, inhouds- en omvangscontrole
+   vindt **vóór iedere wijziging** plaats. Een onvolledig, corrupt,
+   niet-canoniek of te groot bestand wordt volledig geweigerd.
+4. Het scherm toont welke vier onderdelen worden vervangen en vereist een
+   afzonderlijke bevestiging. De bestaande sessie-opslagkeuzes per module
+   blijven ongewijzigd (standaard uit).
+5. Meteen na herstellen kun je **de vorige tabbladstatus éénmalig
+   terugzetten**, zolang de vier bronwaarden niet onafhankelijk zijn gewijzigd.
+   Daarna blokkeert undo om nieuwe eigen invoer te beschermen.
+
+De module gebruikt voor elk onderdeel diens **bestaande canonieke
+JSON-hersteldecoder**, inclusief validatie van verborgen meterwaarden.
+Voor het gelijktijdig vervangen meldt het centrale scherm de vier
+gevalideerde nieuwe snapshots alleen via lokale browsertabblad-events aan
+de bestaande React-componenten; zij verwerken die uitsluitend na hernieuwde
+eigen decode-/groottecheck. Alle wijzigingen verschijnen onmiddellijk in
+het bestaande verhuisregiebord, inclusief eigen controledatums en voortgang.
+
+**Privacygrenzen:** er wordt niets automatisch opgeslagen,
+geüpload, geïmporteerd vanuit WoningNet, betaald of naar leveranciers
+doorgestuurd. De gecombineerde export en het herstel zijn handmatige acties.
+De export bevat privé-invoer; lokale downloads kunnen vanuit een
+door jou gekozen downloadmap extern gesynchroniseerd worden. Het eigen
+`sessionStorage`-opt-in-model uit de eerdere PR's is ongewijzigd.
