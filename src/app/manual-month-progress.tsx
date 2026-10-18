@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { PrivateJournalCountOffer } from './position-stats';
 import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
@@ -16,7 +17,10 @@ import {
 } from '../lib/manual-month-progress.mjs';
 
 /** Optional private notes, never a verified account counter or live instruction. */
-export default function ManualMonthProgress() {
+export default function ManualMonthProgress({journalOffer,onJournalDecision}:{
+  journalOffer?: PrivateJournalCountOffer|null;
+  onJournalDecision?: ()=>void;
+} = {}) {
   const [month, setMonth] = useState<string | null>(null);
   const [observedAt, setObservedAt] = useState<Date | null>(null);
   const [count, setCount] = useState<number | null>(null);
@@ -515,6 +519,40 @@ export default function ManualMonthProgress() {
         <p className="manual-total">
           {opaqueStoredNote ? 'Eerdere of onleesbare notitie aanwezig' : count === null ? 'Nog niets ingevuld' : `${count} / ${MANUAL_MONTHLY_GOAL} zelf genoteerd`}
         </p>
+        {journalOffer && <div className="month-csv-confirm" role="group"
+          aria-label="Bevestig voorstel uit eigen reactiedagboek">
+          <h3>Eigen dagboekstand voorstellen aan deze maandplanning</h3>
+          <p>Je reactiedagboek biedt voor <strong>{journalOffer.month}</strong> een
+            <strong> persoonlijke telling van {journalOffer.count}</strong> aan,
+            afgeleid van {journalOffer.totalThisMonth} eigen notities.
+            Alleen de letterlijk gemarkeerde status 'Zelf gereageerd' telt.
+            Jouw huidige maandstand is <strong>{count===null?'nog leeg':count}</strong>.
+            Niets is door WoningNet gecontroleerd: dit bewijst geen
+            geregistreerde, geldige maandreactie of zoekpunt.</p>
+          {journalOffer.month!==month || month!==localMonthKey(new Date()) ||
+            opaqueStoredNote || journalOffer.count>MANUAL_MONTHLY_GOAL ||
+            journalOffer.count<0 ? <p role="alert">Dit voorstel kan niet worden
+            toegepast: je maand is veranderd, de gegevens zijn ontoegankelijk
+            of de telling ligt buiten het maanddoel. De bestaande maandstand
+            blijft behouden.</p> :
+          <button type="button" onClick={()=>{
+            const currentMonth=localMonthKey(new Date());
+            const suggested=journalOffer.count;
+            if (currentMonth !== journalOffer.month || currentMonth !== month ||
+                !Number.isSafeInteger(suggested) || suggested<0 ||
+                suggested>MANUAL_MONTHLY_GOAL || opaqueStoredNote) {
+              onJournalDecision?.();
+              return;
+            }
+            save(suggested);
+            onJournalDecision?.();
+            setTransferMessage('Eigen dagboekstand ter opslag aangeboden. Controleer bovenaan het resultaat en eventuele conflict-/opslagwaarschuwingen. Dit is geen officiële WoningNet-registratie.');
+          }}>Ja, gebruik deze zelf genoteerde maandtelling</button>}
+          <button type="button" className="secondary" onClick={()=>{
+            onJournalDecision?.();
+            setTransferMessage('Dagboekvoorstel geannuleerd. Je huidige maandstand is behouden.');
+          }}>Nee, behoud mijn maandstand</button>
+        </div>}
         {month !== null && (count === null ? (
           !opaqueStoredNote && <button type="button" onClick={() => save(0)}>Begin maandplanning</button>
         ) : (
