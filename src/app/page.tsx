@@ -287,6 +287,32 @@ function calendarFor(items: Item[]): string {
 }
 
 
+// Only future, self-recorded personal appointment notes, not verified landlord appointments.
+function calendarForOwnAppointments(appointments: { event: FollowUp; item: Item }[]): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'CALSCALE:GREGORIAN',
+    'PRODID:-//Woonpoints//Private Self-Recorded Appointments//NL', 'METHOD:PUBLISH'
+  ];
+  for (const { event, item } of appointments) {
+    if (!validDate(event.day) || event.kind !== 'afspraak' || item.status === 'afgerond') continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      'UID:' + event.id + '@woonpoints.local',
+      'DTSTAMP:' + stamp,
+      'DTSTART;VALUE=DATE:' + event.day.replace(/-/g, ''),
+      'DTEND;VALUE=DATE:' + nextDay(event.day).replace(/-/g, ''),
+      'SUMMARY:' + escapeIcs('Eigen afspraaknotitie: ' + item.title),
+      'DESCRIPTION:' + escapeIcs('Dit is uitsluitend een door jou gemaakte persoonlijke afspraaknotitie bij ' + item.room + '. Niet door verhuurder of WoningNet bevestigd. Controleer de echte correspondentie.'),
+      'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY',
+      'DESCRIPTION:Controleer eigen afspraaknotitie', 'END:VALARM',
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(foldIcs).join('\r\n') + '\r\n';
+}
+
 type InspectionGrade = 'goed' | 'aandacht';
 type InspectionCheck = { id: string; room: string; title: string; tip: string; priority: Priority };
 const INSPECTION_CHECKS: InspectionCheck[] = [
@@ -825,6 +851,12 @@ function PrivateMoveAftercare() {
     (a.item.due || '9999-99-99').localeCompare(b.item.due || '9999-99-99') ||
     a.item.title.localeCompare(b.item.title));
   const attentionCount = followUpInbox.filter(entry => entry.urgency <= 4).length;
+  const ownAppointments = history.filter(log => log.kind === 'afspraak' && log.day >= currentDay)
+    .flatMap(event => {
+      const item = active.find(candidate => candidate.id === event.issueId);
+      return item ? [{ event, item }] : [];
+    }).sort((a, b) => a.event.day.localeCompare(b.event.day) ||
+      a.item.title.localeCompare(b.item.title));
 
   const shown = useMemo(() => items.filter(item => filter === 'alles' ||
     (filter === 'actief' ? item.status !== 'afgerond' : item.status === 'afgerond'))
@@ -1114,6 +1146,16 @@ function PrivateMoveAftercare() {
     setMessage('Eigen ICS-agenda gemaakt. Import en herinneringen worden uitsluitend door je agenda-app beheerd.');
   }
 
+  function exportOwnAppointments() {
+    if (ownAppointments.length === 0) {
+      setMessage('Geen toekomstige eigen afspraaknotities bij open aandachtspunten gevonden.');
+      return;
+    }
+    download('woonpoints-eigen-afspraaknotities.ics',
+      calendarForOwnAppointments(ownAppointments), 'text/calendar;charset=utf-8');
+    setMessage('Je eigen afspraaknotities zijn als ICS opgeslagen; er is niets gepland of geverifieerd bij derden.');
+  }
+
   function toggleNoticeItem(id: string) {
     setChosenIssueIds(prev => prev.includes(id)
       ? prev.filter(existing => existing !== id)
@@ -1311,6 +1353,28 @@ function PrivateMoveAftercare() {
             <ol>{upcoming.slice(0, 12).map(item =>
               <li key={item.id}><strong>{item.due}</strong> — {item.room}: {item.title} ({item.priority}, {item.status})</li>)}</ol>}
           {upcoming.length > 12 && <p>En nog {upcoming.length - 12} punten. Bekijk de volledige lijst hieronder of exporteer de ICS.</p>}
+        </div>
+      </section>
+      <section className="panel" aria-labelledby="nazorg-own-appointments">
+        <div>
+          <p className="eyebrow">EIGEN AFSPRAAKNOTITIES</p>
+          <h2 id="nazorg-own-appointments">Wat staat er in mijn eigen agenda?</h2>
+          <p>Zie toekomstige afspraaknotities die je zelf in de contacthistorie van open nazorgpunten hebt ingevoerd.
+            Het zijn <strong>geen door een verhuurder bevestigde afspraken</strong>.</p>
+        </div>
+        <div>
+          <p><strong>{ownAppointments.length}</strong> toekomstige eigen notitie{ownAppointments.length === 1 ? '' : 's'} bij open punten.</p>
+          {ownAppointments.length > 0 && <ol>
+            {ownAppointments.slice(0, 12).map(({ event, item }) =>
+              <li key={event.id}><strong>{event.day}</strong> — {item.room}: {item.title}
+                <span> (zelf genoteerd; verifieer bij de echte bron)</span></li>)}
+          </ol>}
+          {ownAppointments.length > 12 && <p>Er zijn nog {ownAppointments.length - 12} toekomstige notities; de ICS bevat alle actuele notities bij open punten.</p>}
+          <button type="button" disabled={ownAppointments.length === 0} onClick={exportOwnAppointments}>
+            Download eigen afspraaknotities als ICS
+          </button>
+          <p>Het exportbestand bevat de eigen dag en titel/ruimte, <strong>niet</strong> de vrije privécontacttekst.
+            Agenda-apps kunnen het bestand synchroniseren en herinneringen maken. Er wordt niets naar WoningNet of je verhuurder gestuurd.</p>
         </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-form-title">
