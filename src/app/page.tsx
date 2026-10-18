@@ -29,6 +29,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-moving-day-heading',title:'Verhuisdag',category:'verhuizen'},
   {id:'private-packing-heading',title:'Paklijst',category:'verhuizen'},
   {id:'private-moving-plan-b-heading',title:'Verhuisdag plan B',category:'verhuizen'},
+  {id:'private-moving-readiness-heading',title:'Verhuisregie',category:'essentieel'},
   {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
   {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
@@ -67,6 +68,7 @@ const homeNavAliases:Record<string,string[]>={
   'private-moving-day-heading':['dagplanning','tijdlijn','verhuisdag'],
   'private-packing-heading':['dozen','inpakken','uitpakken','inventaris'],
   'private-moving-plan-b-heading':['noodplan','verhuisdag noodplan','backup vervoer','plan b'],
+  'private-moving-readiness-heading':['mijn verhuisregie','verhuisoverzicht','prioriteiten verhuizing','wat moet ik doen'],
   'private-moving-helpers-heading':['helpers','vrijwilligers'],
   'private-address-change-heading':['adres doorgeven','post'],
   'private-handover-heading':['sleuteloverdracht','inspectie'],
@@ -623,7 +625,7 @@ function movingFallbackDownload(name:string,body:string,mime:string){
     document.body.appendChild(link);link.click();link.remove();
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
-function PrivateMovingFallbackPlan(){
+function PrivateMovingFallbackPlan({onPulse}:{onPulse?: (pulse:PrivateMovePulse)=>void}={}){
   const [entries,setEntries]=useState<MovingFallbackEntry[]>(defaultMovingFallbacks);
   const [preview,setPreview]=useState<'txt'|'json'|'ics'|null>(null);
   const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
@@ -637,6 +639,15 @@ function PrivateMovingFallbackPlan(){
     return now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());})();
   const dated=entries.filter(row=>row.day&&row.day<=today&&!row.done);
   const futureReminders=entries.filter(row=>row.day&&!row.done);
+  useEffect(()=>{
+    const reminders:PrivateMoveReminder[]=entries.filter(row=>row.day&&!row.done&&
+      validMovingFallbackDay(row.day)).map(row=>({
+      id:row.id,day:row.day,origin:'fallback',
+      title:MOVING_FALLBACKS.find(item=>item.id===row.id)!.title
+    }));
+    onPulse?.({done:ready,total:MOVING_FALLBACKS.length,
+      attention:dated.length,invalid:!valid,reminders});
+  },[onPulse,ready,dated.length,valid,entries]);
   // Intentionally export only known generic labels: never leak user-entered action/contact text.
   const calendar=(()=>{
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
@@ -800,7 +811,189 @@ function PrivateMovingFallbackPlan(){
   </section>;
 }
 
+
+type PrivateMoveReminder={id:string;title:string;day:string;origin:'fallback'|'utility'};
+type PrivateMovePulse={done:number;total:number;attention:number;invalid:boolean;
+  reminders?:PrivateMoveReminder[]};
+type PrivateMovingReadinessRow={
+  id:string;title:string;href:string;hint:string;pulse:PrivateMovePulse|null
+};
+function PrivateMovingReadinessBoard({rows}:{
+  rows:PrivateMovingReadinessRow[]
+}){
+  const [preview,setPreview]=useState<{
+    signature:string;contents:string;mode:'txt'|'ics'
+  }|null>(null);
+  const pending=rows.some(row=>row.pulse===null);
+  const complete=rows.reduce((sum,row)=>sum+(row.pulse?.done??0),0);
+  const total=rows.reduce((sum,row)=>sum+(row.pulse?.total??0),0);
+  const attention=rows.reduce((sum,row)=>sum+(row.pulse?.attention??0),0);
+  const urgent=rows.filter(row=>row.pulse?.invalid||Boolean(row.pulse?.attention))
+    .sort((a,b)=>(Number(Boolean(b.pulse?.invalid))-Number(Boolean(a.pulse?.invalid)))||
+      (b.pulse?.attention??0)-(a.pulse?.attention??0));
+  const incomplete=rows.filter(row=>row.pulse&&row.pulse.done<row.pulse.total);
+  // Reminders are fixed labels + own calendar dates; never read private user strings.
+  const reminders=rows.flatMap(row=>row.pulse?.reminders??[])
+    .sort((a,b)=>a.day.localeCompare(b.day)||a.origin.localeCompare(b.origin)||a.id.localeCompare(b.id));
+  const calendar=(()=>{
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const escape=(value:string)=>value.replace(/\\/g,'\\\\')
+      .replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+    const lines=['BEGIN:VCALENDAR','VERSION:2.0',
+      'PRODID:-//Woonpoints//Private Moving Readiness//NL',
+      'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+    for(const item of reminders){
+      const next=new Date(item.day+'T00:00:00.000Z');
+      next.setUTCDate(next.getUTCDate()+1);
+      lines.push('BEGIN:VEVENT',
+        'UID:woonpoints-regie-'+item.origin+'-'+item.id+'-'+item.day.replace(/-/g,'')+'@local.invalid',
+        'DTSTAMP:'+stamp,
+        'DTSTART;VALUE=DATE:'+item.day.replace(/-/g,''),
+        'DTEND;VALUE=DATE:'+next.toISOString().slice(0,10).replace(/-/g,''),
+        'SUMMARY:'+escape('Zelf controleren: '+item.title),
+        'DESCRIPTION:Persoonlijke Woonpoints-controledatum. Geen externe afspraak of bevestiging.',
+        'END:VEVENT');
+    }
+    // Fold at <=70 UTF-8 octets, without splitting multibyte characters.
+    const encoder=new TextEncoder();
+    const fold=(line:string)=>{
+      let out='',octets=0;
+      for(const character of line){
+        const bytes=encoder.encode(character).length;
+        if(octets+bytes>70){out+='\r\n ';octets=1;}
+        out+=character;octets+=bytes;
+      }
+      return out;
+    };
+    return [...lines,'END:VCALENDAR',''].map(fold).join('\r\n');
+  })();
+  const formatLine=(value:string)=>value.replace(/[\u0000-\u001f\u007f-\u009f]/gu,' ').trim();
+  const report=[
+    'WOONPOINTS · MIJN EIGEN VERHUISREGIE',
+    'Alle waarden komen uit eigen, tijdelijke tabbladnotities; geen officiële verificatie.',
+    'Geen automatische afspraken of accountgegevens.',
+    '',
+    ...rows.flatMap(row=>[
+      row.title,
+      row.pulse===null?'Dit onderdeel is nog niet geladen.':
+      'Zelf geregistreerd: '+row.pulse.done+' van '+row.pulse.total+
+      (row.pulse.invalid?' · invoer controleren':'')+
+      (row.pulse.attention?' · '+row.pulse.attention+' aandachtspunt(en)':''),
+      'Open onderdeel: '+formatLine(row.href),
+      ''
+    ])
+  ].join('\r\n')+'\r\n';
+  // Only a complete, current read model can be downloaded.
+  const signature=JSON.stringify(rows.map(row=>row.pulse));
+  const validPreview=preview!==null&&preview.signature===signature&&!pending;
+  function download(){
+    if(!validPreview||!preview)return;
+    const url=URL.createObjectURL(new Blob([preview.contents],
+      {type:preview.mode==='ics'?'text/calendar;charset=utf-8':'text/plain;charset=utf-8'}));
+    try{
+      const link=document.createElement('a');link.href=url;
+      link.download=preview.mode==='ics'?
+        'woonpoints-verhuisregie-datums.ics':'woonpoints-verhuisregie.txt';
+      document.body.appendChild(link);link.click();link.remove();
+    }finally{
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+      setPreview(null);
+    }
+  }
+  return <section className="panel" aria-labelledby="private-moving-readiness-heading"
+    style={{display:'block'}}>
+    <p className="eyebrow">PRIVÉ · ÉÉN OVERZICHT</p>
+    <h2 id="private-moving-readiness-heading">Mijn verhuisregie</h2>
+    <p>Bekijk vier <strong>zelf ingevulde</strong> onderdelen samen. Dit regiebord leest
+      uitsluitend hun huidige tabbladstatus, niet WoningNet, de overheid, de verhuurder
+      of een leverancier. Een open stap is geen officiële achterstand; een afgevinkte
+      stap is geen bevestiging van een organisatie.</p>
+    <p role="status" aria-live="polite">
+      {pending?'Onderdelen worden geladen…':
+        <><strong>{complete}/{total}</strong> persoonlijke controlevelden ingevuld
+          of afgehandeld. <strong>{attention}</strong> aandachtspunt(en) volgens
+          zelfgekozen datums of invoer. </>
+      }
+    </p>
+    {urgent.length>0&&<div>
+      <h3>Nu zelf controleren</h3>
+      <ul>{urgent.map(row=><li key={row.id}>
+        <a href={row.href}>{row.title}</a>{' · '}
+        {row.pulse?.invalid?'Controleer ongeldige invoer. ' : ''}
+        {row.pulse?.attention?row.pulse.attention+' zelf geregistreerde aandachtspunt(en).':''}
+      </li>)}</ul>
+    </div>}
+    {reminders.length>0&&<div>
+      <h3>Mijn zelfgekozen controledatums ({reminders.length})</h3>
+      <ol>{reminders.map(item=><li key={item.origin+'-'+item.id}>
+        <strong>{item.day}</strong> · {item.title} ·{' '}
+        <a href={item.origin==='fallback'?'#private-moving-plan-b-heading':
+          '#private-utility-transfer-heading'}>Open bron</a>
+      </li>)}</ol>
+      <p>Alle datums zijn door jou gekozen. Hieruit volgen geen officiële termijnen,
+        meldingen, contractacties of kalenderafspraken.</p>
+    </div>}
+    <div style={{display:'grid',
+      gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,240px),1fr))',gap:12}}>
+      {rows.map(row=><article key={row.id}
+        style={{border:'1px solid #d4dfd5',padding:14,borderRadius:10}}>
+        <h3>{row.title}</h3>
+        <p>{row.pulse?row.pulse.done+' / '+row.pulse.total+' zelf geregistreerd':
+          'Nog geen tabbladstatus'}</p>
+        {row.pulse&&row.pulse.total>0&&
+          <progress value={row.pulse.done} max={row.pulse.total}
+            aria-label={'Persoonlijke voortgang '+row.title}
+            style={{width:'100%'}}/>}
+        <p>{row.hint}</p>
+        <a href={row.href}>Open en werk bij ↓</a>
+      </article>)}
+    </div>
+    {!pending&&incomplete.length>0&&<p>Volgende eigen stap:
+      {' '}<a href={incomplete[0].href}>{incomplete[0].title}</a>.
+      Dit is een suggestie op basis van tabbladstatus, geen externe prioriteit.</p>}
+    <details style={{marginTop:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>Privéstatus bekijken en zelf exporteren</summary>
+      <p>TXT bevat uitsluitend vaste onderdeelnamen, aantallen en interne links.
+        De optionele agenda bevat alleen zelfgekozen datums en vooraf vaste
+        scenariotitels uit plan B/nutsvoorzieningen; geen adressen, contactnamen,
+        ingevulde acties, bedragen, wachtwoorden of andere persoonlijke invoer.
+        Niets wordt automatisch naar een agenda of organisatie verzonden.
+        Je downloadlocatie kan extern synchroniseren.</p>
+      <button type="button" disabled={pending}
+        onClick={()=>setPreview({signature,contents:report,mode:'txt'})}
+        style={{minHeight:44}}>Bekijk exacte TXT-export…</button>
+      <button type="button" disabled={pending||reminders.length===0}
+        onClick={()=>setPreview({signature,contents:calendar,mode:'ics'})}
+        style={{minHeight:44,marginLeft:8}}>
+        Bekijk één agenda-export ({reminders.length} datums)…
+      </button>
+      {preview&&<div>
+        {validPreview?<><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+          maxHeight:220,overflow:'auto'}}>{preview.contents}</pre>
+          <button type="button" onClick={download} style={{minHeight:44}}>
+            Download dit privéstatusoverzicht</button></>:
+          <p role="alert">De onderdeelinvoer is gewijzigd; open een nieuwe preview.</p>}
+        <button type="button" onClick={()=>setPreview(null)}
+          style={{minHeight:44,marginLeft:8}}>Sluiten</button>
+      </div>}
+    </details>
+  </section>;
+}
 export default function HomePage() {
+  const [journeyPulse,setJourneyPulse]=useState<PrivateMovePulse|null>(null);
+  const [fallbackPulse,setFallbackPulse]=useState<PrivateMovePulse|null>(null);
+  const [metersPulse,setMetersPulse]=useState<PrivateMovePulse|null>(null);
+  const [utilitiesPulse,setUtilitiesPulse]=useState<PrivateMovePulse|null>(null);
+  const movingReadinessRows:PrivateMovingReadinessRow[]=[
+    {id:'journey',title:'Mijn woonreis',href:'#private-journey-heading',
+      hint:'Zelf afgevinkte stappen; geen officiële reactie of toewijzing.',pulse:journeyPulse},
+    {id:'fallback',title:'Verhuisdag plan B',href:'#private-moving-plan-b-heading',
+      hint:'Voorbereide alternatieven en verstreken eigen controledatums.',pulse:fallbackPulse},
+    {id:'meters',title:'Meterstanden',href:'#private-meter-handover-heading',
+      hint:'Zelf genoteerde oude en nieuwe meterwaarden.',pulse:metersPulse},
+    {id:'utilities',title:'Nutsvoorzieningen',href:'#private-utility-transfer-heading',
+      hint:'Zelf gemarkeerde contract- en verhuisstappen.',pulse:utilitiesPulse}
+  ];
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const cards = initialCards.map(([label,value,detail])=>{
     if(label==='Maanddoel' && personalOverview?.count!=null) return [
@@ -1205,7 +1398,8 @@ export default function HomePage() {
           en verdwijnt bij herladen. Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
-      <PrivateHousingJourney />
+      <PrivateMovingReadinessBoard rows={movingReadinessRows}/>
+      <PrivateHousingJourney onPulse={setJourneyPulse} />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
         <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
@@ -1244,12 +1438,13 @@ export default function HomePage() {
       <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
       <PrivateMovingPackingInventory />
-      <PrivateMovingFallbackPlan />
+      <PrivateMovingFallbackPlan onPulse={setFallbackPulse} />
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
-      <PrivateMeterHandover />
-      <PrivateUtilityTransfer onLogContact={startUtilityContact} />
+      <PrivateMeterHandover onPulse={setMetersPulse} />
+      <PrivateUtilityTransfer onLogContact={startUtilityContact}
+        onPulse={setUtilitiesPulse} />
       <PrivateUtilityContactLog intent={contactIntent} />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
@@ -5277,7 +5472,7 @@ function handoverRestore(raw: string): {
  * Private moving-day worksheet; no WoningNet API, account, localStorage,
  * third-party sync, automatic supplier submission, or energy-usage inference.
  */
-function PrivateMeterHandover() {
+function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
   const [readings, setReadings] = useState<Record<HandoverHomeKey, HandoverReading>>(HANDOVER_EMPTY);
   const [included, setIncluded] = useState<Record<HandoverMeterKey, boolean>>({
     powerDay: true, powerNight: false, gas: true, water: true, heat: false
@@ -5311,6 +5506,10 @@ function PrivateMeterHandover() {
         !handoverValidReading(readings[home].values[meter.key])));
     return { complete, total, invalid };
   }, [readings, included, selected.length]);
+  useEffect(()=>{
+    onPulse?.({done:status.complete,total:status.total,
+      attention:status.invalid?1:0,invalid:status.invalid});
+  },[onPulse,status.complete,status.total,status.invalid]);
 
   function editDay(home: HandoverHomeKey, day: string) {
     setReadings(previous => ({
@@ -5726,8 +5925,9 @@ function PrivateUtilityDeadlineDesk({
  * only after an explicit full preview and a separate user consent checkbox.
  */
 function PrivateUtilityTransfer({
-  onLogContact
-}: { onLogContact?: (utility:PrivateUtilityKey)=>void }={}) {
+  onLogContact,onPulse
+}: { onLogContact?: (utility:PrivateUtilityKey)=>void;
+     onPulse?: (pulse:PrivateMovePulse)=>void }={}) {
   const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
     PRIVATE_UTILITY_EMPTY);
   const [preview, setPreview] = useState<{
@@ -5759,6 +5959,21 @@ function PrivateUtilityTransfer({
     !handoverValidDay(entries[item.id].date));
   const settled = PRIVATE_UTILITIES.filter(item =>
     ['confirmed', 'not-applicable'].includes(entries[item.id].state)).length;
+  const overdueCount = PRIVATE_UTILITIES.filter(item=>{
+    const row=entries[item.id];
+    return row.date!==''&&handoverValidDay(row.date)&&row.date<today&&
+      row.state!=='confirmed'&&row.state!=='not-applicable';
+  }).length;
+  useEffect(()=>{
+    const reminders:PrivateMoveReminder[]=PRIVATE_UTILITIES.flatMap(item=>{
+      const row=entries[item.id];
+      return row.date&&handoverValidDay(row.date)&&
+        row.state!=='confirmed'&&row.state!=='not-applicable'?
+        [{id:item.id,day:row.date,origin:'utility' as const,title:item.name}]:[];
+    });
+    onPulse?.({done:settled,total:PRIVATE_UTILITIES.length,
+      attention:overdueCount+(invalid?1:0),invalid,reminders});
+  },[onPulse,settled,overdueCount,invalid,entries]);
   function edit(key: PrivateUtilityKey, change: Partial<PrivateUtilityStep>) {
     setEntries(previous => ({
       ...previous, [key]: { ...previous[key], ...change }
@@ -6375,7 +6590,7 @@ const JOURNEY_IDS = new Set(HOUSING_JOURNEY.flatMap(phase => phase.steps.map(ste
 const JOURNEY_BACKUP_KIND = 'woonpoints-private-woonreis';
 const JOURNEY_BACKUP_LIMIT = 4096;
 
-function PrivateHousingJourney() {
+function PrivateHousingJourney({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
   const [checked,setChecked] = useState<string[]>([]);
   const [selectedPhase,setSelectedPhase] = useState<JourneyPhase>('zoeken');
   const [onlyOpen,setOnlyOpen] = useState(false);
@@ -6386,6 +6601,8 @@ function PrivateHousingJourney() {
   const [message,setMessage] = useState('');
   const total = JOURNEY_IDS.size;
   const complete = checked.length;
+  useEffect(()=>{onPulse?.({done:complete,total,attention:0,invalid:false});},
+    [onPulse,complete,total]);
   const currentPhase = HOUSING_JOURNEY.find(phase => phase.id === selectedPhase)!;
   const next = HOUSING_JOURNEY.flatMap(phase => phase.steps)
     .find(step => !checked.includes(step.id));
