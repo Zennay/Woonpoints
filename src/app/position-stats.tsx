@@ -4315,3 +4315,187 @@ export function PrivateReactionPacing() {
     </div>
   </section>;
 }
+
+
+/**
+ * Private image side-by-side viewer. This deliberately does not handle WoningNet
+ * images, accounts, evidence provenance, EXIF extraction, persistence or uploads.
+ * Each local object URL is revoked on removal, reset and component teardown.
+ */
+export function PrivatePhotoComparison() {
+  type Side = 'A' | 'B';
+  type Photo = { id: number; url: string; bytes: number };
+  type Album = Record<Side, Photo[]>;
+  const LIMIT_EACH = 3;
+  const LIMIT_FILE = 5 * 1024 * 1024;
+  const LIMIT_TOTAL = 20 * 1024 * 1024;
+  const [album, setAlbum] = useState<Album>({ A: [], B: [] });
+  const albumRef = useRef<Album>({ A: [], B: [] });
+  const nextId = useRef(1);
+  const alive = useRef(true);
+  const [selected, setSelected] = useState<Record<Side, number | null>>({ A: null, B: null });
+  const [notes, setNotes] = useState<Record<Side, string>>({ A: '', B: '' });
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      for (const side of ['A', 'B'] as const) {
+        for (const photo of albumRef.current[side]) URL.revokeObjectURL(photo.url);
+      }
+      albumRef.current = { A: [], B: [] };
+    };
+  }, []);
+  const updateAlbum = (next: Album) => {
+    albumRef.current = next;
+    setAlbum(next);
+  };
+  const totalBytes = [...album.A, ...album.B].reduce((sum, photo) => sum + photo.bytes, 0);
+  const knownImage = async (file: File) => {
+    const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const jpg = file.type === 'image/jpeg' && bytes.length >= 3 &&
+      bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const png = file.type === 'image/png' && bytes.length >= 8 &&
+      [137,80,78,71,13,10,26,10].every((n,i) => bytes[i] === n);
+    const webp = file.type === 'image/webp' && bytes.length >= 12 &&
+      String.fromCharCode(...bytes.slice(0,4)) === 'RIFF' &&
+      String.fromCharCode(...bytes.slice(8,12)) === 'WEBP';
+    return jpg || png || webp;
+  };
+  async function addPhotos(side: Side, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const batch = Array.from(files);
+    setNotice('');
+    if (batch.length > LIMIT_EACH ||
+        batch.some(file => !Number.isSafeInteger(file.size) || file.size < 1 ||
+          file.size > LIMIT_FILE)) {
+      setNotice('Bestanden geweigerd: maximaal drie JPEG-, PNG- of WebP-foto’s per woning, elk maximaal 5 MiB.');
+      return;
+    }
+    try {
+      const valid = await Promise.all(batch.map(knownImage));
+      if (!valid.every(Boolean)) {
+        setNotice('Foto’s geweigerd: alleen herkenbare JPEG-, PNG- of WebP-bestanden, geen SVG, GIF of video.');
+        return;
+      }
+      if (!alive.current) return;
+      const current = albumRef.current;
+      const used = [...current.A, ...current.B].reduce((sum, item) => sum + item.bytes, 0);
+      const extra = batch.reduce((sum, file) => sum + file.size, 0);
+      if (current[side].length + batch.length > LIMIT_EACH ||
+          used + extra > LIMIT_TOTAL) {
+        setNotice('Foto’s niet toegevoegd: te veel bestanden of meer dan 20 MiB tegelijk in dit tabblad. Verwijder eerst eigen foto’s.');
+        return;
+      }
+      const created: Photo[] = [];
+      try {
+        for (const file of batch) {
+          created.push({ id: nextId.current++, url: URL.createObjectURL(file), bytes: file.size });
+        }
+      } catch {
+        created.forEach(photo => URL.revokeObjectURL(photo.url));
+        setNotice('Je browser kan deze foto’s niet lokaal openen.');
+        return;
+      }
+      updateAlbum({ ...current, [side]: [...current[side], ...created] });
+      setSelected(previous => ({
+        ...previous, [side]: previous[side] ?? created[0]?.id ?? null
+      }));
+      setNotice(batch.length + ' privéfoto(’s) toegevoegd aan woning ' + side + '. Niets is verstuurd.');
+    } catch {
+      if (alive.current) setNotice('Kon de gekozen foto’s niet veilig als lokale voorbeelden openen.');
+    }
+  }
+  function removePhoto(side: Side, id: number) {
+    const current = albumRef.current;
+    const match = current[side].find(item => item.id === id);
+    if (!match) return;
+    const nextSide = current[side].filter(item => item.id !== id);
+    updateAlbum({ ...current, [side]: nextSide });
+    URL.revokeObjectURL(match.url);
+    setSelected(previous => ({
+      ...previous, [side]: previous[side] === id ? nextSide[0]?.id ?? null : previous[side]
+    }));
+    setNotice('Privéfoto verwijderd uit dit tabblad.');
+  }
+  function clearAll() {
+    const current = albumRef.current;
+    updateAlbum({ A: [], B: [] });
+    for (const side of ['A', 'B'] as const) {
+      current[side].forEach(photo => URL.revokeObjectURL(photo.url));
+    }
+    setSelected({ A: null, B: null });
+    setNotes({ A: '', B: '' });
+    setNotice('Beide privéalbums en aantekeningen uit dit tabblad gewist.');
+  }
+  return <section className="panel" aria-labelledby="private-photo-comparison-heading">
+    <div>
+      <p className="eyebrow">EIGEN FOTO’S · ALLEEN IN DIT TABBLAD</p>
+      <h2 id="private-photo-comparison-heading">Twee woningen visueel vergelijken</h2>
+      <p>Bekijk eigen woning- of bezichtigingsfoto’s naast elkaar, zonder ze
+        te verzenden. Voeg maximaal drie foto’s per woning toe en maak
+        alleen tijdelijke persoonlijke aantekeningen. Sluiten of vernieuwen
+        van dit tabblad verwijdert alle foto’s en tekst uit de app.</p>
+      <p><strong>Privacy:</strong> kies bij voorkeur foto’s zonder personen,
+        adres, documenten of zichtbare persoonlijke spullen. Je originele
+        bestanden blijven op je apparaat. Woonpoints leest geen EXIF-gegevens,
+        uploadt niets, bewaart geen foto’s in localStorage en maakt geen export.</p>
+      <p>Alleen handmatige visuele oriëntatie, geen officiële woningadvertentie,
+        technische inspectie, taxatie, selectieadvies of WoningNet-broncontrole.</p>
+    </div>
+    <div>
+      <p aria-live="polite">Lokaal geladen: {album.A.length + album.B.length} van maximaal 6 foto’s
+        {' · '}{(totalBytes/1048576).toLocaleString('nl-NL',{maximumFractionDigits:1})} MiB
+        van maximaal 20 MiB.</p>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:16 }}>
+        {(['A','B'] as const).map(side => {
+          const images = album[side];
+          const focus = images.find(item => item.id === selected[side]) ?? images[0];
+          return <div key={side} style={{flex:'1 1 280px', minWidth:0}}>
+            <h3>Woning {side} · {images.length}/3</h3>
+            <label htmlFor={'private-photo-file-'+side}>Kies eigen foto’s voor woning {side}</label>
+            <input id={'private-photo-file-'+side} type="file" multiple
+              accept="image/jpeg,image/png,image/webp" disabled={images.length >= LIMIT_EACH}
+              onChange={event=>{
+                const files = event.currentTarget.files;
+                event.currentTarget.value = '';
+                void addPhotos(side, files);
+              }} />
+            {focus ? <figure>
+              {/* User-supplied local files never become remote image URLs. */}
+              <img src={focus.url} alt={'Lokale foto '+(images.findIndex(p=>p.id===focus.id)+1)+' van woning '+side}
+                style={{width:'100%',height:260,objectFit:'contain'}} />
+              <figcaption>Alleen lokaal voorbeeld; controleer het echte pand zelf.</figcaption>
+            </figure> : <p>Nog geen foto gekozen voor deze woning.</p>}
+            {images.length > 0 && <ul>
+              {images.map((photo,index)=><li key={photo.id}>
+                <button type="button" className="secondary"
+                  aria-pressed={focus?.id === photo.id}
+                  onClick={()=>setSelected(current=>({...current,[side]:photo.id}))}>
+                  Bekijk foto {index+1} ({(photo.bytes/1048576).toLocaleString('nl-NL',{maximumFractionDigits:1})} MiB)
+                </button>
+                <button type="button" className="secondary"
+                  onClick={()=>removePhoto(side,photo.id)}>
+                  Verwijder foto {index+1}
+                </button>
+              </li>)}
+            </ul>}
+            <label htmlFor={'private-photo-notes-'+side}>Eigen aantekeningen woning {side} (tijdelijk)</label>
+            <textarea id={'private-photo-notes-'+side} rows={4} maxLength={400}
+              value={notes[side]} onChange={event=>setNotes(current=>({
+                ...current,[side]:event.target.value
+              }))} placeholder="Bijvoorbeeld: hoe valt het daglicht?"
+              autoComplete="off" />
+          </div>;
+        })}
+      </div>
+      <button type="button" className="secondary"
+        disabled={album.A.length + album.B.length === 0 && !notes.A && !notes.B}
+        onClick={clearAll}>Wis beide albums en aantekeningen</button>
+      <p role="status">{notice}</p>
+      <p>Geen opslag of verzending: je moet zelf voor je originele foto’s zorgen
+        en rekening houden met privacy of auteursrechten bij je eigen bestandskeuze.
+        Vergelijking in dit paneel verandert je overige Woonpoints-berekeningen niet.</p>
+    </div>
+  </section>;
+}
