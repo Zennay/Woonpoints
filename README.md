@@ -1512,6 +1512,35 @@ databasewijziging, backendactie of nieuwe worker-capability. De
 bestaande `BOT_DRY_RUN=true`-grens blijft ongewijzigd.
 
 
+## Veilige persoonlijke verhuisagenda en volledige actielijst
+
+De bestaande gecombineerde verhuiswerkmap heeft een geïntegreerde
+**actiewerkbank**. Filter alle nog open eigen acties op urgente datums,
+gedateerd of zonder datum en vouw de volledige lijst uit. Elke actie
+linkt direct naar het oorspronkelijke formulier; ook meer dan tien
+open acties blijven bereikbaar. Dit verandert geen externe status.
+
+De export **Mijn veilige privé-agenda samenstellen** laat vier bronnen
+afzonderlijk aan- of uitzetten: verhuisplanning, documenten,
+sleuteloverdracht en eigen adreswijzigingen. Standaard zijn alleen
+verhuisplanning en documenten geselecteerd en alleen datums vanaf
+vandaag opgenomen. Optioneel kun je verlopen zelfgekozen datums toevoegen.
+
+**Privacy is standaard maximaal:** de ICS heeft neutrale categorietitels
+zonder zelfgekozen taaknamen. Een expliciete instelling laat de gebruiker
+desgewenst eigen actietitels meenemen. Ook kalender-UIDs bevatten geen
+zelfingevoerde taak-ID. De precieze ICS-inhoud wordt eerst volledig als
+tekst getoond en pas daarna na afzonderlijke bevestiging gedownload.
+Wijzigen van een bron, datum, gekozen scope of privacy-instelling maakt
+een eerder akkoord ongeldig. Geen API, wachtwoorden, externe kalender,
+automatische berichten, accountbinding of officiële WoningNet-deadline.
+
+Een zelf gekozen bestemming kan buiten Woonpoints synchroniseren; de
+app bewaart de gegenereerde ICS uitsluitend in het huidige browsertabblad
+tot aan de bevestigde download. Raadpleeg de daadwerkelijke instantie
+voor echte afspraken en wettelijke/contractuele termijnen.
+
+
 ## Actuele statuskaart zonder live accountverbinding
 
 Het startscherm toont de daadwerkelijk **eigen** maandteller, eigen
