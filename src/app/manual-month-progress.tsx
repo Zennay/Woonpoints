@@ -1628,6 +1628,7 @@ export function PrivateMovingDayTimeline() {
   const [newTask, setNewTask] = useState('');
   const [newOffset, setNewOffset] = useState('-7');
   const [pending, setPending] = useState<string | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<{ moveDate: string; completed: string[]; extras: ExtraTask[] } | null>(null);
   const [message, setMessage] = useState('');
 
   const dateValid = dateOnly(moveDate) !== null;
@@ -1651,6 +1652,52 @@ export function PrivateMovingDayTimeline() {
     setNewTask('');
     edit();
   }
+  function downloadBackup() {
+    const payload = JSON.stringify({
+      format: 'woonpoints-private-moving-plan', version: 1, moveDate, completed,
+      extras: extras.map(({ id, title, offset }) => ({ id, title, offset }))
+    }, null, 2);
+    exportFile('woonpoints-prive-verhuisplan.json', payload, 'application/json;charset=utf-8');
+    setMessage('Privé-JSON lokaal aangeboden. Je gekozen opslaglocatie kan synchroniseren.');
+  }
+  async function importBackup(file: File | undefined) {
+    setPendingRestore(null);
+    setPending(null);
+    if (!file) return;
+    if (!file.size || file.size > 12288) {
+      setMessage('JSON geweigerd: bestand is leeg of groter dan 12 KB.');
+      return;
+    }
+    try {
+      const raw: unknown = JSON.parse(await file.text());
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('format');
+      const value = raw as Record<string, unknown>;
+      if (value.format !== 'woonpoints-private-moving-plan' || value.version !== 1) throw new Error('version');
+      if (typeof value.moveDate !== 'string' || (value.moveDate && !dateOnly(value.moveDate))) throw new Error('date');
+      if (!Array.isArray(value.extras) || value.extras.length > 6) throw new Error('extras');
+      const restored: ExtraTask[] = value.extras.map(item => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('task');
+        const data = item as Record<string, unknown>;
+        if (typeof data.id !== 'string' || !/^extra-[0-9]+-[0-9]+$/.test(data.id) ||
+            typeof data.title !== 'string' || data.title !== data.title.trim() ||
+            !data.title.trim() || data.title.length > 60 || /[\\u0000-\\u001f\\u007f]/.test(data.title) ||
+            !Number.isInteger(data.offset) || (data.offset as number) < -120 || (data.offset as number) > 60)
+          throw new Error('task');
+        return { id: data.id, title: data.title, offset: data.offset as number, group: 'Eigen taak' };
+      });
+      if (!Array.isArray(value.completed) || value.completed.length > 15 ||
+          !value.completed.every(item => typeof item === 'string')) throw new Error('checked');
+      const taskIds = new Set([...DEFAULT_TASKS.map(task => task.id), ...restored.map(task => task.id)]);
+      const checked = value.completed as string[];
+      if (taskIds.size !== DEFAULT_TASKS.length + restored.length ||
+          new Set(checked).size !== checked.length || checked.some(id => !taskIds.has(id))) throw new Error('ids');
+      setPendingRestore({ moveDate: value.moveDate, completed: checked, extras: restored });
+      setMessage('Back-up gecontroleerd. Bevestig zelf voordat je huidige privéplanning wordt vervangen.');
+    } catch {
+      setMessage('JSON geweigerd: versie, datums of taken zijn ongeldig. Huidige planning is behouden.');
+    }
+  }
+
   function downloadCalendar() {
     if (!ready || pending !== snapshot) { setPending(null); setMessage('De planning is gewijzigd. Bekijk eerst opnieuw de agenda-export.'); return; }
     const entries = openTasks.map(task => {
@@ -1711,6 +1758,33 @@ export function PrivateMovingDayTimeline() {
           value={newOffset} onChange={event => setNewOffset(event.target.value)} />
         <button type="button" onClick={addTask} disabled={extras.length >= 6}>Voeg taak toe</button>
       </fieldset>
+      <div>
+        <button type="button" onClick={downloadBackup} disabled={!dateValid && !completed.length && !extras.length}>
+          Bewaar privéplanning als JSON…
+        </button>
+        <label htmlFor="moving-day-restore">Herstel eerder bewaarde privéplanning (JSON, max. 12 KB)</label>
+        <input id="moving-day-restore" type="file" accept=".json,application/json"
+          onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void importBackup(file);
+          }} />
+        {pendingRestore && <div role="group" aria-label="Bevestig privéplanning herstel">
+          <p>Back-up bevat {pendingRestore.extras.length} eigen taken en {pendingRestore.completed.length}
+            afgevinkte acties. Herstellen <strong>vervangt het hele huidige verhuisplan in dit tabblad</strong>.
+            De back-up is niet gecontroleerd bij WoningNet.</p>
+          <button type="button" onClick={() => {
+            setMoveDate(pendingRestore.moveDate);
+            setCompleted(pendingRestore.completed);
+            setExtras(pendingRestore.extras);
+            setPendingRestore(null); setPending(null);
+            setMessage('Privéplanning hersteld. Geen account- of broncontrole uitgevoerd.');
+          }}>Bevestig vervanging</button>
+          <button type="button" onClick={() => {
+            setPendingRestore(null); setMessage('Herstel geannuleerd, huidige planning behouden.');
+          }}>Annuleren</button>
+        </div>}
+      </div>
       <p>Geen automatische meldingen, cloudopslag of koppeling met WoningNet. De agenda-export
         bevat ook je zelf getypte actienamen: deel het bestand alleen bewust.</p>
       {ready && pending !== snapshot && <button type="button" onClick={() => {
