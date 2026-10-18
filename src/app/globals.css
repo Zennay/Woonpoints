@@ -630,3 +630,10 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media print {
   .private-box-nav { display: none !important; }
 }
+
+/* Offline selective A4 printing; controls are never included on paper. */
+.boxPrintFilters{display:flex;align-items:flex-start;flex-wrap:wrap;gap:12px;margin:16px 0}
+.boxPrintFilters label{display:grid;gap:7px;min-width:min(100%,220px);font-weight:700;color:#213e47}
+.boxPrintFilters select{font:inherit;padding:10px;border-radius:8px;background:#fff;color:#182e36;border:1px solid #90aeb7}
+.boxPrintFilters select:focus-visible{outline:3px solid #138e86;outline-offset:3px}
+@media print{.boxPrintFilters{display:none!important}}
