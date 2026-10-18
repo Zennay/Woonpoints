@@ -3386,7 +3386,7 @@ function movingReportLine(value:string):string{
   return value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,900);
 }
 function buildPrivateMovingReport(
-  archive:MovingWorkspaceArchiveV2,sections:MovingReportSection[],
+  archive:MovingWorkspaceArchiveV3,sections:MovingReportSection[],
   actions:PrivateMovingAction[],today:string|null
 ):string{
   const lines:string[]=[
@@ -4003,6 +4003,26 @@ export function PrivateMovingPackingInventory(){
   const [showLabelContents,setShowLabelContents]=useState(false);
   const [pendingLabels,setPendingLabels]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'packing',data:{items}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[items]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const imported=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(imported)||imported.version!==3)return;
+      setItems(imported.packing.items);setForm(blank());setEditing(null);
+      setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
+      setPendingRestore(null);setPendingLabels(null);
+      setNotice('Paklijst uit eigen v3-werkmap hersteld. Geen netwerkverzoek.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
   const sequence=useRef(0);
   const signature=JSON.stringify(items);
   const total=items.reduce((sum,item)=>sum+item.quantity,0);
