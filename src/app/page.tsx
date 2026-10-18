@@ -1,7 +1,7 @@
 import ManualMonthProgress from './manual-month-progress';
 import PositionStats from './position-stats';
 import { ManualPositionsWorkspace, PrivateSearchPointsHistory } from './position-stats';
-import { ManualHousingDecisionWorkspace } from './position-stats';
+import { ManualHousingDecisionWorkspace, PrivateMovingChecklist } from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -39,6 +39,7 @@ export default function HomePage() {
             ['private-longterm-title', 'Meerjarenkosten'],
             ['private-viewing-title', 'Bezichtiging'],
             ['private-plan-title', 'Planner'],
+            ['private-moving-heading', 'Verhuizen'],
             ['position-stats-heading', 'Posities'],
             ['monthly-positions-heading', 'Maandtrend']
           ] as const).map(([id, title]) =>
@@ -65,6 +66,7 @@ export default function HomePage() {
       <PositionStats />
       <ManualPositionsWorkspace />
       <ManualHousingDecisionWorkspace />
+      <PrivateMovingChecklist />
 
       <section className="panel">
         <div>

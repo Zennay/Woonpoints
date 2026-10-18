@@ -540,3 +540,31 @@ gewenste agenda importeren. De app maakt niet stilzwijgend afspraken,
 notificaties of WoningNet-reacties. Alle tijden worden als door de gebruiker
 gekozen lokale (zwevende) agendatijd in het ICS-bestand gezet; de eigen
 agenda en ingestelde tijdzone bepalen de uiteindelijke herinneringen.
+
+
+## Privé-verhuischecklist (handmatig, ná een eigen woonkeuze)
+
+Het dashboard biedt een apart **Verhuizen**-onderdeel voor het organiseren van
+een mogelijke verhuizing zonder WoningNet-verbinding. Het bevat twaalf algemene,
+zelf af te vinken suggesties van eerste voorbereiding tot de eerste week na
+verhuizing. Vul optioneel een voorlopige verhuisdatum in om eigen richtmomenten
+te zien; dit zijn **geen wettelijke of contractuele deadlines**. Voeg tot 24 eigen
+korte taken toe, groepeer ze naar fase, filter op open/afgevinkt en zie direct
+hoeveel werk er nog resteert. Een eigen taak kan worden verwijderd.
+
+- Geen adres, naam, rekeninggegevens of contracten invoeren. Er worden geen
+  woningreacties, afspraken, betalingen of adreswijzigingen uitgevoerd.
+- De checklist en datum leven uitsluitend in de React-geheugenstatus van dit
+  tabblad. Geen automatische opslag, localStorage, cookies of netwerkverzoeken.
+- **Bewaar eigen checklist als privé-JSON** maakt na een bewuste klik een
+  versiegebonden bestand van de datum, taken en vinkjes. Een zelfgekozen
+  opslaglocatie kan buiten deze applicatie synchroniseren.
+- **Open eerder bewaarde privéchecklist** leest een lokaal JSON-bestand van
+  maximaal 16 KiB. Onbekende formaten/velden, ontbrekende vaste stappen,
+  dubbele IDs en ongeldige datums, labels of fasen worden geweigerd.
+  De bestaande lijst blijft ongewijzigd tot de gebruiker **Vervang mijn
+  huidige checklist** kiest. Bij **Begin opnieuw** is opnieuw een expliciete
+  bevestiging vereist.
+- Er is geen koppeling met het privé-reactiedagboek, zoekpunten of
+  WoningNet. Het project blijft in dry-run tot afzonderlijke
+  toestemming-, bron- en releasevoorwaarden zijn vervuld.
