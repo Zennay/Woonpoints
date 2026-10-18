@@ -352,7 +352,11 @@ export function rankManualHomes(homes, preferences) {
   for (let index = 0; index < homes.length; index++) {
     const home = normalizeManualHome(homes[index]);
     if (!home) return null;
-    ranked.push({index, home, ...scoreManualHome(home, preferences)});
+    const scoring = scoreManualHome(home, preferences);
+    // Normalized source rows should always admit a scoring result; explicitly
+    // deny an unknown result rather than handing optional fields to the UI.
+    if (!scoring) return null;
+    ranked.push({index, home, ...scoring});
   }
   return ranked.sort((a, b) => Number(b.suitable) - Number(a.suitable) ||
     (b.score ?? 0) - (a.score ?? 0) || a.index - b.index);
