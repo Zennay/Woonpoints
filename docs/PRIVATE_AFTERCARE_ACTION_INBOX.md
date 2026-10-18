@@ -111,3 +111,15 @@ Wanneer je een zelf bewaarde, gevalideerde versie-1/2-nazorg-JSON importeert, ku
 - Er wordt niets gesynchroniseerd, door een verhuurder gevalideerd, verstuurd of uit WoningNet opgehaald. Het bronbestand op het eigen apparaat blijft intact.
 
 Een conflict vraagt dus een **bewuste menselijke keuze**: corrigeer de afzonderlijke eigen bronbestanden, behoud het dossier zoals het is, of gebruik apart en expliciet de bestaande vervangactie (met eigen verliesoverzicht). Samenvoegen mag dit conflict niet automatisch oplossen.
+
+## Conflicterende eigen records afzonderlijk herstellen
+
+Bij een samenvoeging met dezelfde record-ID maar verschillende gegevens blijft nu standaard **alles geblokkeerd totdat je ieder conflict zelf beslist**. Dit vult de eerder geleverde uitsluitend-toevoegenfunctie aan: nieuwe unieke punten/contactnotities worden voorbereid, ongewijzigde duplicaten worden overgeslagen, en alle afwijkende bestaande IDs verschijnen in een eigen besluitlijst.
+
+Elke conflictrij toont het soort record en een beknopte neutrale omschrijving. Vrije privénotities blijven **standaard ingeklapt**. Via **Bekijk beide volledige versies (inclusief eigen privénotities)** kun je de exacte huidige en aangeleverde recordvelden op het eigen scherm vergelijken. Kies dan expliciet per ID:
+- **Behoud mijn huidige tabbladversie**: laat het bestaande record volledig onaangetast.
+- **Vervang uitsluitend deze record-ID door mijn bestandsversie**: neem de aangeleverde inhoud alleen voor dat ene vooraf geïnspecteerde ID over, inclusief eigen status of contactnotitie.
+
+Er is **geen standaardkeuze**. Eén onbeslist conflict, een ongeldige koppeling, een teveel aan contactmomenten, meer dan 80 punten / 160 contacten of de 16 KiB herstelback-upgrens weigert de volledige samenvoeging zonder gedeeltelijk resultaat. Alle keuzes worden opnieuw via dezelfde bestaande back-upvalidator gecontroleerd. Bij elke individuele keuze vervalt eerdere toestemming; een apart eindoordeel volgt op het uiteindelijke actuele resultaat. Oude dossierkopie blijft alleen in tabbladgeheugen voor eenmalige exacte herstel-undo zolang er geen andere wijziging is.
+
+Dit is handmatige verwerking van **eigen lokale gegevens**, geen bevestigde verhuurderstatus, officieel verzendbewijs of juridische beoordeling. De gebruiker kan altijd annuleren of voor het afzonderlijke volledige vervangproces kiezen; geen automatisch conflictverlies, externe verzending, netwerk of database.
