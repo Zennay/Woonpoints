@@ -229,3 +229,17 @@ Dit is uitsluitend een privé-rekenblad op basis van eigen aannames:
 gebruik geen adressen, namen of andere persoonsgegevens als labels.
 De maandvergelijking maakt geen claim over toewijzingskansen, betaalbaarheid
 of WoningNet-toestemming. De bestaande live-actiegate blijft ongewijzigd.
+
+
+### Van woningselectie naar volledige kostenvergelijking
+
+In **Vergelijk twee woningen direct** kies je precies twee van je maximaal twaalf
+zelf genoteerde woningnotities. De knop **Neem deze twee woningen mee naar totale kosten**
+neemt alleen de twee gevalideerde labels en hun handmatig ingevoerde maandhuur over.
+De rekentool eronder vult geen fictieve service-, energie-, vervoers- of startkosten in:
+alle extra aannames beginnen op nul en zijn door jou aan te passen. Opnieuw selecteren
+en op de knop tikken vervangt bewust de eerdere kostenmomentopname, inclusief eerdere
+extra kosten; automatisch synchroniseren tussen panelen gebeurt nooit. De woninglijst
+wissen wist de aparte kostenberekening niet: gebruik daarvoor **Wis beide scenario's**.
+De gegevens bestaan uitsluitend in het browser-tabblad en worden nergens geüpload.
+Exporteer alleen zelf gekozen privébestanden, zonder namen of adressen.

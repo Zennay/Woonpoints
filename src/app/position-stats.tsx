@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
   encodeHousingShortlist, decodeHousingShortlist, compareTwoManualHomes,
   exportManualHousingDecisionNote } from '../lib/position-statistics.mjs';
@@ -539,7 +539,9 @@ const defaults: Preferences = {maxRent: 1000, minRooms: 2, maxTravel: 45, prefer
 const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: false};
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
-export function ManualHousingShortlist() {
+export function ManualHousingShortlist({onCostPrefill}: {
+  onCostPrefill?: (selected: [Home, Home]) => void;
+} = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
   const [homes, setHomes] = useState<Home[]>([]);
@@ -797,6 +799,17 @@ export function ManualHousingShortlist() {
             <button type="button" disabled={!comparison} onClick={exportDecisionNote}>
               Bewaar beslisnotitie als TXT…
             </button>
+            {onCostPrefill && <button type="button" disabled={!comparison}
+              onClick={() => {
+                const first = homes[compared[0]], second = homes[compared[1]];
+                if (!comparison || !first || !second) return;
+                // Exact user-confirmed snapshot, no unknown fields or external lookups.
+                onCostPrefill([{...first}, {...second}]);
+                setNotice('Twee woningen overgenomen in de privé-kostenvergelijker. Vul aanvullende kosten zelf in.');
+                document.getElementById('private-budget-title')?.scrollIntoView({behavior:'smooth', block:'start'});
+              }}>
+              Neem deze twee woningen mee naar totale kosten ↓
+            </button>}
           </div>
         </section>
         <ol className="housing-results">
@@ -1226,11 +1239,42 @@ function calculatePrivateCosts(input: CostDraft): CostResult | null {
     firstYear: monthly * 12 + start, followingYear: monthly * 12};
 }
 
-export function ManualHousingCostComparison() {
+type CostHandoff = {selected: [Home, Home]};
+
+/** A shared in-memory workspace bridges two explicitly selected homes into costs. */
+export function ManualHousingDecisionWorkspace() {
+  const [handoff, setHandoff] = useState<CostHandoff | null>(null);
+  return (
+    <>
+      <ManualHousingShortlist onCostPrefill={selected =>
+        setHandoff({selected: [{...selected[0]}, {...selected[1]}]})} />
+      <ManualHousingCostComparison handoff={handoff} />
+    </>
+  );
+}
+
+export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | null} = {}) {
   const [a, setA] = useState<CostDraft>(() => blankCosts('Woning A'));
   const [b, setB] = useState<CostDraft>(() => blankCosts('Woning B'));
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
+  const [fromShortlist, setFromShortlist] = useState(false);
+
+  useEffect(() => {
+    if (!handoff) return;
+    const [first, second] = handoff.selected;
+    // Only validated manually entered shortlist fields are copied.
+    // Estimates, travel costs and one-off fees are deliberately NOT invented.
+    const incomingA = {...blankCosts(first.label), rent: String(first.rent)};
+    const incomingB = {...blankCosts(second.label), rent: String(second.rent)};
+    if (!calculatePrivateCosts(incomingA) || !calculatePrivateCosts(incomingB)) return;
+    setA(incomingA);
+    setB(incomingB);
+    setShow(false);
+    setFromShortlist(true);
+    setNotice('Beide eigen woninglabels en huurprijzen gekopieerd. Vul service, energie, vervoer en startkosten zelf in; oude schattingen zijn gewist.');
+  }, [handoff]);
+
   const left = calculatePrivateCosts(a);
   const right = calculatePrivateCosts(b);
   const ready = !!left && !!right;
@@ -1280,6 +1324,11 @@ export function ManualHousingCostComparison() {
         <p>Vergelijk twee zelf ingevulde scenario&apos;s, inclusief service, energie, vervoer
           en eenmalige startkosten. Je ziet het maandverschil, het eerste jaar en een
           volgend jaar zonder de eenmalige startkosten.</p>
+        {fromShortlist && <p role="status"><strong>Overgenomen uit je eigen woninglijst:</strong>
+          labels en maandhuur als momentopname. Overige kosten starten op €0 totdat je ze zelf invult.
+          Bewerkingen in de woninglijst wijzigen deze berekening niet stilzwijgend. Gebruik opnieuw
+          ‘Neem deze twee woningen mee’ om de berekening bewust te verversen.
+          Wissen van de woninglijst wist deze onafhankelijke berekening niet automatisch.</p>}
         <p><strong>Dit is geen controle van WoningNet of officiële betaalbaarheidsberekening.</strong>
           De bedragen zijn jouw aannames: geen echte woningprijs, huurtoeslag, inkomenstoets,
           jaarlijkse prijsverhoging of verborgen kosten zijn geverifieerd.
@@ -1311,7 +1360,8 @@ export function ManualHousingCostComparison() {
         }}>Vergelijk mijn bedragen</button>
         <button type="button" className="secondary" onClick={() => {
           setA(blankCosts('Woning A')); setB(blankCosts('Woning B'));
-          setShow(false); setNotice('Alle bedragen uit dit tabblad gewist.');
+          setShow(false); setFromShortlist(false);
+          setNotice('Alle bedragen uit dit kostenoverzicht gewist.');
         }}>Wis beide scenario&apos;s</button>
       </div>
       {show && ready && left && right && <div className="private-budget-results" aria-live="polite">
