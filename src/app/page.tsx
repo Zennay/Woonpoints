@@ -4477,7 +4477,7 @@ function privateUtilityCalendar(entries: Record<PrivateUtilityKey, PrivateUtilit
     const start = entry.date.replaceAll('-', '');
     const end = privateUtilityTomorrow(entry.date).replaceAll('-', '');
     const stamp = new Date().toISOString().replaceAll('-', '').replaceAll(':', '')
-      .replace(/\\.\\d{3}Z$/, 'Z');
+      .replace(/\.\d{3}Z$/, 'Z');
     lines.push('BEGIN:VEVENT', 'UID:woonpoints-utility-' + item.id + '-' + start + '@offline.local',
       'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start, 'DTEND;VALUE=DATE:' + end,
       'SUMMARY:Zelf controleren - ' + item.name,
