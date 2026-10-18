@@ -262,7 +262,8 @@ function PrivateMoveAftercare() {
   const overdue = active.filter(item => item.due && item.due < currentDay);
   const dueActive = active.filter(item => item.due).sort((a, b) =>
     a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
-  const horizon = nextDay(new Date(Date.UTC(...currentDay.split('-').map(Number).map((n, i) => i === 1 ? n - 1 : n))).toISOString().slice(0, 10));
+  const [year, month, day] = currentDay.split('-').map(Number);
+  const horizon = new Date(Date.UTC(year, month - 1, day + 30)).toISOString().slice(0, 10);
   const upcoming = dueActive.filter(item => item.due >= currentDay && item.due <= horizon);
 
   const shown = useMemo(() => items.filter(item => filter === 'alles' ||
