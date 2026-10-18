@@ -1070,6 +1070,9 @@ function PrivateMoveAftercare() {
   const [aftercareImportUndo, setAftercareImportUndo] = useState<{
     previous: AftercareBackup; importedSignature: string
   } | null>(null);
+  const [removalUndo, setRemovalUndo] = useState<{
+    previous: AftercareBackup; resultingSignature: string; label: string
+  } | null>(null);
   const [message, setMessage] = useState('');
   const [pendingJsonExport, setPendingJsonExport] = useState<{
     source: string; contents: string; itemsCount: number; historyCount: number; bytes: number
@@ -1222,6 +1225,8 @@ function PrivateMoveAftercare() {
   const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
   const aftercareUndoCurrent = aftercareImportUndo !== null &&
     aftercareImportUndo.importedSignature === aftercareImportSignature;
+  const removalUndoCurrent = removalUndo !== null &&
+    removalUndo.resultingSignature === aftercareImportSignature;
   const incomingImpact = incoming === null ? null : (() => {
     const itemsRows = (data: AftercareBackup): PrivateImportRows => data.items.map(row => ({
       id: row.id, label: row.room + ' — ' + row.title,
@@ -1427,10 +1432,55 @@ function PrivateMoveAftercare() {
     setHistoryDeletePending(null);
     setMessage('Contactmoment alleen in dit tabblad opgeslagen; niet extern geverifieerd of verzonden.');
   }
-  function removeFollowUp(id: string) {
-    setHistory(prev => prev.filter(event => event.id !== id));
+  function rememberRemoval(nextItems: Item[], nextHistory: FollowUp[], label: string) {
+    setRemovalUndo({
+      previous: {items: items.map(item => ({...item})),
+        history: history.map(event => ({...event}))},
+      resultingSignature: JSON.stringify({items: nextItems, history: nextHistory}),
+      label
+    });
+    setItems(nextItems);
+    setHistory(nextHistory);
+    setPendingDelete(null);
     setHistoryDeletePending(null);
-    setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
+    setHistoryTarget(null);
+    setPendingJsonExport(null);
+    setJsonExportApproved(false);
+    setPendingCsvExport(null);
+    setPendingTextExport(null);
+    setMessage(label + ' uit dit tabblad verwijderd. Eénmalig herstel mogelijk zolang er niets wijzigt.');
+  }
+  function removeFollowUp(id: string) {
+    const event = history.find(entry => entry.id === id);
+    if (!event) return;
+    const nextHistory = history.filter(entry => entry.id !== id);
+    rememberRemoval(items, nextHistory, 'Eigen contactmoment');
+  }
+  function removeAftercarePoint(id: string) {
+    const item = items.find(entry => entry.id === id);
+    if (!item) return;
+    const nextItems = items.filter(entry => entry.id !== id);
+    const nextHistory = history.filter(entry => entry.issueId !== id);
+    rememberRemoval(nextItems, nextHistory, 'Nazorgpunt en gekoppelde contactmomenten');
+    if (editing === id) { setEditing(null); setDraft(EMPTY); }
+  }
+  function undoLastRemoval() {
+    if (!removalUndo || !removalUndoCurrent) {
+      setRemovalUndo(null);
+      setMessage('Terugzetten geweigerd: het nazorgdossier is intussen gewijzigd.');
+      return;
+    }
+    setItems(removalUndo.previous.items);
+    setHistory(removalUndo.previous.history);
+    setRemovalUndo(null);
+    setIncoming(null);
+    setIncomingSource('');
+    setIncomingRiskApproved(false);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setPendingDelete(null);
+    setHistoryDeletePending(null);
+    setMessage('De eerder verwijderde eigen gegevens staan weer in dit tabblad.');
   }
 
   function previewCompleteSummary() {
@@ -1860,6 +1910,7 @@ function PrivateMoveAftercare() {
     setBulkSelectedIds([]);
     setPendingBulk(null);
     setBulkUndo(null);
+    setRemovalUndo(null);
     setPendingTextExport(null);
     setPendingCsvExport(null);
     setPendingJsonExport(null);
@@ -2204,6 +2255,25 @@ function PrivateMoveAftercare() {
           <p>Deze filters werken alleen in dit tabblad. De privé-JSON-back-up blijft volledig en ongewijzigd.</p>
         </div>
         <div>
+          {removalUndo !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Laatste individuele verwijdering ongedaan maken">
+            <h3>Laatste verwijdering terugzetten</h3>
+            {removalUndoCurrent ? <p>Laatste actie: {removalUndo.label}.
+              Je kunt de vorige eigen punten en contactmomenten één keer terugzetten,
+              uitsluitend zolang er na de verwijdering niets is gewijzigd.</p> :
+              <p className="aftercare-warning" role="status">
+                Na deze verwijdering zijn eigen dossiergegevens veranderd.
+                Het oude herstelpunt mag nieuwe invoer niet overschrijven.
+              </p>}
+            <div className="aftercare-actions">
+              <button type="button" className="secondary"
+                disabled={!removalUndoCurrent} onClick={undoLastRemoval}>
+                Herstel de laatst verwijderde gegevens
+              </button>
+              <button type="button" className="secondary"
+                onClick={() => setRemovalUndo(null)}>Vernietig tijdelijk herstelpunt</button>
+            </div>
+          </div>}
           <div className="aftercare-item" role="group" aria-label="Meerdere eigen nazorgpunten beheren">
             <h3>Meerdere punten tegelijk bijwerken</h3>
             <p>Selecteer hieronder uitsluitend de eigen punten die je zelf hebt gecontroleerd.
@@ -2338,7 +2408,9 @@ function PrivateMoveAftercare() {
                 {pendingDelete === item.id && <div className="aftercare-confirm" role="group" aria-label="Verwijderen bevestigen">
                   <p>Dit aandachtspunt uit het tabblad verwijderen?</p>
                   <div className="aftercare-actions">
-                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setHistory(prev => prev.filter(entry => entry.issueId !== item.id)); setHistoryTarget(null); setHistoryDeletePending(null); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
+                    <button type="button" onClick={() => removeAftercarePoint(item.id)}>
+                      Ja, verwijder inclusief eigen contactnotities
+                    </button>
                     <button className="secondary" onClick={() => setPendingDelete(null)}>Behoud</button>
                   </div>
                 </div>}
@@ -2813,7 +2885,7 @@ function PrivateMoveAftercare() {
           {clearPending && <div className="aftercare-confirm">
             <p>Alle huidige aandachtspunten definitief uit dit tabblad verwijderen? Een eerder gedownloade back-up blijft bestaan.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
+              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setRemovalUndo(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
               <button className="secondary" onClick={() => setClearPending(false)}>Behoud punten</button>
             </div>
           </div>}

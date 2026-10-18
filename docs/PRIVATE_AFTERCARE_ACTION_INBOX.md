@@ -81,3 +81,11 @@ De gebruiker bevestigt apart te begrijpen welke volledige datasets worden vervan
 Na een geslaagde losse import bewaart het tabblad één tijdelijk herstelpunt van de volledige vorige nazorgstatus. **Herstel vorige tabbladstatus** is alleen mogelijk zolang punten én contactmomenten exact gelijk zijn aan de net geïmporteerde toestand. Elke wijziging daarna vergrendelt de oude undo, zodat latere invoer niet wordt overschreven. Geen schijf-/serveropslag, externe herstelactie, WoningNet-actie of notificatie. Sluiten van het tabblad wist de tijdelijke mogelijkheid. De aparte gecombineerde inspectie+nazorgimport met zijn eigen al bestaande vergelijking en undo blijft onaangetast.
 
 Bij succesvolle losse import én bij éénmalig terugzetten worden ook eerder geopende conceptmeldingen, selectie voor bulkacties, oude bulkherstelpunten, voorbereid TXT/CSV/JSON-downloadtoestemmingen en gecombineerde herstel-/overdrachtspreviews ingetrokken. Daardoor kan geen eerdere goedkeuring nog bij nieuwe dossiergegevens worden gebruikt.
+
+## Eenmalig veilig terugzetten na individuele verwijdering
+
+Naast bewust bevestigde bulk- en importacties kan nu ook de laatste losse verwijdering van **één nazorgpunt met gekoppelde contactmomenten** of **één zelf ingevoerd contactmoment** worden teruggedraaid. De verwijderactie laat uitdrukkelijk zien dat gekoppelde privé-contactnotities mee verdwijnen bij een volledig punt. Direct na verwijderen toont het dossier een knop **Herstel de laatst verwijderde gegevens** en kan de tijdelijke mogelijkheid ook bewust worden vernietigd.
+
+De volledige vorige eigen items/contacthistorie wordt uitsluitend in het geopende browsertabblad bewaard. Terugdraaien is alleen toegestaan als het huidige volledige dossier na de verwijdering exact hetzelfde is gebleven; elke volgende toevoeging, bewerking, import of contactwijziging invalideert de oude herstelactie. Een nieuwe individuele verwijdering vervangt het vorige herstelpunt, geen onbeperkte undo-stack. Het bewust wissen van alle tabbladpunten vernietigt de tijdelijke individuele verwijdering-undo. Ook eerder voorbereide downloadpreviews/toestemmingen vervallen bij verwijdering.
+
+Er komt geen automatische opslag, kopie, verzonden bericht, WoningNet-handeling of restore van bestanden buiten het tabblad bij kijken. De eigen herstel-JSON blijft de enige bewuste duurzame back-up.
