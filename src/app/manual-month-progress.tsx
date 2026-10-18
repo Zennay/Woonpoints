@@ -254,7 +254,7 @@ export default function ManualMonthProgress() {
       setTransferMessage('Geen actuele eigen maandnotitie beschikbaar om te bewaren.');
       return;
     }
-    const content = 'month,count\\r\\n'+month+','+String(count)+'\\r\\n';
+    const content = 'month,count\r\n'+month+','+String(count)+'\r\n';
     const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));
     const link=document.createElement('a');
     link.href=url;
@@ -278,14 +278,14 @@ export default function ManualMonthProgress() {
     }
     try {
       const raw=await file.text();
-      const normalized=raw.replace(/\\r\\n/g,'\\n');
+      const normalized=raw.replace(/\r\n/g,'\n');
       // Strict ASCII numeric two-column CSV: no injected spreadsheet cells or
       // unbounded/unknown account data; previous-month files cannot overwrite now.
-      const match=/^month,count\\n(20\\d{2}-(?:0[1-9]|1[0-2])),(0|[1-9]\\d?)\\n?$/.exec(normalized);
+      const match=/^month,count\n(20\d{2}-(?:0[1-9]|1[0-2])),(0|[1-9]\d?)\n?$/.exec(normalized);
       const current=localMonthKey(new Date());
       if (!match || match[1] !== current || match[1] !== month ||
           Number(match[2]) > MANUAL_MONTHLY_GOAL ||
-          opaqueStoredNote || /[^\\x0A\\x20-\\x7E]/.test(normalized)) throw new Error('invalid');
+          opaqueStoredNote || /[^\x0A\x20-\x7E]/.test(normalized)) throw new Error('invalid');
       setPendingTransfer({month:match[1],count:Number(match[2])});
       setTransferMessage('Eigen CSV ingelezen. Er is nog niets overschreven; bevestig afzonderlijk.');
     } catch {
