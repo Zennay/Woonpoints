@@ -2024,11 +2024,18 @@ function projectPrivateHousingCosts(option: PrivateCostOption, years: number, ex
 }
 
 type LongTermPrivateBackup = {
-  format: 'woonpoints-longterm-private-v1';
+  format: 'woonpoints-longterm-private-v1' | 'woonpoints-longterm-private-v2';
   years: string;
   first: PrivateCostInputs;
   second: PrivateCostInputs;
+  rentStress: string;
+  extrasStress: string;
 };
+function readPrivateStressRate(value: string) {
+  if (!/^(?:0|[1-9]|1[0-9]|20)(?:[.,]\d{1,2})?$/.test(value)) return null;
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 20 ? parsed : null;
+}
 
 function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null {
   if (!text || new TextEncoder().encode(text).length > 16384) return null;
@@ -2036,9 +2043,18 @@ function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null
     const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const root = parsed as Record<string, unknown>;
-    if (Object.keys(root).sort().join('|') !== 'first|format|second|years' ||
-        root.format !== 'woonpoints-longterm-private-v1' ||
+    const old = root.format === 'woonpoints-longterm-private-v1';
+    const newer = root.format === 'woonpoints-longterm-private-v2';
+    if ((!old && !newer) ||
+        Object.keys(root).sort().join('|') !== (old
+          ? 'first|format|second|years'
+          : 'extrasStress|first|format|rentStress|second|years') ||
         typeof root.years !== 'string' || !/^(?:[1-9]|10)$/.test(root.years)) return null;
+    const rentStress = old ? '3' : root.rentStress;
+    const extrasStress = old ? '4' : root.extrasStress;
+    if (typeof rentStress !== 'string' || typeof extrasStress !== 'string' ||
+        readPrivateStressRate(rentStress) === null ||
+        readPrivateStressRate(extrasStress) === null) return null;
     function parseScenario(raw: unknown): PrivateCostInputs | null {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       const obj = raw as Record<string, unknown>;
@@ -2053,8 +2069,9 @@ function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null
       return readPrivateCostOption(candidate) ? candidate : null;
     }
     const first = parseScenario(root.first), second = parseScenario(root.second);
-    return first && second ? {format:'woonpoints-longterm-private-v1',
-      years:root.years,first,second} : null;
+    return first && second ? {format:old
+      ? 'woonpoints-longterm-private-v1' : 'woonpoints-longterm-private-v2',
+      years:root.years,first,second,rentStress,extrasStress} : null;
   } catch {
     return null;
   }
@@ -2095,10 +2112,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     ? leftRows.map((a,i) => ({a,b:rightRows[i]})) : [];
   const last = rows.length ? rows[rows.length - 1] : null;
   const diff = last ? last.a.cumulative - last.b.cumulative : 0;
-  const parseStress = (value: string) => /^(?:0|[1-9]|1[0-9]|20)(?:[.,]\d{1,2})?$/.test(value)
-    ? Number(value.replace(',', '.')) : null;
-  const rentBump = parseStress(rentStress);
-  const extrasBump = parseStress(extrasStress);
+  const rentBump = readPrivateStressRate(rentStress);
+  const extrasBump = readPrivateStressRate(extrasStress);
   const stressReady = Boolean(left && right && years && rentBump !== null && extrasBump !== null);
   // Both homes face the same *additional* user-chosen stress; no invented official cap.
   const stressVariants = stressReady && left && right && years && rentBump !== null && extrasBump !== null
@@ -2148,10 +2163,13 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     setMessage('Eigen stresstabel als numerieke CSV aangeboden. Geen voorspelling of wettelijk maximum.');
   }
   function saveCompleteBackup() {
-    if (!left || !right || !years) return;
+    if (!left || !right || !years ||
+        readPrivateStressRate(rentStress) === null ||
+        readPrivateStressRate(extrasStress) === null) return;
     const json = JSON.stringify({
-      format:'woonpoints-longterm-private-v1', years:horizon,
-      first:{...first}, second:{...second}
+      format:'woonpoints-longterm-private-v2', years:horizon,
+      first:{...first}, second:{...second},
+      rentStress,extrasStress
     },null,2) + '\n';
     const url = URL.createObjectURL(new Blob([json], {type:'application/json;charset=utf-8'}));
     const anchor = document.createElement('a');
@@ -2330,8 +2348,9 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           <p>Deze stresstest is een scenariovergelijking, <strong>geen advies of
             verwachting</strong>. Wettelijke huurverhogingen, contracten,
             toeslagen, inkomensverandering of energieprijzen zijn niet bekend.
-            De stressinstellingen worden niet automatisch toegevoegd aan de
-            eerdere versie-1 JSON-back-up; noteer of exporteer ze apart.</p>
+            Alle handmatige scenario- en stressvelden worden in de nieuwe
+            privé-JSON v2 opgeslagen; oude versie-1-back-ups blijven leesbaar
+            met 3 en 4 procent als expliciet herkenbare standaardstresswaarden.</p>
         </div>
         <div className="private-budget-provenance">
           <h3>Volledige privévergelijking bewaren of terugzetten</h3>
@@ -2340,7 +2359,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
             bevat financiële privégegevens; de gekozen opslaglocatie kan
             buiten Woonpoints synchroniseren. Er is geen automatische opslag.</p>
           <button type="button" onClick={saveCompleteBackup}
-            disabled={!left || !right || !years}>
+            disabled={!left || !right || !years ||
+              rentBump === null || extrasBump === null}>
             Bewaar volledige meerjarenvergelijking als JSON…
           </button>
           <label htmlFor="longterm-private-import">Open eerdere Woonpoints-JSON
@@ -2353,14 +2373,17 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
             }} />
           {pendingRestore && <div className="month-csv-confirm" role="group"
             aria-label="Bevestig volledige privé-meerjarenrestore">
-            <p>Vervang alle bestaande A/B-bedragen, stijgingspercentages en
-              de gekozen vergelijkingsduur door dit privébestand? De
+            <p>Vervang alle bestaande A/B-bedragen, stijgingspercentages,
+              beide stressinstellingen en de gekozen vergelijkingsduur door dit
+              privébestand? De
               gegevens zijn niet officieel gecontroleerd.</p>
             <div className="month-history-actions">
               <button type="button" onClick={() => {
                 setFirst({...pendingRestore.first});
                 setSecond({...pendingRestore.second});
                 setHorizon(pendingRestore.years);
+                setRentStress(pendingRestore.rentStress);
+                setExtrasStress(pendingRestore.extrasStress);
                 setPendingRestore(null);
                 setMessage('Eigen meerjarenvergelijking bewust hersteld. Controleer alle aannames zelf.');
               }}>Ja, vervang mijn volledige vergelijking</button>
@@ -2401,7 +2424,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           <button type="button" onClick={exportProjection}>Bewaar deze cijfers als CSV…</button>
           <button type="button" onClick={() => {
             setFirst({...DEFAULT_COST_INPUTS});setSecond({...DEFAULT_COST_INPUTS});
-            setHorizon('5');setPendingRestore(null);
+            setHorizon('5');setRentStress('3');setExtrasStress('4');
+            setPendingRestore(null);
             setMessage('Alle handmatige meerjarenbedragen gewist.');
           }}>Wis beide scenario’s</button>
           <p>Deze berekening indexeert alleen de ingevulde huur; andere woonlasten
