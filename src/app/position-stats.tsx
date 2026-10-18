@@ -389,7 +389,7 @@ export function ManualReactionJournal({
     setMessage('Alleen deze eigen notitie verwijderd. Je kunt de laatste verwijdering hieronder herstellen.');
   }
   function undoRemoveItem() {
-    if (!recentlyRemoved || entries.length>=100 ||
+    if (!recentlyRemoved || pendingImport || entries.length>=100 ||
         entries.some(row=>row.id===recentlyRemoved.item.id)) return;
     const restored=[...entries];
     restored.splice(Math.min(recentlyRemoved.index,restored.length),0,{...recentlyRemoved.item});
@@ -397,6 +397,7 @@ export function ManualReactionJournal({
       summarizeManualReactionJournal(restored);
       setEntries(restored);
       setRecentlyRemoved(null);
+      setConfirmClearAll(false);
       setMessage('De laatste verwijderde eigen notitie is met dezelfde ID hersteld.');
     } catch {
       setMessage('Herstellen is niet veilig mogelijk. Je huidige notities blijven behouden.');
@@ -541,7 +542,7 @@ export function ManualReactionJournal({
             ({recentlyRemoved.item.date}, {statusNames[recentlyRemoved.item.status]}).
             Alleen de meest recente verwijdering kan hier worden hersteld;
             invoer blijft uitsluitend in dit tabblad.</p>
-          <button type="button" disabled={entries.length>=100}
+          <button type="button" disabled={Boolean(pendingImport) || entries.length>=100}
             onClick={undoRemoveItem}>Herstel laatste verwijderde notitie</button>
           <button type="button" className="secondary" onClick={()=>{
             setRecentlyRemoved(null);
