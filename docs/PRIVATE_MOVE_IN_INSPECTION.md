@@ -15,12 +15,22 @@ Woonpoints biedt boven het bestaande `#nazorg`-dossier nu een **zelf te doorlope
 
 ## Bewaar en hervat een onvoltooide startinspectie
 
-- Selecteer na minimaal één eigen beoordeling **Bewaar mijn inspectievoortgang (JSON)**. Alleen daadwerkelijk beoordeelde punten worden opgeslagen als `kind=woonpoints-private-startinspectie`, `schema=1`, met bestaande vaste ID, `goed`/`aandacht` en uitsluitend bij aandachtspunten eigen notities. De download is een bewuste actie; er is nog steeds geen automatische lokale/serveropslag.
-- Open later **Hervat met mijn eigen inspectie-JSON**. De app accepteert maximaal 16 KiB, exact het bekende schema, hoogstens 22 unieke vooraf gedefinieerde controle-ID's, bekende statussen en maximaal 300 tekens per eigen toelichting. Onbekende of dubbele velden en IDs, onverwachte notities bij een in-orde-status en corrupte bestanden worden integraal geweigerd.
+- Selecteer na minimaal één eigen beoordeling **Bewaar mijn inspectievoortgang (JSON)**. Alleen daadwerkelijk beoordeelde vaste en eigen punten worden met hun bekende ID en `goed`/`aandacht` opgeslagen, plus maximaal twaalf eigen definities. Eigen notities worden uitsluitend bij aandachtspunten toegevoegd. Nieuwe downloads zijn schema 2; het eerdere schema 1 blijft importeerbaar. De download is een bewuste actie; er is nog steeds geen automatische lokale/serveropslag.
+- Open later **Hervat met mijn eigen inspectie-JSON**. De app accepteert maximaal 16 KiB, exact het bekende schema, maximaal 22 vooraf gedefinieerde én twaalf valide unieke eigen controle-ID's, bekende statussen en maximaal 300 tekens per eigen toelichting. Onbekende of dubbele velden en IDs, onverwachte notities bij een in-orde-status en corrupte bestanden worden integraal geweigerd.
 - Na valideren volgt een expliciete **Vervang mijn inspectieantwoorden**-bevestiging. Alleen de tijdelijke controleantwoorden en notities veranderen. Bestaande nazorgpunten, contactlog en bijbehorende exports worden **niet** overschreven. Ook een geldige lege checklist-JSON kan expliciet worden hersteld.
 - **Begin opnieuw…** vraagt een eigen tweede bevestiging en wist alleen tijdelijke antwoorden/notities. Eerder gedownloade bestanden blijven bestaan.
 - De TXT-export bevat eigen notities alleen bij een actueel als aandachtspunt gemarkeerde beoordeling. Een oude, in het geheugentoestand aanwezige notitie bij later als goed gemarkeerd punt lekt dus niet alsnog naar het TXT-rapport of inspectie-JSON.
 - Beoordelingen kunnen grote of gevoelige beschrijvingen bevatten die een eigen bestandsprovider buiten Woonpoints synchroniseert: deel zelf alleen wat je wilt. De inspectie-JSON is apart van de bestaande nazorg JSON-v2-back-up; beide zijn niet onderling uitwisselbaar.
+
+## Eigen controlepunten voor niet-standaardwoningen
+
+Vanaf deze versie kan de bewoner **maximaal twaalf eigen controles** toevoegen aan de 22 vaste punten. Bijvoorbeeld balkonafvoer, berging of een andere situatie die niet in de standaardlijst past. Per eigen punt kiest de bewoner een unieke titel (max. 100 tekens), één van de zes ruimtes of **Overig**, en de eigen prioriteit. Geen titel mag binnen dezelfde ruimte dubbel voorkomen, ook niet tegenover een vast sjabloonpunt. De standaardpunten zijn niet verwijderbaar of bewerkbaar; eigen punten kunnen **uitsluitend na afzonderlijke verwijderbevestiging** uit de tijdelijke inspectie worden gewist.
+
+- Alle eigen punten krijgen dezelfde zelf-beoordeelde status, maximaal 300 tekens tijdelijke opmerking, voortgang en handmatig bevestigde overdracht naar het nazorgdossier.
+- Het inspectie-JSON-formaat is nu **schema 2** (`kind=woonpoints-private-startinspectie`, `schema=2`) met uitsluitend `custom` en `records`. `custom` bewaart per eigen punt een lokaal gegenereerd ID, titel, ruimte en handmatige prioriteit. `records` bevat de beoordeelde vaste en eigen punten met status en eventuele eigen notitie. De volledige output blijft maximaal 16 KiB.
+- **Schema 1** uit de voorgaande geïmplementeerde stap blijft ondersteund: de bestaande inspectie wordt dan met nul eigen controles hersteld. Nieuwe schema-2-import wordt integraal geweigerd bij dubbele/ongekende IDs, onbekende ruimte, ongeldige prioriteit, te veel controles, ongeldige titel, ontbrekende beoordelingselementen of onverwachte velden. Geen stille partiële import.
+- De importbevestiging vervangt tijdelijke vaste beoordelingen, eigen beoordelingen én eigen puntdefinities, maar **nooit** al overgedragen nazorgpunten en contactmomenten.
+- **Begin opnieuw** wist eveneens eigen controles pas na aparte bevestiging. Een TXT-inspectieoverzicht bevat ook onbeoordeelde eigen punten; de bewoner bepaalt zelf of het eigen bestand buiten Woonpoints wordt gedeeld.
 
 ## Integriteit / privacy / scope
 

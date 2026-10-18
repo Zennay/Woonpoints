@@ -316,37 +316,87 @@ const INSPECTION_CHECKS: InspectionCheck[] = [
 const INSPECTION_ROOMS = ['Entree', 'Woonkamer', 'Keuken', 'Badkamer', 'Slaapkamer', 'Installaties'] as const;
 
 
+type PrivateCustomInspectionCheck = {
+  id: string;
+  room: string;
+  title: string;
+  priority: Priority;
+};
 type InspectionBackup = {
   grades: Record<string, InspectionGrade | undefined>;
   notes: Record<string, string>;
+  custom: PrivateCustomInspectionCheck[];
   count: number;
 };
 const INSPECTION_BACKUP_KIND = 'woonpoints-private-startinspectie';
 const INSPECTION_BACKUP_BYTES = 16 * 1024;
+const MAX_CUSTOM_INSPECTION_CHECKS = 12;
+const INSPECTION_ALL_ROOMS = [...INSPECTION_ROOMS, 'Overig'] as const;
 
 function inspectionBackupContents(
   grades: Record<string, InspectionGrade | undefined>,
-  notes: Record<string, string>
+  notes: Record<string, string>,
+  custom: PrivateCustomInspectionCheck[]
 ): string {
-  const records = INSPECTION_CHECKS.flatMap(check => {
+  const checks = [...INSPECTION_CHECKS, ...custom];
+  const records = checks.flatMap(check => {
     const grade = grades[check.id];
     if (grade !== 'goed' && grade !== 'aandacht') return [];
     return [{ id: check.id, grade, note: grade === 'aandacht' ? (notes[check.id] || '').trim() : '' }];
   });
-  return JSON.stringify({ kind: INSPECTION_BACKUP_KIND, schema: 1, records }, null, 2);
+  return JSON.stringify({
+    kind: INSPECTION_BACKUP_KIND, schema: 2,
+    custom: custom.map(({id,room,title,priority}) => ({id,room,title,priority})),
+    records
+  }, null, 2);
 }
 
-/** Import only the exact locally exported file format; reject unknown or duplicate IDs. */
+/**
+ * Admit only known built-in IDs and at most twelve explicitly user-created checks.
+ * Legacy schema 1 from #145 remains accepted, with no custom check definitions.
+ * No network, persisted IDs of people or legacy browser migration side effects.
+ */
 function parseInspectionBackup(source: string): InspectionBackup {
   if (new TextEncoder().encode(source).length > INSPECTION_BACKUP_BYTES)
     throw Error('Inspectiebestand is groter dan 16 KiB.');
   const data: unknown = JSON.parse(source);
-  if (!isRecord(data) || !exactKeys(data, ['kind', 'schema', 'records']) ||
-      data.kind !== INSPECTION_BACKUP_KIND || data.schema !== 1 ||
-      !Array.isArray(data.records) || data.records.length > INSPECTION_CHECKS.length) {
+  if (!isRecord(data) || data.kind !== INSPECTION_BACKUP_KIND ||
+      (data.schema !== 1 && data.schema !== 2) ||
+      !Array.isArray(data.records)) {
     throw Error('Ongeldig of niet ondersteund startinspectie-JSON-bestand.');
   }
-  const known = new Set(INSPECTION_CHECKS.map(check => check.id));
+  let custom: PrivateCustomInspectionCheck[] = [];
+  if (data.schema === 1) {
+    if (!exactKeys(data, ['kind', 'schema', 'records']))
+      throw Error('Onbekende velden in oud inspectiebestand.');
+  } else {
+    if (!exactKeys(data, ['kind', 'schema', 'records', 'custom']) ||
+        !Array.isArray(data.custom) || data.custom.length > MAX_CUSTOM_INSPECTION_CHECKS) {
+      throw Error('Onbekende velden of te veel eigen inspectiepunten.');
+    }
+    const knownRoom = new Set<string>(INSPECTION_ALL_ROOMS);
+    const customIds = new Set<string>();
+    const roomTitles = new Set(INSPECTION_CHECKS.map(check =>
+      check.room.toLocaleLowerCase('nl-NL') + '\u0000' + check.title.toLocaleLowerCase('nl-NL')));
+    for (const row of data.custom) {
+      if (!isRecord(row) || !exactKeys(row, ['id', 'room', 'title', 'priority']) ||
+          typeof row.id !== 'string' ||
+          !/^custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(row.id) ||
+          customIds.has(row.id) ||
+          typeof row.room !== 'string' || !knownRoom.has(row.room) ||
+          typeof row.title !== 'string' || !validText(row.title, 1, 100) || row.title !== row.title.trim() ||
+          !isPriority(row.priority)) {
+        throw Error('Ongeldig of dubbel eigen inspectiepunt.');
+      }
+      const key = row.room.toLocaleLowerCase('nl-NL') + '\u0000' + row.title.toLocaleLowerCase('nl-NL');
+      if (roomTitles.has(key)) throw Error('Twee inspectiepunten hebben dezelfde titel in dezelfde ruimte.');
+      roomTitles.add(key);
+      customIds.add(row.id);
+      custom.push({ id: row.id, room: row.room, title: row.title, priority: row.priority });
+    }
+  }
+  const known = new Set([...INSPECTION_CHECKS.map(check => check.id), ...custom.map(check => check.id)]);
+  if (data.records.length > known.size) throw Error('Te veel beoordeelde inspectiepunten.');
   const used = new Set<string>();
   const grades: Record<string, InspectionGrade | undefined> = {};
   const notes: Record<string, string> = {};
@@ -356,13 +406,13 @@ function parseInspectionBackup(source: string): InspectionBackup {
         (record.grade !== 'goed' && record.grade !== 'aandacht') ||
         !validText(record.note, 0, 300) ||
         (record.grade === 'goed' && record.note !== '')) {
-      throw Error('Onbekend, ongeldig of dubbel inspectiepunt; er is niets vervangen.');
+      throw Error('Onbekend, ongeldig of dubbel inspectiepunt; niets vervangen.');
     }
     used.add(record.id);
     grades[record.id] = record.grade;
     if (record.grade === 'aandacht') notes[record.id] = (record.note as string).trim();
   }
-  return { grades, notes, count: used.size };
+  return { grades, notes, custom, count: used.size };
 }
 
 function PrivateArrivalInspection({
@@ -373,12 +423,20 @@ function PrivateArrivalInspection({
 }) {
   const [grades, setGrades] = useState<Record<string, InspectionGrade | undefined>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [customChecks, setCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customRoom, setCustomRoom] = useState<string>('Overig');
+  const [customPriority, setCustomPriority] = useState<Priority>('normaal');
+  const [pendingCustomDelete, setPendingCustomDelete] = useState<string | null>(null);
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [pendingRestore, setPendingRestore] = useState<InspectionBackup | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
-  const checked = INSPECTION_CHECKS.filter(row => grades[row.id] !== undefined);
-  const flagged = INSPECTION_CHECKS.filter(row => grades[row.id] === 'aandacht');
+  const allChecks: InspectionCheck[] = [...INSPECTION_CHECKS, ...customChecks.map(check => ({
+    ...check, tip: 'Zelf toegevoegd controlepunt; dit is geen geverifieerde inspectie-eis.'
+  }))];
+  const checked = allChecks.filter(row => grades[row.id] !== undefined);
+  const flagged = allChecks.filter(row => grades[row.id] === 'aandacht');
   const alreadyIncluded = (row: InspectionCheck) => items.some(item =>
     item.room.toLocaleLowerCase('nl-NL') === row.room.toLocaleLowerCase('nl-NL') &&
     item.title.toLocaleLowerCase('nl-NL') === row.title.toLocaleLowerCase('nl-NL') &&
@@ -386,7 +444,7 @@ function PrivateArrivalInspection({
   );
   const newFlagged = flagged.filter(row => !alreadyIncluded(row));
   const saveInspectionBackup = () => {
-    const source = inspectionBackupContents(grades, notes);
+    const source = inspectionBackupContents(grades, notes, customChecks);
     if (new TextEncoder().encode(source).length > INSPECTION_BACKUP_BYTES) {
       setFeedback('Inspectie-JSON overschrijdt 16 KiB. Verkort eigen toelichtingen.'); return;
     }
@@ -409,14 +467,14 @@ function PrivateArrivalInspection({
     }
   };
   const exportInspection = () => {
-    if (!checked.length) { setFeedback('Markeer eerst minstens één eigen controle.'); return; }
+    if (!checked.length && !customChecks.length) { setFeedback('Markeer eerst minstens één eigen controle.'); return; }
     const lines = [
       'WOONPOINTS — eigen startinspectie', 'Alleen handmatig gecontroleerde items; niet door een verhuurder geverifieerd.',
-      'Datum eigen overzicht: ' + today(), '', 'Niet gecontroleerd: ' + (INSPECTION_CHECKS.length - checked.length)
+      'Datum eigen overzicht: ' + today(), '', 'Niet gecontroleerd: ' + (allChecks.length - checked.length)
     ];
-    for (const room of INSPECTION_ROOMS) {
+    for (const room of INSPECTION_ALL_ROOMS) {
       lines.push('', room.toUpperCase());
-      for (const row of INSPECTION_CHECKS.filter(item => item.room === room)) {
+      for (const row of allChecks.filter(item => item.room === room)) {
         lines.push('- [' + (grades[row.id] === 'goed' ? 'NAAR EIGEN CONTROLE IN ORDE' :
           grades[row.id] === 'aandacht' ? 'AANDACHTSPUNT' : 'NIET GECONTROLEERD') + '] ' + row.title);
         if (grades[row.id] === 'aandacht' && notes[row.id]?.trim()) lines.push('  Mijn toelichting: ' + notes[row.id].trim());
@@ -424,6 +482,38 @@ function PrivateArrivalInspection({
     }
     download('woonpoints-eigen-startinspectie.txt', lines.join('\n') + '\n', 'text/plain;charset=utf-8');
     setFeedback('Privé-inspectieoverzicht gedownload. De controle is niet officieel bevestigd.');
+  };
+  const addCustomCheck = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = customTitle.trim();
+    if (!validText(title, 1, 100) ||
+        !INSPECTION_ALL_ROOMS.includes(customRoom as typeof INSPECTION_ALL_ROOMS[number]) ||
+        !isPriority(customPriority)) {
+      setFeedback('Controleer eigen titel, ruimte en prioriteit.'); return;
+    }
+    if (customChecks.length >= MAX_CUSTOM_INSPECTION_CHECKS) {
+      setFeedback('Maximaal 12 eigen inspectiepunten mogelijk.'); return;
+    }
+    if (allChecks.some(row => row.room.toLocaleLowerCase('nl-NL') === customRoom.toLocaleLowerCase('nl-NL') &&
+        row.title.toLocaleLowerCase('nl-NL') === title.toLocaleLowerCase('nl-NL'))) {
+      setFeedback('Dit controlepunt bestaat al in deze ruimte.'); return;
+    }
+    setCustomChecks(previous => [...previous, {
+      id: 'custom-' + crypto.randomUUID(), room: customRoom, title, priority: customPriority
+    }]);
+    setCustomTitle('');
+    setPendingRestore(null);
+    setConfirmTransfer(false);
+    setFeedback('Eigen controlepunt toegevoegd. Markeer na je eigen controle of het aandacht vraagt.');
+  };
+  const removeCustomCheck = (id: string) => {
+    setCustomChecks(previous => previous.filter(row => row.id !== id));
+    setGrades(previous => { const copy = { ...previous }; delete copy[id]; return copy; });
+    setNotes(previous => { const copy = { ...previous }; delete copy[id]; return copy; });
+    setPendingCustomDelete(null);
+    setPendingRestore(null);
+    setConfirmTransfer(false);
+    setFeedback('Eigen controlepunt uit deze tijdelijke inspectie verwijderd. Bestaande nazorg blijft bestaan.');
   };
   const transfer = () => {
     const requests: Draft[] = newFlagged.map(row => ({
@@ -444,25 +534,56 @@ function PrivateArrivalInspection({
       <div>
         <p className="eyebrow">NA SLEUTELOVERDRACHT · ZELF CONTROLEREN</p>
         <h2 id="private-startinspection-heading">Begeleide startinspectie</h2>
-        <p>Doorloop 22 praktische punten in zes ruimtes. Markeer wat je zelf hebt bekeken als in orde of als aandachtspunt.
+        <p>Doorloop 22 standaardpunten in zes ruimtes en voeg zelf controlepunten toe als jouw woning dat vraagt. Markeer wat je zelf hebt bekeken als in orde of als aandachtspunt.
           Niets wordt automatisch aangemerkt als gecontroleerd, vastgelegd bij een verhuurder of bewezen gebrek.</p>
-        <p><strong>{checked.length} / {INSPECTION_CHECKS.length}</strong> zelf beoordeeld ·
+        <p><strong>{checked.length} / {allChecks.length}</strong> zelf beoordeeld ·
           <strong> {flagged.length}</strong> zelf gemarkeerde aandachtspunten ·
           <strong> {newFlagged.length}</strong> nieuwe punten voor nazorg</p>
-        <progress max={INSPECTION_CHECKS.length} value={checked.length}
+        <progress max={allChecks.length} value={checked.length}
           aria-label="Zelf beoordeelde inspectiepunten" style={{width:'100%'}} />
         <p>Bij onveilige situaties: volg de officiële nood- of storingsroute. Deze checklist is geen technische keuring.</p>
       </div>
       <div>
-        {INSPECTION_ROOMS.map(room => {
-          const rows = INSPECTION_CHECKS.filter(item => item.room === room);
+        <form onSubmit={addCustomCheck} className="aftercare-inspection-custom">
+          <h3>Mijn eigen controlepunten</h3>
+          <p>Voeg maximaal 12 eigen controles toe, bijvoorbeeld voor een balkon of berging.
+            Dit is geen officiële inspectie-eis.</p>
+          <label htmlFor="inspection-custom-title">Wat wil je controleren?</label>
+          <input id="inspection-custom-title" required maxLength={100} value={customTitle}
+            onChange={event => setCustomTitle(event.target.value)}
+            placeholder="Bijvoorbeeld: balkonafvoer" />
+          <div className="aftercare-grid">
+            <div>
+              <label htmlFor="inspection-custom-room">Ruimte</label>
+              <select id="inspection-custom-room" value={customRoom}
+                onChange={event => setCustomRoom(event.target.value)}>
+                {INSPECTION_ALL_ROOMS.map(room => <option key={room} value={room}>{room}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="inspection-custom-priority">Mijn prioriteit bij nazorg</label>
+              <select id="inspection-custom-priority" value={customPriority}
+                onChange={event => setCustomPriority(event.target.value as Priority)}>
+                <option value="laag">Laag</option><option value="normaal">Normaal</option>
+                <option value="dringend">Dringend volgens mij</option>
+              </select>
+            </div>
+          </div>
+          <div className="aftercare-actions">
+            <button type="submit" disabled={customChecks.length >= MAX_CUSTOM_INSPECTION_CHECKS}>
+              Voeg mijn controlepunt toe
+            </button>
+          </div>
+        </form>
+        {INSPECTION_ALL_ROOMS.map(room => {
+          const rows = allChecks.filter(item => item.room === room);
           const completed = rows.filter(item => grades[item.id]).length;
           return (
             <details key={room} className="aftercare-inspection-room">
               <summary><strong>{room}</strong> · {completed} van {rows.length} zelf beoordeeld</summary>
               {rows.map(row => (
                 <fieldset key={row.id} className="aftercare-inspection-check">
-                  <legend><strong>{row.title}</strong></legend>
+                  <legend><strong>{row.title}</strong>{row.id.startsWith('custom-') ? ' · eigen punt' : ''}</legend>
                   <p>{row.tip}</p>
                   <div className="aftercare-actions">
                     <label><input type="radio" name={'inspection-' + row.id}
@@ -478,6 +599,22 @@ function PrivateArrivalInspection({
                       onClick={() => { setGrades(previous => ({...previous,[row.id]:undefined})); setConfirmTransfer(false); }}
                     >Nog niet beoordeeld</button>
                   </div>
+                  {row.id.startsWith('custom-') && (
+                    <div>
+                      <button type="button" className="secondary"
+                        onClick={() => setPendingCustomDelete(row.id)}>Verwijder eigen controlepunt…</button>
+                      {pendingCustomDelete === row.id && (
+                        <div className="aftercare-confirm" role="group" aria-label="Eigen controlepunt verwijderen">
+                          <p>Dit eigen controlepunt en zijn tijdelijke beoordeling verwijderen?
+                            Bestaande nazorgpunten worden niet gewist.</p>
+                          <div className="aftercare-actions">
+                            <button type="button" onClick={() => removeCustomCheck(row.id)}>Ja, verwijder</button>
+                            <button type="button" className="secondary" onClick={() => setPendingCustomDelete(null)}>Behoud</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {grades[row.id] === 'aandacht' && (
                     <>
                       <label htmlFor={'inspection-note-' + row.id}>Eigen toelichting (optioneel)</label>
@@ -494,10 +631,10 @@ function PrivateArrivalInspection({
           );
         })}
         <div className="aftercare-actions">
-          <button type="button" className="secondary" onClick={saveInspectionBackup} disabled={checked.length === 0}>
+          <button type="button" className="secondary" onClick={saveInspectionBackup} disabled={checked.length === 0 && customChecks.length === 0}>
             Bewaar mijn inspectievoortgang (JSON)
           </button>
-          <button type="button" className="secondary" disabled={checked.length === 0} onClick={() => setResetConfirm(true)}>
+          <button type="button" className="secondary" disabled={checked.length === 0 && customChecks.length === 0} onClick={() => setResetConfirm(true)}>
             Begin opnieuw…
           </button>
         </div>
@@ -509,11 +646,13 @@ function PrivateArrivalInspection({
           <div className="aftercare-confirm" role="group" aria-label="Inspectie-import bevestigen">
             <p><strong>{pendingRestore.count}</strong> beoordelingen gevonden. Bestaande inspectieantwoorden
               en tijdelijke toelichtingen worden uitsluitend na bevestiging vervangen.
-              Reeds eerder aan nazorg overgedragen gebreken blijven bestaan.</p>
+              Reeds eerder aan nazorg overgedragen gebreken blijven bestaan. Je eigen controlepunten worden mee vervangen.</p>
             <div className="aftercare-actions">
               <button type="button" onClick={() => {
                 setGrades(pendingRestore.grades);
                 setNotes(pendingRestore.notes);
+                setCustomChecks(pendingRestore.custom);
+                setPendingCustomDelete(null);
                 setPendingRestore(null);
                 setConfirmTransfer(false);
                 setFeedback('Inspectie hervat: alleen de tijdelijke controleantwoorden zijn vervangen.');
@@ -526,11 +665,11 @@ function PrivateArrivalInspection({
         )}
         {resetConfirm && (
           <div className="aftercare-confirm" role="group" aria-label="Inspectie opnieuw starten">
-            <p>Alle tijdelijke inspectieantwoorden en toelichtingen wissen? Bestaande nazorgpunten en
+            <p>Alle tijdelijke inspectieantwoorden, toelichtingen en eigen controlepunten wissen? Bestaande nazorgpunten en
               eerder gedownloade inspectieback-ups blijven bestaan.</p>
             <div className="aftercare-actions">
               <button type="button" onClick={() => {
-                setGrades({}); setNotes({}); setResetConfirm(false); setPendingRestore(null);
+                setGrades({}); setNotes({}); setCustomChecks([]); setPendingCustomDelete(null); setResetConfirm(false); setPendingRestore(null);
                 setConfirmTransfer(false); setFeedback('Tijdelijke inspectie is leeg; nazorg blijft behouden.');
               }}>Ja, begin opnieuw</button>
               <button type="button" className="secondary" onClick={() => setResetConfirm(false)}>Behoud inspectie</button>
@@ -538,7 +677,7 @@ function PrivateArrivalInspection({
           </div>
         )}
         <div className="aftercare-actions">
-          <button className="secondary" type="button" disabled={checked.length === 0} onClick={exportInspection}>
+          <button className="secondary" type="button" disabled={checked.length === 0 && customChecks.length === 0} onClick={exportInspection}>
             Download mijn eigen inspectieoverzicht (TXT)
           </button>
           <button type="button" disabled={newFlagged.length === 0}
