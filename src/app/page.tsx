@@ -959,6 +959,7 @@ function PrivateMoveAftercare() {
   const [inspectionCustomChecks, setInspectionCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
   const [inspectionVersion, setInspectionVersion] = useState(0);
   const [pendingCompleteImport, setPendingCompleteImport] = useState<CompleteHandover | null>(null);
+  const [completeBackupPreview, setCompleteBackupPreview] = useState<string | null>(null);
   const [completeUndo, setCompleteUndo] = useState<{
     previous: CompleteHandover;
     importedSignature: string;
@@ -1024,6 +1025,8 @@ function PrivateMoveAftercare() {
   const completeDataSignature = JSON.stringify({
     inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history
   });
+  const completeBackupCurrent = completeBackupPreview !== null &&
+    completeBackupPreview === completeDataSignature;
   const canUndoComplete = completeUndo !== null &&
     completeUndo.importedSignature === completeDataSignature;
   const completeSummaryFingerprint = JSON.stringify({
@@ -1266,6 +1269,10 @@ function PrivateMoveAftercare() {
   }
 
   function exportCompleteHandover() {
+    if (!completeBackupCurrent) {
+      setCompleteMessage('Controleer eerst de actuele inspectie- en nazorggegevens vóór complete JSON-export.');
+      return;
+    }
     const inspection = JSON.parse(inspectionBackupContents(
       inspectionGrades, inspectionNotes, inspectionCustomChecks));
     const aftercare = { kind: KIND, schema: 2, items, history };
@@ -1283,6 +1290,7 @@ function PrivateMoveAftercare() {
       return;
     }
     download('woonpoints-volledige-prive-overdracht.json', data, 'application/json;charset=utf-8');
+    setCompleteBackupPreview(null);
     setCompleteMessage('Complete privé-back-up gedownload. Bewaar dit bestand zelf op een veilige plek.');
   }
   async function importCompleteHandover(event: ChangeEvent<HTMLInputElement>) {
@@ -1861,12 +1869,42 @@ function PrivateMoveAftercare() {
         </div>
         <div>
           <div className="aftercare-actions">
-            <button type="button" onClick={exportCompleteHandover}
+            <button type="button" className="secondary"
+              onClick={() => {
+                setCompleteBackupPreview(completeDataSignature);
+                setCompleteMessage('Controleer de inhoudscategorieën en bevestig eventueel de volledige privéback-up.');
+              }}
               disabled={items.length === 0 && history.length === 0 &&
                 inspectionCustomChecks.length === 0 &&
                 !Object.values(inspectionGrades).some(value => value === 'goed' || value === 'aandacht')}>
-              Download complete privé-JSON
+              Bekijk complete privé-JSON-overdracht…
             </button>
+            {completeBackupPreview !== null && !completeBackupCurrent &&
+              <p className="aftercare-warning" role="status">
+                Je inspectie of nazorg is veranderd. Bekijk opnieuw de huidige inhoud vóór export.
+              </p>}
+            {completeBackupCurrent && <div className="aftercare-confirm" role="group"
+              aria-label="Complete privé-JSON export bevestigen">
+              <p><strong>Alle gegevens van beide modules exporteren?</strong> Dit is een volledige
+                herstelback-up: anders dan bij het leesbare TXT/HTML-overzicht worden eventuele
+                privétoelichtingen, contactmomenten en eigen datums altijd opgenomen.
+                Er is geen afzonderlijke inhoudsfilter voor dit herstelbestand.</p>
+              <p>Eigen inspectie: {Object.values(inspectionGrades).filter(value =>
+                value === 'goed' || value === 'aandacht').length} beoordelingen en
+                {' '}{inspectionCustomChecks.length} eigen controlepunten.</p>
+              <p>Eigen nazorg: {items.length} punten en {history.length} contactmomenten
+                (met eventuele privégegevens).</p>
+              <p>De opslaglocatie die je kiest kan dit bestand buiten Woonpoints delen of synchroniseren.</p>
+              <div className="aftercare-actions">
+                <button type="button" onClick={exportCompleteHandover}>
+                  Ja, download alle privégegevens als herstel-JSON
+                </button>
+                <button type="button" className="secondary"
+                  onClick={() => { setCompleteBackupPreview(null); setCompleteMessage('Volledige JSON-export geannuleerd.'); }}>
+                  Niet downloaden
+                </button>
+              </div>
+            </div>}
           </div>
           <div className="aftercare-confirm">
             <h3>Eigen leesbare samenvatting</h3>
