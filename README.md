@@ -389,3 +389,20 @@ en tijd invullen en daarna pas *Voeg eigen actie toe* kiezen blijft verplicht.
 De bezichtigingschecklist wordt niet aangepast. Er is geen automatische
 agenda-import, WoningNet-reactie, accounttoegang, opslag of netwerkactie.
 Ontbrekende en reeds positief beoordeelde punten zijn niet selecteerbaar.
+
+
+### Meerjarenscenario's volledig terugzetten met privé-JSON
+
+**Bewaar volledige meerjarenvergelijking als JSON** maakt op eigen verzoek
+één lokaal bestand met alle twee eigen huurscenario's, overige maandlasten,
+startkosten, stijgingspercentages en het gekozen aantal jaren. Anders dan de
+bestaande numerieke CSV bewaart deze JSON ook de oorspronkelijke aannames,
+zodat het scenario later nog bewerkbaar is.
+
+Een bewust geselecteerd JSON-bestand (maximaal 16 KiB) wordt alleen
+geaccepteerd als het de juiste versie, uitsluitend bekende velden, valide
+jaarhorizon en veilige begrensde getallen bevat. Een apart herstelakkoord
+is verplicht voordat **alle huidige** bedragen en de termijn worden
+vervangen. Annuleren of een fout bestand behoudt het huidige scenario.
+Niets wordt automatisch bewaard, naar een server verstuurd of gebruikt
+om rechten, werkelijke prijzen of toekomstig rendement af te leiden.

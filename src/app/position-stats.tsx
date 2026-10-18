@@ -2022,6 +2022,43 @@ function projectPrivateHousingCosts(option: PrivateCostOption, years: number) {
   });
 }
 
+type LongTermPrivateBackup = {
+  format: 'woonpoints-longterm-private-v1';
+  years: string;
+  first: PrivateCostInputs;
+  second: PrivateCostInputs;
+};
+
+function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null {
+  if (!text || new TextEncoder().encode(text).length > 16384) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const root = parsed as Record<string, unknown>;
+    if (Object.keys(root).sort().join('|') !== 'first|format|second|years' ||
+        root.format !== 'woonpoints-longterm-private-v1' ||
+        typeof root.years !== 'string' || !/^(?:[1-9]|10)$/.test(root.years)) return null;
+    function parseScenario(raw: unknown): PrivateCostInputs | null {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const obj = raw as Record<string, unknown>;
+      if (Object.keys(obj).sort().join('|') !== 'extras|growth|moving|rent') return null;
+      for (const field of ['rent','extras','moving','growth'] as const) {
+        if (typeof obj[field] !== 'string' || (obj[field] as string).length > 20) return null;
+      }
+      const candidate: PrivateCostInputs = {
+        rent: obj.rent as string, extras: obj.extras as string,
+        moving: obj.moving as string, growth: obj.growth as string
+      };
+      return readPrivateCostOption(candidate) ? candidate : null;
+    }
+    const first = parseScenario(root.first), second = parseScenario(root.second);
+    return first && second ? {format:'woonpoints-longterm-private-v1',
+      years:root.years,first,second} : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Standalone private financial what-if model; does not represent future legal rent increases. */
 export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   offer?: PrivateLongTermOffer | null;
@@ -2031,6 +2068,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   const [second, setSecond] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
   const [horizon, setHorizon] = useState('5');
   const [message, setMessage] = useState('');
+  const [pendingRestore, setPendingRestore] = useState<LongTermPrivateBackup | null>(null);
   const left = readPrivateCostOption(first);
   const right = readPrivateCostOption(second);
   const years = /^(?:[1-9]|10)$/.test(horizon) && Number.isInteger(Number(horizon)) &&
@@ -2042,10 +2080,12 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   }).format(amount);
   const changeFirst = (name: keyof PrivateCostInputs, value: string) => {
     setFirst(current => ({...current, [name]:value}));
+    setPendingRestore(null);
     setMessage('');
   };
   const changeSecond = (name: keyof PrivateCostInputs, value: string) => {
     setSecond(current => ({...current, [name]:value}));
+    setPendingRestore(null);
     setMessage('');
   };
   const rows = leftRows && rightRows
@@ -2060,6 +2100,39 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
       if (firstChangeYear === null && previous !== 0 && current !== 0 &&
           Math.sign(previous) !== Math.sign(current)) firstChangeYear = entry.a.year;
       previous = current;
+    }
+  }
+  function saveCompleteBackup() {
+    if (!left || !right || !years) return;
+    const json = JSON.stringify({
+      format:'woonpoints-longterm-private-v1', years:horizon,
+      first:{...first}, second:{...second}
+    },null,2) + '\n';
+    const url = URL.createObjectURL(new Blob([json], {type:'application/json;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-prive-meerjarenkosten.json';
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url),2000);
+    setMessage('Volledige meerjarenscenario’s aangeboden voor eigen opslag; een cloudmap kan synchroniseren.');
+  }
+  async function prepareLongTermRestore(file: File | undefined) {
+    setPendingRestore(null);
+    if (!file) return;
+    if (file.size === 0 || file.size > 16384) {
+      setMessage('Herstelbestand geweigerd: maximaal 16 KiB toegestaan.');
+      return;
+    }
+    try {
+      const incoming = decodeLongTermPrivateBackup(await file.text());
+      if (!incoming) throw new Error('invalid');
+      setPendingRestore(incoming);
+      setMessage('Geldig eigen scenario-bestand. Huidige bedragen blijven behouden tot je vervanging bevestigt.');
+    } catch {
+      setMessage('Herstelbestand geweigerd: onjuist formaat of ongeldig bedrag. De huidige cijfers blijven behouden.');
     }
   }
   function exportProjection() {
@@ -2158,6 +2231,44 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           maandhuur (€1–€20.000), overige maandlasten (€0–€20.000),
           verhuiskosten (€0–€50.000), huurstijging (0–25%) en duur (1–10 jaar) in.
           Een komma of punt voor centen is toegestaan.</p>}
+        <div className="private-budget-provenance">
+          <h3>Volledige privévergelijking bewaren of terugzetten</h3>
+          <p>Bewaar op eigen verzoek zowel woning A/B, alle zelfgekozen bedragen,
+            de jaarlijkse stijgingen en de vergelijkingsduur als JSON. Dit
+            bevat financiële privégegevens; de gekozen opslaglocatie kan
+            buiten Woonpoints synchroniseren. Er is geen automatische opslag.</p>
+          <button type="button" onClick={saveCompleteBackup}
+            disabled={!left || !right || !years}>
+            Bewaar volledige meerjarenvergelijking als JSON…
+          </button>
+          <label htmlFor="longterm-private-import">Open eerdere Woonpoints-JSON
+            (maximaal 16 KiB)</label>
+          <input type="file" id="longterm-private-import"
+            accept=".json,application/json" onChange={e => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = '';
+              void prepareLongTermRestore(file);
+            }} />
+          {pendingRestore && <div className="month-csv-confirm" role="group"
+            aria-label="Bevestig volledige privé-meerjarenrestore">
+            <p>Vervang alle bestaande A/B-bedragen, stijgingspercentages en
+              de gekozen vergelijkingsduur door dit privébestand? De
+              gegevens zijn niet officieel gecontroleerd.</p>
+            <div className="month-history-actions">
+              <button type="button" onClick={() => {
+                setFirst({...pendingRestore.first});
+                setSecond({...pendingRestore.second});
+                setHorizon(pendingRestore.years);
+                setPendingRestore(null);
+                setMessage('Eigen meerjarenvergelijking bewust hersteld. Controleer alle aannames zelf.');
+              }}>Ja, vervang mijn volledige vergelijking</button>
+              <button type="button" onClick={() => {
+                setPendingRestore(null);
+                setMessage('Herstel geannuleerd: huidige meerjarencijfers behouden.');
+              }}>Behoud huidige cijfers</button>
+            </div>
+          </div>}
+        </div>
         {last && <div className="private-budget-provenance" aria-live="polite">
           <h3>Na {years} jaar</h3>
           <p>Totale geschatte uitgaven inclusief eenmalige startkosten:
@@ -2188,7 +2299,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           <button type="button" onClick={exportProjection}>Bewaar deze cijfers als CSV…</button>
           <button type="button" onClick={() => {
             setFirst({...DEFAULT_COST_INPUTS});setSecond({...DEFAULT_COST_INPUTS});
-            setHorizon('5');setMessage('Alle handmatige meerjarenbedragen gewist.');
+            setHorizon('5');setPendingRestore(null);
+            setMessage('Alle handmatige meerjarenbedragen gewist.');
           }}>Wis beide scenario’s</button>
           <p>Deze berekening indexeert alleen de ingevulde huur; andere woonlasten
             blijven gelijk. Er wordt niet aangenomen dat de eigen huurstijging
