@@ -2166,6 +2166,25 @@ function PrivateMoveAftercare() {
           id: event.id, issueId: item.id, day: event.day, title: item.title, room: item.room
         }))}
         onOpen={openIssueFromInbox}
+        onPrepareNotice={(ids, mode) => {
+          const valid = ids.length > 0 && ids.length <= 12 &&
+            new Set(ids).size === ids.length &&
+            ids.every(id => active.some(item => item.id === id));
+          if (!valid) {
+            setMessage('Kies maximaal 12 actuele punten uit je huidige nazorgplan.');
+            return;
+          }
+          setChosenIssueIds(ids);
+          setNoticeMode(mode);
+          setNoticeSubject(mode === 'opvolging'
+            ? 'Navraag over open aandachtspunten na mijn verhuizing'
+            : 'Open aandachtspunten na mijn verhuizing');
+          setNoticeDraft('');
+          setNoticeSource('');
+          setNoticeApproved(false);
+          setMessage('Je gekozen punten staan klaar in de bestaande editor. Controleer het hele concept.');
+          document.getElementById('nazorg-notice-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
         onDownload={text => download('woonpoints-prive-nazorgplan.txt',
           text, 'text/plain;charset=utf-8')}
       />
