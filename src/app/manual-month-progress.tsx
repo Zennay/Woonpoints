@@ -1384,6 +1384,26 @@ export function PrivateMovingVolume() {
   }
 
 
+  function offerMovingBudgetToLedger(){
+    if(!costValid){setMessage('Controleer eerst je verhuisvolume en begroting.');return;}
+    const offer=[
+      {label:'Ritkosten (eigen begroting)',category:'Vervoer',amount:vehicleExpense},
+      {label:'Hulpkosten (eigen begroting)',category:'Hulp',amount:helpersExpense},
+      {label:'Verpakkingsmateriaal (begroot)',category:'Verpakkingen',amount:costValues.materialsEuro!},
+      {label:'Andere verhuiskosten (begroot)',category:'Overig',amount:costValues.otherEuro!},
+      {label:'Onvoorziene reserve (begroot)',category:'Overig',amount:reserveExpense}
+    ].map(item=>({...item,plannedCents:Math.round(item.amount*100)}));
+    if(offer.some(item=>!Number.isSafeInteger(item.plannedCents)||item.plannedCents>9999999)){
+      setMessage('Je begroting bevat bedragen die groter zijn dan de limiet van het privé-kostenboek. Verlaag deze eerst.');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('woonpoints:moving-budget-offer',{
+      detail:{format:'woonpoints-moving-budget-offer',version:1,offer:offer.map(({label,category,plannedCents})=>({label,category,plannedCents}))}
+    }));
+    document.getElementById('private-moving-expenses-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+    setMessage('Begroting als concept aan het privé-kostenboek aangeboden; niets is automatisch overgenomen.');
+  }
+
   function prepareMovingBudget(){
     if(!costValid){setMessage('Corrigeer eerst het verhuisvolume, jouw ritten en kosten.');return;}
     const lines=[
@@ -1567,6 +1587,9 @@ export function PrivateMovingVolume() {
               gegarandeerde laadcapaciteit. Neem gewicht, tillen,
               toegang en eventuele vergunningen zelf mee.</p>
           </div>}
+        <button type="button" disabled={!costValid} onClick={offerMovingBudgetToLedger}>
+          Bied deze vijf begrotingsposten aan in het privé-kostenboek…
+        </button>
         <button type="button" disabled={!costValid} onClick={prepareMovingBudget}>
           Bekijk eigen verhuiskosten-TXT eerst…
         </button>
@@ -2312,6 +2335,35 @@ function validExpenseLine(raw:unknown):raw is MovingExpenseLine {
 /** All figures are private user-entered estimates and payments, never financial or portal evidence. */
 export function PrivateMovingExpenseLedger(){
   const [lines,setLines]=useState<MovingExpenseLine[]>([]);
+  const [pendingBudget,setPendingBudget]=useState<MovingExpenseLine[]|null>(null);
+  useEffect(()=>{
+    function onBudget(event:Event){
+      const raw=(event as CustomEvent<unknown>).detail;
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+      const data=raw as Record<string,unknown>;
+      if(data.format!=='woonpoints-moving-budget-offer'||data.version!==1||
+        !Array.isArray(data.offer)||data.offer.length!==5)return;
+      const valid=data.offer.every(item=>{
+        if(!item||typeof item!=='object'||Array.isArray(item))return false;
+        const line=item as Record<string,unknown>;
+        return typeof line.label==='string'&&line.label.length>0&&line.label.length<=70&&
+          !/[\u0000-\u001f\u007f]/.test(line.label)&&
+          EXPENSE_CATEGORIES.includes(line.category as MovingExpenseCategory)&&
+          typeof line.plannedCents==='number'&&Number.isSafeInteger(line.plannedCents)&&
+          line.plannedCents>=0&&line.plannedCents<=9999999;
+      });
+      if(!valid)return;
+      const dataLines:MovingExpenseLine[]=data.offer.map((item,index)=>{
+        const line=item as {label:string;category:MovingExpenseCategory;plannedCents:number};
+        return {id:'move-exp-'+Date.now()+'-'+index,label:line.label,category:line.category,
+          plannedCents:line.plannedCents,actualCents:null,paid:false};
+      });
+      setPendingBudget(dataLines);setNotice('Bekijk de vijf begrotingsposten en bevestig apart voordat je ze toevoegt.');
+    }
+    window.addEventListener('woonpoints:moving-budget-offer',onBudget);
+    return()=>window.removeEventListener('woonpoints:moving-budget-offer',onBudget);
+  },[]);
+
   const [form,setForm]=useState(emptyExpenseForm);
   const [editing,setEditing]=useState<string|null>(null);
   const [pendingDelete,setPendingDelete]=useState<string|null>(null);
@@ -2342,7 +2394,7 @@ export function PrivateMovingExpenseLedger(){
     'Er worden geen facturen, transacties, betaalbewijzen of accountgegevens opgehaald.'
   ].join('\n')+'\n';
   function invalidate(){
-    setPendingReport(null);setPendingRestore(null);setPendingDelete(null);
+    setPendingReport(null);setPendingRestore(null);setPendingDelete(null);setPendingBudget(null);
     setNotice('');setClearPending(false);
   }
   function submit(){
@@ -2399,6 +2451,29 @@ export function PrivateMovingExpenseLedger(){
       <p>Vergelijk je eigen kostenraming met later zelf ingevulde bedragen. Lege werkelijke
         bedragen blijven <strong>onbekend</strong>: ze worden nooit als € 0 uitgelegd.
         Dit is geen gekoppelde bankrekening, factuuradministratie of financieel advies.</p>
+      {pendingBudget&&<div role="group" aria-label="Bevestig begrotingsposten toevoegen">
+        <h3>Concept uit jouw verhuisbudget</h3>
+        <p>Dit zijn vijf <strong>zelf geraamde bedragen</strong> uit je eigen verhuisvolume-module.
+          Er is nog niets toegevoegd. Werkelijke bedragen blijven onbekend en niets wordt betaald gemarkeerd.
+          Als je dit twee keer toevoegt kunnen dubbele posten ontstaan.</p>
+        <ul>{pendingBudget.map(item=><li key={item.id}>
+          {item.label}: {expenseAmount(item.plannedCents)}
+        </li>)}</ul>
+        <button type="button" disabled={lines.length+pendingBudget.length>30} onClick={()=>{
+          if(lines.length+pendingBudget.length>30)return;
+          const existingIds=new Set(lines.map(line=>line.id));
+          const suffix=Date.now();
+          setLines(old=>[...old,...pendingBudget.map((item,index)=>({
+            ...item,id:existingIds.has(item.id)?'move-exp-'+suffix+'-'+(index+old.length):item.id
+          }))]);
+          setPendingBudget(null);setNotice('De vijf eigen ramingsposten zijn toegevoegd; vul werkelijke bedragen later zelf in.');
+        }}>Bevestig toevoegen ({pendingBudget.length} posten)</button>
+        <button type="button" onClick={()=>{
+          setPendingBudget(null);setNotice('Begrotingsvoorstel geannuleerd.');
+        }}>Annuleren</button>
+        {lines.length+pendingBudget.length>30&&<p>Het kostenboek heeft plaats voor maximaal 30 posten.
+          Verwijder eerst eigen posten of annuleer deze overdracht.</p>}
+      </div>}
       <dl>
         <div><dt>Gepland totaal</dt><dd>{expenseAmount(planned)}</dd></div>
         <div><dt>Bekende werkelijke kosten</dt><dd>{expenseAmount(actualKnown)} ({recorded}/{lines.length} posten)</dd></div>
