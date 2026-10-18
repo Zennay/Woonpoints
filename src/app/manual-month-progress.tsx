@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PrivateJournalCountOffer } from './position-stats';
+import type { PrivateJournalCountOffer, PrivateMonthSnapshot } from './position-stats';
 import {
   MANUAL_MONTHLY_GOAL,
   MANUAL_PROGRESS_STORAGE_KEY,
@@ -17,9 +17,10 @@ import {
 } from '../lib/manual-month-progress.mjs';
 
 /** Optional private notes, never a verified account counter or live instruction. */
-export default function ManualMonthProgress({journalOffer,onJournalDecision}:{
+export default function ManualMonthProgress({journalOffer,onJournalDecision,onMonthSnapshot}:{
   journalOffer?: PrivateJournalCountOffer|null;
   onJournalDecision?: ()=>void;
+  onMonthSnapshot?: (snapshot:PrivateMonthSnapshot)=>void;
 } = {}) {
   const [month, setMonth] = useState<string | null>(null);
   const [observedAt, setObservedAt] = useState<Date | null>(null);
@@ -126,6 +127,14 @@ export default function ManualMonthProgress({journalOffer,onJournalDecision}:{
       document.removeEventListener('visibilitychange', refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!onMonthSnapshot) return;
+    onMonthSnapshot({
+      month,count,previousNoteHeld:opaqueStoredNote,
+      storage:hasUnsaved?'temporary':storageWorks?'browser':'unknown'
+    });
+  }, [month,count,opaqueStoredNote,hasUnsaved,storageWorks,onMonthSnapshot]);
 
   function save(next: number) {
     setPendingTransfer(null);

@@ -659,3 +659,36 @@ een reactie registreerde of dat er zoekpunten werden toegekend.
   maandelijkse validatiestatus en triggert geen reacties, e-mails of
   WoningNet-workers. `BOT_DRY_RUN=true` en alle rechten-/
   productievoorwaarden blijven onveranderd.
+
+
+## Mijn eigen maandbeeld: twee privacy-first bronnen naast elkaar
+
+Boven de handmatige maandplanning staat nu een **eigen maandoverzicht**,
+dat alleen de lokale maandnotitie en het persoonlijke reactiedagboek van
+het huidige browsertabblad laat zien. Het geeft twee aparte, expliciet
+ongeverifieerde getallen: (1) het door jou bijgehouden maanddoel,
+inclusief zichtbaar tijdelijk/niet-bevestigd browseropslaggedrag, en
+(2) het aantal eigen notities met de letterlijke status
+**Zelf gereageerd** in deze kalendermaand tot vandaag.
+
+- Statussen *van plan*, *uitgenodigd*, *afgesloten* en *ingetrokken* tellen
+  niet automatisch mee. De samenvatting toont ook hoeveel eigen
+  dagboeknotities een andere status hebben.
+- Als de eigen maandteller en het dagboek uiteenlopen, verschijnt alleen
+  een duidelijk verschilbericht met snelkoppelingen naar de twee
+  bestaande invoerpanelen. Er wordt niets automatisch samengevoegd,
+  verwijderd of overschreven.
+- Een oudere of niet-decodeerbare browsermaandnotitie blijft bewust
+  beschermd. Als opslag geweigerd wordt, toont het overzicht dat de
+  waarde hooguit tijdelijk is; een lokaal opgeslagen waarde wordt
+  nooit gepresenteerd als officieel.
+- Bij een nieuwe kalendermaand vernieuwt de bestaande maandtimer de
+  maandstatus; het reactiedagboek rapporteert dan uitsluitend eigen
+  gegevens van de nieuwe maand. De data-uitwisseling is in React
+  geheugenstatus zonder nieuwe API, eventbus, cookie, opslag of
+  netwerkaanroep. Sluiten van het tabblad wist niet-geëxporteerde
+  dagboekgegevens.
+- De oorspronkelijke officiële statuskaarten houden **Onbekend** als
+  broninformatie ontbreekt. Het aparte eigen overzicht claimt dus
+  geen geverifieerde WoningNet-stand, toegekende zoekpunten of
+  automatisch geldige reacties. De worker blijft `BOT_DRY_RUN=true`.

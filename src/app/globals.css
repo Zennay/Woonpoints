@@ -538,3 +538,22 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .manual-reminder-duration select:focus-visible {
   outline: 3px solid #173d25; outline-offset: 3px;
 }
+
+
+/* Private month pulse: two transparent sources, not official WoningNet status. */
+.private-month-pulse .grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+  gap: 12px;
+}
+.private-month-pulse .card { min-width: 0; padding: 16px; }
+.private-month-pulse .card strong { font-size: clamp(19px, 2.3vw, 26px); overflow-wrap: anywhere; }
+.private-month-pulse a { display: inline-block; padding: 8px 2px; font-weight: 700; }
+.private-month-pulse a:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+.private-month-pulse [role="status"] {
+  padding: 12px 14px; border-left: 4px solid #486951;
+  border-radius: 4px; background: #f2f7f3;
+}
+@media (max-width: 800px) {
+  .private-month-pulse .grid { grid-template-columns: 1fr; }
+}
