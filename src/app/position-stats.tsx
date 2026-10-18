@@ -544,12 +544,45 @@ export function ManualReactionJournal({
                 </div>
                 <label htmlFor={`journal-item-${row.id}`}>Wijzig eigen status</label>
                 <select id={`journal-item-${row.id}`} value={row.status}
+                  disabled={editingId===row.id || Boolean(pendingImport)}
                   onChange={e => updateState(row.id, e.target.value as JournalStatus)}>
                   {Object.entries(statusNames).map(([value, label]) =>
                     <option key={value} value={value}>{label}</option>)}
                 </select>
+                <button type="button" className="secondary"
+                  disabled={Boolean(pendingImport)}
+                  onClick={() => startEdit(row)}>
+                  {editingId===row.id ? 'Bewerken actief' : 'Bewerk datum en eindpositie'}
+                </button>
+                {editingId===row.id && <fieldset className="journal-entry-form">
+                  <legend>Pas alleen deze eigen notitie #{row.id} aan</legend>
+                  <p>Totdat je bewaart, blijven de oorspronkelijke gegevens staan.</p>
+                  <label htmlFor={`journal-edit-date-${row.id}`}>Datum van de notitie</label>
+                  <input id={`journal-edit-date-${row.id}`} type="date"
+                    min="2000-01-01" max="2099-12-31" value={editDate}
+                    onChange={e => setEditDate(e.target.value)} />
+                  <label htmlFor={`journal-edit-status-${row.id}`}>Eigen status</label>
+                  <select id={`journal-edit-status-${row.id}`} value={editStatus}
+                    onChange={e => setEditStatus(e.target.value as JournalStatus)}>
+                    {Object.entries(statusNames).map(([value,label]) =>
+                      <option key={value} value={value}>{label}</option>)}
+                  </select>
+                  <label htmlFor={`journal-edit-rank-${row.id}`}>Eindpositie (optioneel)</label>
+                  <input id={`journal-edit-rank-${row.id}`} inputMode="numeric"
+                    maxLength={6} value={editRank} placeholder="12"
+                    onChange={e => setEditRank(e.target.value)} />
+                  <label htmlFor={`journal-edit-total-${row.id}`}>Totaal reacties (optioneel)</label>
+                  <input id={`journal-edit-total-${row.id}`} inputMode="numeric"
+                    maxLength={6} value={editTotal} placeholder="150"
+                    onChange={e => setEditTotal(e.target.value)} />
+                  <div className="month-history-actions">
+                    <button type="button" onClick={saveEdit}>Bewaar deze notitie</button>
+                    <button type="button" onClick={cancelEdit}>Annuleer bewerken</button>
+                  </div>
+                </fieldset>}
                 <button type="button" onClick={() => {
                   setEntries(old => old.filter(item => item.id !== row.id));
+                  if (editingId===row.id) setEditingId(null);
                   setMessage('Eigen notitie verwijderd; geen WoningNet-reactie gewijzigd.');
                 }}>Verwijder</button>
               </article>)}
@@ -558,6 +591,7 @@ export function ManualReactionJournal({
             <button type="button" onClick={() => {
               setEntries([]);
               setPendingImport(null);
+              setEditingId(null);
               setMonthFilter('all');
               setMessage('Alle eigen notities uit dit tabblad gewist.');
             }}>Wis alle eigen notities in dit tabblad</button>
