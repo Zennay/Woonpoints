@@ -11,6 +11,12 @@ De bestaande Woonpoints-startinspectie en het nazorgdossier zijn twee op zichzel
 5. Kies **Ja, herstel beide onderdelen** om beide tijdelijke datasets in één gebruikershandeling te vervangen; kies **Annuleer import** om beide intact te laten. Na succesvolle vervanging worden oude edit- en verwijderdialogen, gegenereerde concepten en eerder gegeven lokale conceptgoedkeuringen ingetrokken. De inspectie-interface wordt opnieuw gemount zonder zijn oude dialogen.
 6. De **aparte** inspectie- en nazorgimport blijven beschikbaar. Gebruik die wanneer slechts een deel van de sessie moet worden vervangen.
 
+## Extra: gecontroleerde, leesbare TXT-samenvatting
+
+Naast de complete JSON-back-up kan de bewoner een eigen, leesbare **TXT-voorvertoning** maken waarin de zelf beoordeelde en niet beoordeelde inspectiecontroles en de nazorgstatussen staan. Standaard bevat deze samenvatting **geen vrije privénotities of volledige contactteksten**: er staan alleen aantallen contactmomenten per nazorgpunt. De gebruiker kan de vrije toelichtingen apart aanvinken als die daadwerkelijk in het exportbestand moeten komen.
+
+De app toont de **precieze uiteindelijke inhoud** eerst in een alleen-lezen tekstvak. Er is een aparte checkbox `Ik heb ... nagekeken` nodig vóór de TXT-download. Als inspectie, nazorg of de include-details-keuze verandert, komt de oude voorvertoning niet meer in aanmerking en moet de bewoner opnieuw kijken en goedkeuren. Na een volledige JSON-import wordt de vorige voorvertoning ingetrokken. Er wordt nooit automatisch gekopieerd, geüpload of gemaild; het bestand is een eigen samenvatting, geen juridische of technische verificatie.
+
 ## Bestandscontract
 
 ```json
