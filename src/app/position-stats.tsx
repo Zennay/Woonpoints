@@ -291,6 +291,11 @@ export function ManualReactionJournal({
   const [monthFilter, setMonthFilter] = useState('all');
   const [message, setMessage] = useState('');
   const [pendingImport, setPendingImport] = useState<JournalItem[] | null>(null);
+  const [editingId,setEditingId] = useState<number|null>(null);
+  const [editDate,setEditDate] = useState('');
+  const [editStatus,setEditStatus] = useState<JournalStatus>('planned');
+  const [editRank,setEditRank] = useState('');
+  const [editTotal,setEditTotal] = useState('');
 
   const journal = summarizeManualReactionJournal(entries);
   const visible = [...entries]
@@ -321,6 +326,49 @@ export function ManualReactionJournal({
       setMessage('Eigen notitie toegevoegd. Niet gecontroleerd door WoningNet.');
     } catch {
       setMessage('Deze datum of eindpositie is ongeldig. Huidige notities zijn behouden.');
+    }
+  }
+
+
+  function startEdit(item:JournalItem) {
+    if (pendingImport) {
+      setMessage('Rond eerst de openstaande CSV-import af voordat je een notitie bewerkt.');
+      return;
+    }
+    setEditingId(item.id);setEditDate(item.date);setEditStatus(item.status);
+    setEditRank(item.rank===null?'':String(item.rank));
+    setEditTotal(item.total===null?'':String(item.total));
+    setMessage('Bewerk de gegevens; je bestaande notitie verandert pas bij bevestigen.');
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setMessage('Bewerken geannuleerd. Alle oorspronkelijke notities behouden.');
+  }
+  function saveEdit() {
+    const existing=entries.find(item=>item.id===editingId);
+    if (!existing || pendingImport) {
+      setMessage('Wijzigen niet mogelijk. Rond eerst de openstaande import af.');
+      return;
+    }
+    if (!Object.hasOwn(statusNames,editStatus) ||
+        (editRank==='')!==(editTotal==='') ||
+        (editRank!=='' && (!/^[1-9][0-9]{0,5}$/.test(editRank) ||
+                           !/^[1-9][0-9]{0,5}$/.test(editTotal)))) {
+      setMessage('Onvolledige of ongeldige eindpositie. De oorspronkelijke notitie is behouden.');
+      return;
+    }
+    const next:JournalItem={
+      ...existing,date:editDate,status:editStatus,
+      rank:editRank===''?null:Number(editRank),
+      total:editTotal===''?null:Number(editTotal)
+    };
+    const candidate=entries.map(item=>item.id===existing.id?next:item);
+    try {
+      summarizeManualReactionJournal(candidate);
+      setEntries(candidate);setEditingId(null);
+      setMessage('Je eigen datum, status en eindpositie zijn bijgewerkt. Dit verandert geen officiële woningreactie.');
+    } catch {
+      setMessage('Datum of eindpositie is ongeldig; de oorspronkelijke notitie is behouden.');
     }
   }
 
@@ -364,6 +412,7 @@ export function ManualReactionJournal({
 
   async function prepareImport(file?: File) {
     setPendingImport(null);
+    setEditingId(null);
     if (!file) return;
     if (!file.size || file.size > 12_000) {
       setMessage('Import geweigerd: kies een CSV kleiner dan 12 KB.');
