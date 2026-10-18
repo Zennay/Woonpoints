@@ -3635,6 +3635,13 @@ function buildMoveDaySteps(a:MovingWorkspaceArchiveV6):MoveDayStep[]{
     pendingDocs?pendingDocs+' eigen documentpunten open':'Eigen documentchecklist afgevinkt',
     docs.length+' zelf geregistreerde toepasselijke punten; niet officieel geverifieerd.',
     '#private-document-readiness-heading');
+  const addressItems=a.address.items;
+  const addressOpen=addressItems.filter(item=>item.status==='Nog regelen').length;
+  add('voorbereiding','address',addressOpen?'open':'eigen-klaar',
+    addressOpen?addressOpen+' eigen adres-/contractmeldpunten nog te regelen':
+      'Eigen adres-/contractchecklist heeft geen open punten',
+    addressItems.length+' zelf ingevulde categorieën; geen officiële ontvangst of BRP-melding.',
+    '#private-address-change-heading');
   const helpers=a.helpers.helpers;
   const helperOpen=helpers.filter(h=>h.state==='Nog vragen').length;
   const helperWithoutTime=helpers.filter(h=>h.state!=='Afgerond'&&
