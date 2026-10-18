@@ -1075,6 +1075,90 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
       'De browser heeft opslagverwijdering niet overal bevestigd. Wis zo nodig sitegegevens handmatig.':
       'Alle vier tijdelijke herstelkopieën ingetrokken en gewist. Open formulierinvoer blijft staan.');
   }
+  const [bundlePreview,setBundlePreview]=useState<{from:string;contents:string}|null>(null);
+  const [bundleDownloadApproved,setBundleDownloadApproved]=useState(false);
+  const [bundleIncoming,setBundleIncoming]=useState<{
+    from:string;contents:string;data:PrivateMovingBundleData
+  }|null>(null);
+  const [bundleRestoreApproved,setBundleRestoreApproved]=useState(false);
+  const [bundleUndo,setBundleUndo]=useState<{
+    expected:string;previous:PrivateMovingBundleData
+  }|null>(null);
+  const [bundleMessage,setBundleMessage]=useState('');
+  const bundleReady=privateMovingBundleCurrent(snapshots);
+  const bundleSignature=privateMovingBundleSignature(snapshots);
+  const bundlePreviewFresh=bundlePreview!==null&&bundlePreview.from===bundleSignature&&bundleReady;
+  const bundleIncomingFresh=bundleIncoming!==null&&bundleIncoming.from===bundleSignature&&bundleReady;
+  const bundleUndoFresh=bundleUndo!==null&&bundleUndo.expected===bundleSignature&&bundleReady;
+  function previewBundle(){
+    setBundlePreview(null);setBundleDownloadApproved(false);setBundleMessage('');
+    try{
+      const contents=privateMovingBundleSerialize(snapshots);
+      setBundlePreview({from:bundleSignature,contents});
+    }catch{
+      setBundleMessage('Eén of meer onderdelen hebben ongeldige invoer. Herstel dit eerst bij de bron.');
+    }
+  }
+  function downloadBundle(){
+    if(!bundlePreviewFresh||!bundleDownloadApproved||!bundlePreview)return;
+    const url=URL.createObjectURL(new Blob([bundlePreview.contents],{
+      type:'application/json;charset=utf-8'
+    }));
+    try{
+      const link=document.createElement('a');link.href=url;
+      link.download='woonpoints-verhuisregie-prive-backup.json';
+      document.body.appendChild(link);link.click();link.remove();
+      setBundleMessage('Eigen privébestand aan je browser aangeboden; geen automatische cloudopslag.');
+    }finally{
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+      setBundlePreview(null);setBundleDownloadApproved(false);
+    }
+  }
+  async function importBundle(file:File|undefined){
+    setBundleIncoming(null);setBundleRestoreApproved(false);setBundleMessage('');
+    if(!file)return;
+    if(!bundleReady){
+      setBundleMessage('Niet alle bronschermen zijn geladen; herladen of herstellen niet mogelijk.');
+      return;
+    }
+    if(file.size>PRIVATE_MOVING_BUNDLE_LIMIT){
+      setBundleMessage('Gecombineerde back-up geweigerd: groter dan 32 KiB.');return;
+    }
+    try{
+      const contents=await file.text();
+      const data=privateMovingBundleParse(contents);
+      if(!data)throw Error('invalid');
+      setBundleIncoming({from:bundleSignature,contents,data});
+      setBundlePreview(null);setBundleDownloadApproved(false);
+    }catch{
+      setBundleMessage('Back-up geweigerd: geen exact geldig Woonpoints-combinatiebestand.');
+    }
+  }
+  function applyBundle(data:PrivateMovingBundleData){
+    for(const part of PRIVATE_MOVING_BUNDLE_PARTS){
+      window.dispatchEvent(new CustomEvent<PrivateMovingRestoreMessage>(
+        PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,{
+          detail:{key:part.key,raw:data[part.key]}
+        }));
+    }
+  }
+  function restoreBundle(){
+    if(!bundleIncomingFresh||!bundleRestoreApproved||!bundleIncoming)return;
+    const previous={...snapshots};
+    const next=bundleIncoming.data;
+    // All four subdocuments passed exact-schema validation before *any* source state is touched.
+    applyBundle(next);
+    setBundleUndo({expected:privateMovingBundleSignature(next),previous});
+    setBundleIncoming(null);setBundleRestoreApproved(false);
+    setBundleMessage('Vier bronschermen teruggezet. Je vorige tabbladstatus is éénmalig herstelbaar.');
+  }
+  function undoBundle(){
+    if(!bundleUndoFresh||!bundleUndo)return;
+    applyBundle(bundleUndo.previous);
+    setBundleUndo(null);setBundleIncoming(null);setBundleRestoreApproved(false);
+    setBundleMessage('Vorige open tabbladstatus hersteld; de bronmodules bewaren alleen bij afzonderlijke opt-in.');
+  }
+
   const [preview,setPreview]=useState<{
     signature:string;contents:string;mode:'txt'|'ics'
   }|null>(null);
@@ -1162,6 +1246,77 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
       uitsluitend hun huidige tabbladstatus, niet WoningNet, de overheid, de verhuurder
       of een leverancier. Een open stap is geen officiële achterstand; een afgevinkte
       stap is geen bevestiging van een organisatie.</p>
+    <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Mijn vier verhuisdelen samen back-uppen of herstellen
+      </summary>
+      <p>Hier kun je de volledige eigen tabbladinvoer van de
+        <strong> woonreis, plan B, meterstanden én nutsvoorzieningen</strong> in één
+        privé-JSON opslaan of terugzetten. Dit bestand bevat mogelijk ingevulde
+        actieomschrijvingen, contactrollen, meterstanden en eigen datums.
+        Bekijk de inhoud vóór downloaden en kies zelf een veilige bewaarlocatie;
+        die kan extern synchroniseren. Woonpoints verstuurt dit nergens heen.
+        Hiermee worden <strong>geen</strong> WoningNet-reacties, contracten,
+        leveranciers of afspraken officieel verwerkt.</p>
+      <button type="button" disabled={!bundleReady} onClick={previewBundle}
+        style={{minHeight:44}}>Bekijk exacte volledige privéback-up</button>
+      {bundlePreview&&<div>
+        {bundlePreviewFresh?<><p>Je eigen complete bestand (exacte inhoud):</p>
+          <pre style={{maxHeight:250,overflow:'auto',whiteSpace:'pre-wrap',
+            overflowWrap:'anywhere'}}>{bundlePreview.contents}</pre>
+          <label style={{display:'block',minHeight:44}}>
+            <input type="checkbox" checked={bundleDownloadApproved}
+              onChange={event=>setBundleDownloadApproved(event.target.checked)}/>
+            {' '}Ik heb dit privébestand bekeken en kies zelf waar het wordt opgeslagen.
+          </label>
+          <button type="button" disabled={!bundleDownloadApproved}
+            onClick={downloadBundle} style={{minHeight:44}}>
+            Download mijn volledige privé-back-up</button></>:
+          <p role="alert">Je invoer is inmiddels gewijzigd. Maak een nieuwe preview.</p>}
+        <button type="button" onClick={()=>{setBundlePreview(null);
+          setBundleDownloadApproved(false);}} style={{minHeight:44,marginLeft:8}}>
+          Annuleren</button>
+      </div>}
+      <label htmlFor="private-moving-bundle-import"
+        style={{display:'block',marginTop:16,fontWeight:700}}>
+        Herstel mijn complete eigen back-up (maximaal 32 KiB)
+      </label>
+      <input id="private-moving-bundle-import" type="file"
+        accept=".json,application/json" style={{maxWidth:'100%'}}
+        onChange={event=>{const file=event.target.files?.[0];
+          event.target.value='';void importBundle(file);}}/>
+      {bundleIncoming&&<div>
+        {bundleIncomingFresh?<><p>Geldig bestand: alle vier onderdelen bevatten
+          exact herkende Woonpoints-gegevens. <strong>Herstellen vervangt de
+          huidige invoer in alle vier schermen</strong>; niets wordt buiten
+          dit tabblad verzonden. De afzonderlijke automatische opslaginstellingen
+          blijven zoals ze nu staan.</p>
+          <ul>{PRIVATE_MOVING_BUNDLE_PARTS.map(part=><li key={part.key}>
+            {part.title} — wordt vervangen
+          </li>)}</ul>
+          <label style={{display:'block',minHeight:44}}>
+            <input type="checkbox" checked={bundleRestoreApproved}
+              onChange={event=>setBundleRestoreApproved(event.target.checked)}/>
+            {' '}Ik begrijp dat mijn vier huidige formulieren worden vervangen.
+          </label>
+          <button type="button" disabled={!bundleRestoreApproved}
+            style={{minHeight:44}} onClick={restoreBundle}>
+            Bevestig herstel van alle vier onderdelen</button></>:
+          <p role="alert">De huidige invoer is veranderd. Selecteer het bestand opnieuw.</p>}
+        <button type="button" style={{minHeight:44,marginLeft:8}}
+          onClick={()=>{setBundleIncoming(null);setBundleRestoreApproved(false);}}>
+          Herstel annuleren</button>
+      </div>}
+      {bundleUndo&&<div>
+        {bundleUndoFresh?<button type="button" onClick={undoBundle}
+          style={{minHeight:44}}>Maak laatste gecombineerde herstel ongedaan</button>:
+          <p role="status">De tabbladstatus is na het herstel aangepast.
+            Undo is uitgeschakeld zodat nieuwe invoer behouden blijft.</p>}
+      </div>}
+      {bundleMessage&&<p role="status" aria-live="polite">{bundleMessage}</p>}
+      {!bundleReady&&<p role="status">Brononderdelen laden nog; de back-up is
+        pas beschikbaar wanneer alle vier zijn geladen.</p>}
+    </details>
     <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
       <summary style={{cursor:'pointer',fontWeight:700}}>
         Privacy: tijdelijke tabbladherstelkopieën beheren
