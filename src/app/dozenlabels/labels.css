@@ -57,3 +57,9 @@
   .boxLabelBottom{font-size:10pt}
   .boxFragile{background:#111!important;color:white!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
+
+.boxBackup details{border:1px solid #bad0d2;border-radius:9px;background:#f8fbfb;margin:13px 0}
+.boxBackup summary{padding:12px 14px;font-weight:750;cursor:pointer}
+.boxBackup pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;background:#edf4f3;border-top:1px solid #cadbdc;padding:14px;margin:0;font-size:.85rem;line-height:1.45}
+.boxFileLabel{display:flex;flex-direction:column;gap:10px;font-weight:750;margin:22px 0 12px}
+.boxFileLabel input{font:inherit;max-width:100%;border:1px dashed #95bac0;border-radius:8px;padding:14px;background:#f8fbfb}
