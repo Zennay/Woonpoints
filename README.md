@@ -1044,3 +1044,28 @@ Deze hulpmiddelen zijn geen geverifieerde huisraad-/verzekeringsinventaris.
 Voer liever geen adressen, toegangscodes of persoonsgegevens in labels in.
 Opslag of delen via de door jou gekozen bestandslocatie kan buiten de app
 synchroniseren. De WoningNet-, dry-run- en autorisatiegates blijven intact.
+
+
+## Printbare offline dozenlabels uit eigen paklijst
+
+In **Paklijst per kamer → Printbare eigen dozenlabels** groepeert Woonpoints
+de eigen, nog niet uitgepakte pakregels per **kamer én dooscode** en maakt
+na een afzonderlijke voorvertoning een lokaal afdrukbare A4-HTML. Op ieder
+etiket staan een grote dooscode, kamernaam, aantallen en een eventuele
+**Eerst nodig**-markering. Je kunt daarnaast expliciet kiezen om de zelf
+ingevulde inhoud ook op de etiketten te printen; die staat standaard UIT.
+
+- Zonder dooscode of bij status **Uitgepakt** wordt een regel niet op
+  de etiketten gezet; het scherm toont hoeveel regels zonder dooscode
+  zijn overgeslagen.
+- Een dubbele dooscode in verschillende kamers geeft een waarschuwing.
+  Kamer en dooscode blijven beide leesbaar om verwisseling te voorkomen.
+- De volledige labels zijn vóór download zichtbaar. Verandert er iets aan
+  de paklijst of inhoudskeuze, dan moet de preview opnieuw bevestigd worden.
+- De download bevat alleen een statische, escaped HTML met lokale
+  print-CSS en een beperkende CSP. Geen scripts, fonts, netwerk,
+  locatiegegevens, klantaccount, automatische printeraansturing of upload.
+  Open het bestand zelf en kies **Afdrukken** in je browser.
+
+Ook printbare labels zijn persoonlijke notities en geen gecertificeerde
+huisraadinventaris of adresbewijs. Deel het bestand niet onbedoeld.
