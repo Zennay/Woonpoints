@@ -3358,6 +3358,104 @@ function movingCalendarText(text:string):string{
     .replace(/,/g,'\\,').replace(/;/g,'\\;');
 }
 
+
+type MovingReportSection = 'timeline'|'handover'|'documents'|'quotes'|'expenses'|'split';
+const MOVING_REPORT_SECTIONS:{id:MovingReportSection;label:string;warning:string}[]=[
+  {id:'timeline',label:'Verhuisplanning en open acties',warning:'Zelfgekozen datums en taken'},
+  {id:'documents',label:'Eigen documentenchecklist',warning:'Eigen documentstatus en taaklabels'},
+  {id:'handover',label:'Sleutels en meterstanden',warning:'Privé-opnamen en eigen woninglabels'},
+  {id:'quotes',label:'Verhuisoffertes',warning:'Leveranciersnamen en eigen notities'},
+  {id:'expenses',label:'Verhuiskostenboek',warning:'Eigen bedragen en betaalmarkeringen'},
+  {id:'split',label:'Persoonlijke kostenverdeling',warning:'Naamlabels en betaalbedragen'}
+];
+function movingReportLine(value:string):string{
+  // User text belongs to a plain-text report, never to generated headings or another line.
+  return value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,900);
+}
+function buildPrivateMovingReport(
+  archive:MovingWorkspaceArchiveV2,sections:MovingReportSection[],
+  actions:PrivateMovingAction[],today:string|null
+):string{
+  const lines:string[]=[
+    'WOONPOINTS - PRIVÉ VERHUISDOSSIER',
+    'Zelf ingevoerde gegevens; geen officieel bewijs van woning, betaling, offerte of afspraak.',
+    'Overzichtsdatum (eigen browser): '+(today||'niet beschikbaar'),
+    'Gekozen onderdelen: '+sections.length+' van '+MOVING_REPORT_SECTIONS.length,
+    ''
+  ];
+  const add=(heading:string,body:string[])=>{lines.push('=== '+heading+' ===',...body,'');};
+  const selected=new Set(sections);
+  if(selected.has('timeline')){
+    const date=archive.timeline.moveDate;
+    const tasks=[...DEFAULT_TASKS,...archive.timeline.extras]
+      .map(task=>({title:task.title,offset:task.offset,done:archive.timeline.completed.includes(task.id)}))
+      .sort((a,b)=>a.offset-b.offset||a.title.localeCompare(b.title,'nl-NL'));
+    add('PLANNING',[
+      'Zelfgekozen verhuisdatum: '+(date||'niet ingevuld'),
+      ...tasks.map(task=>(task.done?'[x] ':'[ ] ')+
+        (date?dayAtOffset(date,task.offset)+' - ':'geen datum - ')+movingReportLine(task.title))
+    ]);
+  }
+  if(selected.has('documents')){
+    const all=[...READINESS_DEFAULTS,...archive.documents.extras];
+    add('DOCUMENTENSTATUS',all.map(doc=>{
+      const status=archive.documents.states[doc.id]||'needed';
+      const due=archive.documents.dates[doc.id]||'geen datum';
+      return '['+status+'] '+movingReportLine(doc.title)+' - '+due;
+    }));
+  }
+  if(selected.has('handover')){
+    const body:string[]=[];
+    for(const [kind,label] of [['in','Ontvangst'],['out','Overdracht']] as const){
+      const item=archive.handover.entries[kind];
+      if(!item){body.push(label+': geen eigen opname');continue;}
+      body.push(label+' - '+item.day+' - '+movingReportLine(item.property),
+        'Sleutels: '+item.keys+'; stroom: '+item.electricity+'; gas: '+item.gas+'; water: '+item.water,
+        'Eigen opmerkingen: '+(movingReportLine(item.remarks)||'geen'));
+    }
+    add('SLEUTEL- EN METEROPNAMEN',body);
+  }
+  if(selected.has('quotes')){
+    add('EIGEN VERHUISRAMINGEN',archive.quotes.quotes.length?
+      archive.quotes.quotes.map(q=>(archive.quotes.selected===q.id?'[voorkeur] ':'')+
+        movingReportLine(q.name)+' - '+movingReportLine(q.service)+' - '+
+        expenseAmount(quoteTotal(q))+' - '+(q.quoteDate||'geen offertedatum')+
+        ' - eigen notitie: '+(movingReportLine(q.notes)||'geen')):['Geen offertes genoteerd.']);
+  }
+  if(selected.has('expenses')){
+    const planned=archive.expenses.lines.reduce((n,e)=>n+e.plannedCents,0);
+    const complete=archive.expenses.lines.filter(e=>e.actualCents!==null);
+    const actual=complete.reduce((n,e)=>n+(e.actualCents??0),0);
+    add('KOSTENBOEK',[
+      'Begroot: '+expenseAmount(planned),
+      'Bekende werkelijke bedragen: '+expenseAmount(actual)+' ('+complete.length+'/'+archive.expenses.lines.length+' ingevuld; niet definitief)',
+      ...archive.expenses.lines.map(e=>movingReportLine(e.label)+' ['+e.category+'] - begroting '+
+        expenseAmount(e.plannedCents)+'; werkelijk '+(e.actualCents===null?'onbekend':expenseAmount(e.actualCents))+
+        '; '+(e.paid?'zelf gemarkeerd als betaald':'niet als betaald gemarkeerd'))
+    ]);
+  }
+  if(selected.has('split')){
+    add('EIGEN KOSTENVERDELING',[
+      'Zelfgekozen verdeeltotaal: '+(archive.split.total?expenseAmount(expenseCents(archive.split.total)??0):'onbekend'),
+      'Geen automatische betaalopdracht of betalingsverificatie.',
+      ...archive.split.members.map(m=>movingReportLine(m.alias)+
+        ' - reeds betaald volgens eigen invoer: '+(m.paid?expenseAmount(expenseCents(m.paid)??0):'onbekend'))
+    ]);
+  }
+  const relevant=actions.filter(a=>
+    (a.origin==='planning'&&selected.has('timeline'))||
+    (a.origin==='documents'&&selected.has('documents'))||
+    (a.origin==='overdracht'&&selected.has('handover'))||
+    (a.origin==='offertes'&&selected.has('quotes'))||
+    (a.origin==='financieel'&&(selected.has('expenses')||selected.has('split')))
+  );
+  add('NOG ZELF TE REGELEN',relevant.length?relevant.map(a=>
+    (a.due||'zonder eigen datum')+' - '+movingReportLine(a.title)):['Geen open punten in de gekozen onderdelen.']);
+  lines.push('Controleer officiële deadlines, bedragen en rechten zelf bij de betreffende organisatie.',
+    'Dit rapport is lokaal samengesteld; bewaren/delen is uitsluitend jouw eigen keuze.');
+  return lines.join('\n')+'\n';
+}
+
 export function PrivateMovingWorkspace() {
   const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
   const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
@@ -3370,6 +3468,8 @@ export function PrivateMovingWorkspace() {
   const [notice,setNotice]=useState('');
   const [today,setToday]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [reportSections,setReportSections]=useState<MovingReportSection[]>(['timeline','documents']);
+  const [pendingReport,setPendingReport]=useState<string|null>(null);
   useEffect(()=>{
     let timer:number|undefined;
     function refresh(){
@@ -3500,6 +3600,19 @@ export function PrivateMovingWorkspace() {
   const dueTodayCount=actions.filter(item=>movingActionPriority(item,today)===1).length;
   const dueWeekCount=actions.filter(item=>movingActionPriority(item,today)===2).length;
   const calendarSignature=JSON.stringify(dueActions);
+  const reportSignature=JSON.stringify({signature,reportSections,today,calendarSignature});
+  const report=archive&&reportSections.length?
+    buildPrivateMovingReport(archive,reportSections,actions,today):null;
+  function downloadPrivateReport(){
+    if(!complete||!report||pendingReport!==reportSignature){
+      setPendingReport(null);
+      setNotice('Het dossier is gewijzigd. Bekijk de tekst en de geselecteerde privé-onderdelen opnieuw.');
+      return;
+    }
+    exportFile('woonpoints-prive-verhuisdossier.txt',report,'text/plain;charset=utf-8');
+    setPendingReport(null);
+    setNotice('Privé-verhuisdossier lokaal aangeboden. Deel of bewaar het alleen bewust.');
+  }
   function saveCombinedCalendar(){
     if(!pendingCalendar||pendingCalendar!==calendarSignature||!dueActions.length){
       setPendingCalendar(null);setNotice('Acties zijn gewijzigd. Bekijk je agenda-export opnieuw.');
@@ -3637,6 +3750,36 @@ export function PrivateMovingWorkspace() {
             <button type="button" onClick={saveCombinedCalendar}>Bevestig gezamenlijke .ics-download</button>
             <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
           </div>}
+      </section>
+      <section aria-labelledby="private-moving-report-heading">
+        <h3 id="private-moving-report-heading">Maak een leesbaar verhuisdossier</h3>
+        <p>Bundel geselecteerde onderdelen en je resterende eigen acties in één leesbaar
+          TXT-bestand, bijvoorbeeld voor een gesprek met een huisgenoot. Je bepaalt
+          welke privégegevens meegaan. De tekst wordt niet verzonden of automatisch bewaard.</p>
+        <fieldset>
+          <legend>Kies expliciet welke onderdelen in de tekst mogen</legend>
+          {MOVING_REPORT_SECTIONS.map(section=><label key={section.id} style={{display:'block'}}>
+            <input type="checkbox" checked={reportSections.includes(section.id)}
+              onChange={event=>{
+                setReportSections(previous=>event.target.checked?
+                  [...previous,section.id]:previous.filter(id=>id!==section.id));
+                setPendingReport(null);setNotice('');
+              }} />
+            {section.label} <small>({section.warning})</small>
+          </label>)}
+        </fieldset>
+        <button type="button" disabled={!complete||!reportSections.length} onClick={()=>{
+          setPendingReport(reportSignature);setNotice('');
+        }}>Bekijk geselecteerd privé-verhuisdossier…</button>
+        {report&&pendingReport===reportSignature&&<div role="group"
+          aria-label="Controleer privé-verhuisdossier voor download">
+          <p>Controleer de exacte tekst hieronder vóór je het bestand opslaat.
+            Geselecteerde namen, notities, bedragen en meterstanden kunnen privacygevoelig zijn.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+            maxHeight:'28rem',overflowY:'auto'}}>{report}</pre>
+          <button type="button" onClick={downloadPrivateReport}>Bevestig privé-TXT-download</button>
+          <button type="button" onClick={()=>setPendingReport(null)}>Annuleren</button>
+        </div>}
       </section>
       <h3>Je eigen volledige werkmap bewaren</h3>
       <p>Deze gecombineerde privé-JSON bevat ook alle zelf ingevoerde namen, notities,

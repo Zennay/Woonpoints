@@ -991,3 +991,30 @@ inpakmarkeringen. Een apart TXT-momentoverzicht is optioneel,
 kan bij een opslagprovider terechtkomen en is geen herstelbestand.
 Verversen/sluiten verwijdert de appvoortgang, en niets wordt
 naar WoningNet, een ander account of een worker geüpload.
+
+
+## Privacyselectief verhuisdossier (alleen je eigen invoer)
+
+De gecombineerde verhuiswerkmap bevat nu ook **Maak een leesbaar verhuisdossier**.
+Daarmee selecteer je expliciet welke van zes bestaande privémodules in een
+leesbare TXT terechtkomen: planning, documentenstatus, sleutel-/meteropnamen,
+eigen offertes, kostenboek en kostenverdeling. Planning en documenten zijn
+voorgeselecteerd; onderdelen met naamlabels, geldbedragen en meterstanden
+moet je bewust aanvinken.
+
+- Het overzicht gebruikt uitsluitend de actuele, gevalideerde gegevens die
+  de zes tabbladonderdelen al aan de werkmap doorgeven. Geen API, account,
+  notificatie, serveropslag of automatische bestandsdownload.
+- Per gekozen onderdeel verschijnen volledige eigen regels en de bijbehorende
+  nog open acties. Onbekende werkelijke kosten worden niet als definitief
+  totaal gepresenteerd. Datums zijn zelf ingevuld, geen officiële termijnen.
+- Voordat de TXT wordt opgeslagen verschijnt de volledige inhoud als
+  controleerbaar voorbeeld. De gebruiker bevestigt de download afzonderlijk.
+  Verandert een bronmodule of de selectie, dan vervalt de oude bevestiging.
+- Zelf ingevulde namen, notities, meterstanden en betaalbedragen kunnen
+  privacygevoelig zijn. De browseropslaglocatie kan synchroniseren; delen
+  gebeurt uitsluitend buiten de app en op eigen initiatief.
+
+Deze functie bevestigt geen woningtoewijzing, getekend contract, geregistreerde
+WoningNet-reactie, daadwerkelijke betaling of wettelijk geldige termijn.
+Het bestaande `BOT_DRY_RUN=true`- en toestemmingsbeleid blijft ongewijzigd.
