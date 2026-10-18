@@ -453,3 +453,46 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) {
   .private-budget-table-wrap { scroll-behavior: auto; }
 }
+
+
+/* Voluntary manually observed search points, isolated from official account status. */
+.private-points p { line-height: 1.55; color: #536059; }
+.private-points label { display: block; margin: 12px 0 6px; font-weight: 700; }
+.private-points fieldset { padding: 14px; border: 1px solid #cdddcf; border-radius: 12px; min-width: 0; }
+.private-points legend { font-weight: 800; padding: 0 6px; }
+.private-points input { display: block; width: 100%; max-width: 100%; min-height: 44px;
+  border: 2px solid #536d5a; border-radius: 9px; font: inherit; padding: 10px; background: #fff; color: #18231c; }
+.private-points input:focus-visible, .private-points button:focus-visible {
+  outline: 3px solid #173d25; outline-offset: 3px;
+}
+.private-points button { min-height: 44px; border: 2px solid #355e42;
+  border-radius: 9px; padding: 9px 14px; background: #355e42; color: #fff;
+  font: inherit; font-weight: 700; cursor: pointer; }
+.private-points button.secondary { background: #fff; color: #355e42; }
+.private-points button:disabled { opacity: .5; cursor: not-allowed; }
+.private-points-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.private-points-overview { border-radius: 14px; background: #eff5f0; padding: 16px; margin: 16px 0; }
+.private-points-chart { display: flex; overflow-x: auto; align-items: flex-end;
+  gap: 10px; padding: 12px 2px 16px; border-bottom: 1px solid #d2ded4; }
+.private-points-column { flex: 0 0 66px; display: flex; flex-direction: column;
+  align-items: center; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.private-points-rail { width: 36px; height: 132px; background: #fff;
+  border: 1px solid #aecab5; border-radius: 6px; position: relative; overflow: hidden; }
+.private-points-rail span { position: absolute; bottom: 0; left: 0; right: 0; background: #356343; }
+.private-points-column small { font-size: 11px; white-space: nowrap; }
+.private-points-table-wrap { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.private-points table { border-collapse: collapse; width: 100%; min-width: 610px; font-size: 14px; }
+.private-points caption { text-align: left; font-weight: 700; padding: 14px 0; }
+.private-points th, .private-points td { border-bottom: 1px solid #cadbcf; padding: 10px 8px;
+  text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.private-points tbody tr:nth-child(even) { background: #e4eee7; }
+.private-points-confirm { background: #ecf3ec; border: 2px solid #436b4e;
+  border-radius: 12px; padding: 14px; margin: 14px 0; }
+.private-points-confirm button + button { margin-left: 8px; }
+@media (max-width: 600px) {
+  .private-points-overview { padding: 10px; }
+  .private-points th, .private-points td { padding: 9px 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .private-points-chart, .private-points-table-wrap { scroll-behavior: auto; }
+}
