@@ -22,6 +22,28 @@ export default function HomePage() {
         </p>
       </section>
 
+
+      <nav className="quick-nav" aria-label="Direct naar een Woonpoints-onderdeel">
+        <div className="quick-nav-head">
+          <strong>Direct naar</strong>
+          <span>Alleen handmatige hulpmiddelen · geen live account</span>
+        </div>
+        <ul className="quick-nav-links">
+          {([
+            ['projectstatus-heading', 'Status'],
+            ['manual-progress-heading', 'Maanddoel'],
+            ['reaction-journal-title', 'Reacties'],
+            ['housing-shortlist-heading', 'Woningen'],
+            ['private-budget-title', 'Woonkosten'],
+            ['private-plan-title', 'Planner'],
+            ['position-stats-heading', 'Posities'],
+            ['monthly-positions-heading', 'Maandtrend']
+          ] as const).map(([id, title]) =>
+            <li key={id}><a href={'#'+id}>{title}</a></li>
+          )}
+        </ul>
+      </nav>
+
       <section className="status-section" aria-labelledby="projectstatus-heading">
         <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
         <div className="grid">

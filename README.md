@@ -288,3 +288,7 @@ opt-in download van alle open deadlines blijft beschikbaar als afzonderlijke
 keuze. Een ICS-download is **geen synchronisatie, kalenderwijziging of bevestiging
 van WoningNet**; import en externe cloudopslag gebeuren uitsluitend via de door
 jou gekozen kalenderapp. De lokale maandweergave stuurt nooit meldingen zelf.
+
+### Mobiele snelnavigatie door de persoonlijke hulpmiddelen
+
+Het dashboard heeft bovenaan een zichtbare, horizontaal veegbare sectienavigatie naar projectstatus, maanddoel, zelf genoteerde reacties, woningselectie, woonkosten, actieplanner, positie-analyse en maandtrend. Elke link is een gewone in-page anchor naar de bestaande Nederlandstalige sectiekop; toetsenbord-, schermlezer- en touchbediening gebruiken dezelfde route. De balk blijft bij lang scrollen bereikbaar en laat de bovenkant van de bestemmingskop vrij. Er is geen nieuwe JavaScript-clientstate, cookie, servercall, browserstorage of live WoningNet-functionaliteit toegevoegd. De vaste niet-geverifieerde projectstatus blijft zichtbaar als context.
