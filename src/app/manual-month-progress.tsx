@@ -257,10 +257,14 @@ export default function ManualMonthProgress() {
     [date.getFullYear(), String(date.getMonth()+1).padStart(2,'0'),
       String(date.getDate()).padStart(2,'0')].join('-');
   const todayLocal = dateString(new Date());
+  const lastLocalDate = month ? (() => {
+    const [year,number] = month.split('-').map(Number);
+    return dateString(new Date(year,number,0));
+  })() : '';
   function validLocalReminderTime(time: string) {
     if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return false;
     const [hour,minute] = time.split(':').map(Number);
-    return hour*60 + minute + reminderDuration <= 1440;
+    return hour*60 + minute + reminderDuration < 1440;
   }
   function validLocalReminderDay(day: string, expectedMonth: string): boolean {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !day.startsWith(expectedMonth+'-')
@@ -412,7 +416,7 @@ export default function ManualMonthProgress() {
                     <legend>Eigen reactiemoment {index+1}</legend>
                     <label>
                       Datum
-                      <input type="date" min={todayLocal} max={month+'-31'}
+                      <input type="date" min={todayLocal} max={lastLocalDate}
                         value={date} style={{display:'block',minHeight:44,width:'100%',padding:8}}
                         onChange={e => {
                           const next = [...reminderDates];
