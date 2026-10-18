@@ -39,6 +39,13 @@ met de voorgaande **ingevulde** maand.
 
 - Maximaal 120 handmatig getypte woningen, 24 maanden, 8192 tekens.
 - Alleen echte geldige kalenderdagen en posities 1..aantal zijn toegestaan.
+- **Expliciet exporteren en importeren:** gebruik **Exporteer CSV** om alleen
+  gecontroleerde datum/positie/totaal-regels zelf te bewaren. Import leest
+  een lokaal gekozen CSV van maximaal 16 KiB, weigert vreemde velden,
+  ongeldige kalenderdagen en mogelijk uitvoerbare spreadsheetcellen en vraagt
+  eerst bevestiging vóór de huidige invoer wordt vervangen. Een mislukte of
+  geannuleerde import behoudt de bestaande invoer. De gekozen bestandslocatie
+  kan synchroniseren buiten Woonpoints. Geen automatische bestandsopslag.
 - **Alle gegevens blijven in het geheugen van dit browsertabblad**.
   Er is geen API-request, cookie, accountkoppeling, lokale opslag of export;
   met **Wis maandhistorie** kun je de notities direct leegmaken.
