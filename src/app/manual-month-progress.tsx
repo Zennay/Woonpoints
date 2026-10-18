@@ -3558,6 +3558,101 @@ function buildPrivateMovingReport(
   return lines.join('\n')+'\n';
 }
 
+
+type MoveDayPhase='voorbereiding'|'vertrek'|'aankomst';
+type MoveDayStep={id:string;phase:MoveDayPhase;status:'open'|'eigen-klaar'|'onbekend';title:string;detail:string;href:string};
+const MOVE_DAY_PHASES:{id:MoveDayPhase;name:string}[]=[
+  {id:'voorbereiding',name:'1. Voorbereiding'},
+  {id:'vertrek',name:'2. Vertrek'},
+  {id:'aankomst',name:'3. Aankomst'}
+];
+function buildMoveDaySteps(a:MovingWorkspaceArchiveV5):MoveDayStep[]{
+  const result:MoveDayStep[]=[];
+  const add=(phase:MoveDayPhase,id:string,status:MoveDayStep['status'],title:string,detail:string,href:string)=>{
+    result.push({phase,id,status,title,detail,href});
+  };
+  add('voorbereiding','date',a.timeline.moveDate?'eigen-klaar':'onbekend',
+    a.timeline.moveDate?'Eigen verhuisdatum genoteerd':'Verhuisdatum nog onbekend',
+    a.timeline.moveDate||'Kies zelf een verwachte datum.', '#private-moving-day-heading');
+  const docs=[...READINESS_DEFAULTS,...a.documents.extras]
+    .filter(x=>a.documents.states[x.id]!=='skip');
+  const pendingDocs=docs.filter(x=>a.documents.states[x.id]!=='ready').length;
+  add('voorbereiding','docs',pendingDocs?'open':'eigen-klaar',
+    pendingDocs?pendingDocs+' eigen documentpunten open':'Eigen documentchecklist afgevinkt',
+    docs.length+' zelf geregistreerde toepasselijke punten; niet officieel geverifieerd.',
+    '#private-document-readiness-heading');
+  const helpers=a.helpers.helpers;
+  const helperOpen=helpers.filter(h=>h.state==='Nog vragen').length;
+  const helperWithoutTime=helpers.filter(h=>h.state!=='Afgerond'&&
+    (!h.date||!h.start||!h.end)).length;
+  add('voorbereiding','helpers',!helpers.length?'onbekend':
+    helperOpen||helperWithoutTime?'open':'eigen-klaar',
+    !helpers.length?'Geen verhuishulp genoteerd':
+      helperOpen||helperWithoutTime?'Hulpplanning vraagt nog aandacht':'Geen open hulpbevestigingen/tijdvakken',
+    helpers.length+' afspraken, '+helperOpen+' nog te vragen, '+
+      helperWithoutTime+' zonder volledig tijdvak.', '#private-moving-helpers-heading');
+  const packing=a.packing.items;
+  const toPack=packing.filter(x=>x.status==='Nog inpakken').length;
+  const noBox=packing.filter(x=>x.status!=='Uitgepakt'&&!x.box).length;
+  const unpacked=packing.filter(x=>x.status==='Uitgepakt').length;
+  add('vertrek','pack',!packing.length?'onbekend':toPack?'open':'eigen-klaar',
+    !packing.length?'Geen eigen paklijst beschikbaar':
+      toPack?toPack+' pakregels nog niet ingepakt':'Geen open inpakregels',
+    packing.length+' eigen pakregels; '+unpacked+' als uitgepakt gemarkeerd.',
+    '#private-packing-heading');
+  add('vertrek','codes',!packing.length?'onbekend':noBox?'open':'eigen-klaar',
+    !packing.length?'Dooslabels onbekend':
+      noBox?noBox+' open pakregels zonder dooscode':'Eigen open pakregels hebben dooscode',
+    'Zonder dooscode ontbreekt een regel in het transportoverzicht.',
+    '#private-packing-heading');
+  const groups=packingBoxGroups(packing);
+  const notLoaded=groups.filter(group=>!a.packing.transport.some(row=>
+    row.room===group.room&&row.box===group.box)).length;
+  const notDelivered=groups.filter(group=>!a.packing.transport.some(row=>
+    row.room===group.room&&row.box===group.box&&row.stage==='afgeleverd')).length;
+  add('vertrek','load',!packing.length?'onbekend':notLoaded?'open':'eigen-klaar',
+    !packing.length?'Geen eigen transportregistratie':
+      notLoaded?notLoaded+' dozen nog niet als geladen gemarkeerd':
+      'Actuele dozen hebben een eigen laad-/aflevermarkering',
+    groups.length+' gelabelde, niet uitgepakte dozen; geen vervoerdersbewijs.',
+    '#private-transport-heading');
+  add('aankomst','delivery',!packing.length?'onbekend':notDelivered?'open':'eigen-klaar',
+    !packing.length?'Aflevering nog onbekend':
+      notDelivered?notDelivered+' dozen nog niet als afgeleverd gemarkeerd':
+      'Geen actuele gelabelde dozen zonder aflevermarkering',
+    'Zelf ingevulde transportstatus. Uitgepakte regels tellen hier niet mee.',
+    '#private-transport-heading');
+  const urgent=packing.filter(x=>x.priority&&x.status!=='Uitgepakt').length;
+  add('aankomst','urgent',!packing.length?'onbekend':urgent?'open':'eigen-klaar',
+    !packing.length?'Prioriteitsartikelen nog onbekend':
+      urgent?urgent+' prioriteitsregels nog niet uitgepakt':'Geen eigen open prioriteitsregels',
+    'Deze prioriteiten heb je zelf gemarkeerd.','#private-packing-heading');
+  add('aankomst','unpack',!packing.length?'onbekend':
+    unpacked<packing.length?'open':'eigen-klaar',
+    !packing.length?'Uitpakken nog onbekend':
+      unpacked<packing.length?(packing.length-unpacked)+' regels nog niet uitgepakt':
+      'Alle eigen pakregels als uitgepakt genoteerd',
+    unpacked+' van '+packing.length+' eigen pakregels.','#private-packing-heading');
+  return result;
+}
+function moveDayPrivacyReport(lines:MoveDayStep[]):string{
+  const result=['WOONPOINTS - EIGEN VERHUISDAGOVERZICHT',
+    'Alleen zelf ingevoerde statusindicaties, geen officieel bewijs.',
+    'Geen namen, adressen, persoonlijke notities, bedragen of doosinhoud.',''];
+  for(const phase of MOVE_DAY_PHASES){
+    result.push(phase.name.toUpperCase());
+    for(const line of lines.filter(x=>x.phase===phase.id)){
+      result.push('['+(line.status==='open'?'ACTIE':
+        line.status==='eigen-klaar'?'EIGEN VOORTGANG':'ONBEKEND')+'] '+line.title,
+        '  '+line.detail);
+    }
+    result.push('');
+  }
+  result.push('Zelf controleren bij betrokken organisaties en personen.',
+    'Zelfbewaar of deel deze persoonlijke momentopname uitsluitend bewust.');
+  return result.join('\n')+'\n';
+}
+
 export function PrivateMovingWorkspace() {
   const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
   const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
@@ -3574,6 +3669,7 @@ export function PrivateMovingWorkspace() {
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
   const [reportSections,setReportSections]=useState<MovingReportSection[]>(['timeline','documents']);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [pendingMoveDay,setPendingMoveDay]=useState<string|null>(null);
   useEffect(()=>{
     let timer:number|undefined;
     function refresh(){
@@ -3642,6 +3738,9 @@ export function PrivateMovingWorkspace() {
     packing:packing!,helpers:helpers!
   }:null;
   const signature=archive?privateMovingWorkspaceSignature(archive):'';
+  const moveDaySteps=archive?buildMoveDaySteps(archive):[];
+  const moveDayReport=moveDayPrivacyReport(moveDaySteps);
+  const moveDaySignature=JSON.stringify({signature,moveDayReport});
   const quoteCount=quotes?.quotes.length??0;
   const expenseCount=expenses?.lines.length??0;
   const planned=expenses?.lines.reduce((total,item)=>total+item.plannedCents,0)??0;
@@ -3740,6 +3839,17 @@ export function PrivateMovingWorkspace() {
   const reportSignature=JSON.stringify({signature,reportSections,today,calendarSignature});
   const report=archive&&reportSections.length?
     buildPrivateMovingReport(archive,reportSections,actions,today):null;
+  function downloadMoveDay(){
+    if(!archive||pendingMoveDay!==moveDaySignature||!moveDaySteps.length){
+      setPendingMoveDay(null);
+      setNotice('Je privégegevens zijn gewijzigd. Bekijk de nieuwste verhuisdagstatus opnieuw.');
+      return;
+    }
+    exportFile('woonpoints-prive-verhuisdagoverzicht.txt',moveDayReport,
+      'text/plain;charset=utf-8');
+    setPendingMoveDay(null);
+    setNotice('Privé-verhuisdagoverzicht lokaal aangeboden zonder naam- of inhoudsgegevens.');
+  }
   function downloadPrivateReport(){
     if(!complete||!report||pendingReport!==reportSignature){
       setPendingReport(null);
@@ -3867,6 +3977,51 @@ export function PrivateMovingWorkspace() {
         <a href="#private-packing-heading">Paklijst</a>{' · '}
         <a href="#private-moving-helpers-heading">Verhuishulp</a>
       </div>
+
+
+      <section aria-labelledby="private-move-day-readiness-heading">
+        <h3 id="private-move-day-readiness-heading">Mijn verhuisdag · voorbereiden, vertrekken, aankomen</h3>
+        <p>Dit overzicht verbindt je eigen planning, documenten, hulp, dozen en
+          laad-/aflevermarkeringen. Het laat acties en ontbrekende gegevens apart
+          zien. Een groen eigen vinkje is nooit een officiële goedkeuring,
+          werkelijke levering of bevestiging van een helper.</p>
+        {!complete&&<p>De privé-werkmap verzamelt nog gegevens uit de acht onderdelen.
+          Niets wordt op de achtergrond opgeslagen.</p>}
+        {complete&&MOVE_DAY_PHASES.map(phase=>{
+          const rows=moveDaySteps.filter(step=>step.phase===phase.id);
+          const open=rows.filter(step=>step.status==='open').length;
+          const missing=rows.filter(step=>step.status==='onbekend').length;
+          return <div key={phase.id}>
+            <h4>{phase.name}</h4>
+            <p>{open} zelf na te kijken · {missing} onbekend ·
+              {' '+rows.filter(step=>step.status==='eigen-klaar').length}
+              {' '}onderdelen volgens eigen invoer afgewerkt.</p>
+            <ul>{rows.map(step=><li key={step.id}>
+              <strong>{step.status==='open'?'Nog regelen: ':
+                step.status==='onbekend'?'Onbekend: ':'Eigen voortgang: '}
+                {step.title}</strong>
+              <p>{step.detail} <a href={step.href}>Werk dit onderdeel bij</a></p>
+            </li>)}</ul>
+          </div>;
+        })}
+        <p>De momentopname bevat uitsluitend geaggregeerde statusregels.
+          Er worden geen persoonsnamen, bedragen, privéadressen, doosinhoud of
+          originele notities geëxporteerd. Je opslaglocatie kan synchroniseren.</p>
+        <button type="button" disabled={!complete} onClick={()=>{
+          setPendingMoveDay(moveDaySignature);setNotice('');
+        }}>Bekijk mijn privé-verhuisdagoverzicht als TXT…</button>
+        {archive&&pendingMoveDay===moveDaySignature&&
+          <div role="group" aria-label="Bevestig geanonimiseerd verhuisdagoverzicht">
+            <p>Controleer vóór opslag de volledige tekst. Dit is een door jou
+              gemaakte overzichtsnotitie, geen bewijs van vertrek of aankomst.</p>
+            <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:'25rem',overflowY:'auto'}}>{moveDayReport}</pre>
+            <button type="button" onClick={downloadMoveDay}>
+              Bevestig lokale TXT-download
+            </button>
+            <button type="button" onClick={()=>setPendingMoveDay(null)}>Annuleren</button>
+          </div>}
+      </section>
 
       <section aria-labelledby="private-moving-actions-heading">
         <h3 id="private-moving-actions-heading">Wat wil je nog zelf regelen?</h3>
