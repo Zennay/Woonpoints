@@ -534,25 +534,56 @@ function PrivateArrivalInspection({
       <div>
         <p className="eyebrow">NA SLEUTELOVERDRACHT · ZELF CONTROLEREN</p>
         <h2 id="private-startinspection-heading">Begeleide startinspectie</h2>
-        <p>Doorloop 22 praktische punten in zes ruimtes. Markeer wat je zelf hebt bekeken als in orde of als aandachtspunt.
+        <p>Doorloop 22 standaardpunten in zes ruimtes en voeg zelf controlepunten toe als jouw woning dat vraagt. Markeer wat je zelf hebt bekeken als in orde of als aandachtspunt.
           Niets wordt automatisch aangemerkt als gecontroleerd, vastgelegd bij een verhuurder of bewezen gebrek.</p>
-        <p><strong>{checked.length} / {INSPECTION_CHECKS.length}</strong> zelf beoordeeld ·
+        <p><strong>{checked.length} / {allChecks.length}</strong> zelf beoordeeld ·
           <strong> {flagged.length}</strong> zelf gemarkeerde aandachtspunten ·
           <strong> {newFlagged.length}</strong> nieuwe punten voor nazorg</p>
-        <progress max={INSPECTION_CHECKS.length} value={checked.length}
+        <progress max={allChecks.length} value={checked.length}
           aria-label="Zelf beoordeelde inspectiepunten" style={{width:'100%'}} />
         <p>Bij onveilige situaties: volg de officiële nood- of storingsroute. Deze checklist is geen technische keuring.</p>
       </div>
       <div>
-        {INSPECTION_ROOMS.map(room => {
-          const rows = INSPECTION_CHECKS.filter(item => item.room === room);
+        <form onSubmit={addCustomCheck} className="aftercare-inspection-custom">
+          <h3>Mijn eigen controlepunten</h3>
+          <p>Voeg maximaal 12 eigen controles toe, bijvoorbeeld voor een balkon of berging.
+            Dit is geen officiële inspectie-eis.</p>
+          <label htmlFor="inspection-custom-title">Wat wil je controleren?</label>
+          <input id="inspection-custom-title" required maxLength={100} value={customTitle}
+            onChange={event => setCustomTitle(event.target.value)}
+            placeholder="Bijvoorbeeld: balkonafvoer" />
+          <div className="aftercare-grid">
+            <div>
+              <label htmlFor="inspection-custom-room">Ruimte</label>
+              <select id="inspection-custom-room" value={customRoom}
+                onChange={event => setCustomRoom(event.target.value)}>
+                {INSPECTION_ALL_ROOMS.map(room => <option key={room} value={room}>{room}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="inspection-custom-priority">Mijn prioriteit bij nazorg</label>
+              <select id="inspection-custom-priority" value={customPriority}
+                onChange={event => setCustomPriority(event.target.value as Priority)}>
+                <option value="laag">Laag</option><option value="normaal">Normaal</option>
+                <option value="dringend">Dringend volgens mij</option>
+              </select>
+            </div>
+          </div>
+          <div className="aftercare-actions">
+            <button type="submit" disabled={customChecks.length >= MAX_CUSTOM_INSPECTION_CHECKS}>
+              Voeg mijn controlepunt toe
+            </button>
+          </div>
+        </form>
+        {INSPECTION_ALL_ROOMS.map(room => {
+          const rows = allChecks.filter(item => item.room === room);
           const completed = rows.filter(item => grades[item.id]).length;
           return (
             <details key={room} className="aftercare-inspection-room">
               <summary><strong>{room}</strong> · {completed} van {rows.length} zelf beoordeeld</summary>
               {rows.map(row => (
                 <fieldset key={row.id} className="aftercare-inspection-check">
-                  <legend><strong>{row.title}</strong></legend>
+                  <legend><strong>{row.title}</strong>{row.id.startsWith('custom-') ? ' · eigen punt' : ''}</legend>
                   <p>{row.tip}</p>
                   <div className="aftercare-actions">
                     <label><input type="radio" name={'inspection-' + row.id}
@@ -568,6 +599,22 @@ function PrivateArrivalInspection({
                       onClick={() => { setGrades(previous => ({...previous,[row.id]:undefined})); setConfirmTransfer(false); }}
                     >Nog niet beoordeeld</button>
                   </div>
+                  {row.id.startsWith('custom-') && (
+                    <div>
+                      <button type="button" className="secondary"
+                        onClick={() => setPendingCustomDelete(row.id)}>Verwijder eigen controlepunt…</button>
+                      {pendingCustomDelete === row.id && (
+                        <div className="aftercare-confirm" role="group" aria-label="Eigen controlepunt verwijderen">
+                          <p>Dit eigen controlepunt en zijn tijdelijke beoordeling verwijderen?
+                            Bestaande nazorgpunten worden niet gewist.</p>
+                          <div className="aftercare-actions">
+                            <button type="button" onClick={() => removeCustomCheck(row.id)}>Ja, verwijder</button>
+                            <button type="button" className="secondary" onClick={() => setPendingCustomDelete(null)}>Behoud</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {grades[row.id] === 'aandacht' && (
                     <>
                       <label htmlFor={'inspection-note-' + row.id}>Eigen toelichting (optioneel)</label>
@@ -584,10 +631,10 @@ function PrivateArrivalInspection({
           );
         })}
         <div className="aftercare-actions">
-          <button type="button" className="secondary" onClick={saveInspectionBackup} disabled={checked.length === 0}>
+          <button type="button" className="secondary" onClick={saveInspectionBackup} disabled={checked.length === 0 && customChecks.length === 0}>
             Bewaar mijn inspectievoortgang (JSON)
           </button>
-          <button type="button" className="secondary" disabled={checked.length === 0} onClick={() => setResetConfirm(true)}>
+          <button type="button" className="secondary" disabled={checked.length === 0 && customChecks.length === 0} onClick={() => setResetConfirm(true)}>
             Begin opnieuw…
           </button>
         </div>
@@ -599,11 +646,13 @@ function PrivateArrivalInspection({
           <div className="aftercare-confirm" role="group" aria-label="Inspectie-import bevestigen">
             <p><strong>{pendingRestore.count}</strong> beoordelingen gevonden. Bestaande inspectieantwoorden
               en tijdelijke toelichtingen worden uitsluitend na bevestiging vervangen.
-              Reeds eerder aan nazorg overgedragen gebreken blijven bestaan.</p>
+              Reeds eerder aan nazorg overgedragen gebreken blijven bestaan. Je eigen controlepunten worden mee vervangen.</p>
             <div className="aftercare-actions">
               <button type="button" onClick={() => {
                 setGrades(pendingRestore.grades);
                 setNotes(pendingRestore.notes);
+                setCustomChecks(pendingRestore.custom);
+                setPendingCustomDelete(null);
                 setPendingRestore(null);
                 setConfirmTransfer(false);
                 setFeedback('Inspectie hervat: alleen de tijdelijke controleantwoorden zijn vervangen.');
@@ -616,11 +665,11 @@ function PrivateArrivalInspection({
         )}
         {resetConfirm && (
           <div className="aftercare-confirm" role="group" aria-label="Inspectie opnieuw starten">
-            <p>Alle tijdelijke inspectieantwoorden en toelichtingen wissen? Bestaande nazorgpunten en
+            <p>Alle tijdelijke inspectieantwoorden, toelichtingen en eigen controlepunten wissen? Bestaande nazorgpunten en
               eerder gedownloade inspectieback-ups blijven bestaan.</p>
             <div className="aftercare-actions">
               <button type="button" onClick={() => {
-                setGrades({}); setNotes({}); setResetConfirm(false); setPendingRestore(null);
+                setGrades({}); setNotes({}); setCustomChecks([]); setPendingCustomDelete(null); setResetConfirm(false); setPendingRestore(null);
                 setConfirmTransfer(false); setFeedback('Tijdelijke inspectie is leeg; nazorg blijft behouden.');
               }}>Ja, begin opnieuw</button>
               <button type="button" className="secondary" onClick={() => setResetConfirm(false)}>Behoud inspectie</button>
@@ -628,7 +677,7 @@ function PrivateArrivalInspection({
           </div>
         )}
         <div className="aftercare-actions">
-          <button className="secondary" type="button" disabled={checked.length === 0} onClick={exportInspection}>
+          <button className="secondary" type="button" disabled={checked.length === 0 && customChecks.length === 0} onClick={exportInspection}>
             Download mijn eigen inspectieoverzicht (TXT)
           </button>
           <button type="button" disabled={newFlagged.length === 0}
