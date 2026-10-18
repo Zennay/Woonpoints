@@ -990,6 +990,10 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
   const [notice, setNotice] = useState('');
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
 
   const pending = entries.filter(item => item.status === 'open').length;
   const ordered = entries.map((entry, index) => ({entry, index}))
@@ -1068,9 +1072,14 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
     }
   }
 
-  function exportIcs() {
-    const selected = entries.filter(item => item.status === 'open');
-    if (!selected.length) return;
+  function exportIcs(selectedIndex: number | null = null) {
+    const specific = selectedIndex === null ? null : entries[selectedIndex];
+    const selected = selectedIndex === null ? entries.filter(item => item.status === 'open') :
+      specific && specific.status === 'open' ? [specific] : [];
+    if (!selected.length) {
+      setNotice('Geen open eigen actie voor deze agenda-export beschikbaar.');
+      return;
+    }
     const stamp = calendarUtc(new Date());
     const rows = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Woonpoints//Private Manual Planner//NL',
       'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
@@ -1090,9 +1099,25 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
     }
     rows.push('END:VCALENDAR');
     downloadPrivatePlanFile(rows.map(foldCalendarLine).join('\r\n')+'\r\n',
-      'text/calendar;charset=utf-8', 'woonpoints-eigen-deadlines.ics');
-    setNotice('iCalendar aangeboden voor eigen import. Agendameldingen hangen af van jouw kalenderapp.');
+      'text/calendar;charset=utf-8', selectedIndex === null ?
+        'woonpoints-eigen-deadlines.ics' : 'woonpoints-een-eigen-actie.ics');
+    setNotice(selectedIndex === null ?
+      'iCalendar met alle open eigen acties aangeboden. Je kalenderprovider kan gegevens synchroniseren.' :
+      'iCalendar met uitsluitend deze eigen actie aangeboden. Je kalenderprovider kan synchroniseren.');
   }
+
+  const calendarYear = month.getFullYear(), calendarMonth = month.getMonth();
+  const firstWeekday = (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7;
+  const monthDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarDays = Array.from({length: firstWeekday + monthDays}, (_, index) =>
+    index < firstWeekday ? null : index - firstWeekday + 1);
+  const calendarRows = entries.map((entry, index) => ({entry, index}))
+    .filter(row => !onlyOpen || row.entry.status === 'open');
+  function shiftMonth(offset: number) {
+    const d = new Date(calendarYear, calendarMonth + offset, 1);
+    if (d.getFullYear() >= 2000 && d.getFullYear() <= 2100) setMonth(d);
+  }
+  const monthLabel = month.toLocaleString('nl-NL', {month: 'long', year: 'numeric'});
 
   return (
     <section className="panel private-plan" aria-labelledby="private-plan-title">
@@ -1168,6 +1193,53 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
           Werk tijdsindicaties bij
         </button>
       </div>
+      <section className="private-plan-calendar" aria-label="Maandoverzicht eigen acties">
+        <div className="private-plan-calendar-head">
+          <h3>Mijn handmatige maandplanning</h3>
+          <div className="private-plan-buttons">
+            <button type="button" className="secondary" aria-label="Vorige maand"
+              disabled={calendarYear === 2000 && calendarMonth === 0}
+              onClick={() => shiftMonth(-1)}>← Vorige</button>
+            <button type="button" className="secondary" onClick={() => {
+              const d = new Date();
+              setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+            }}>Deze maand</button>
+            <button type="button" className="secondary" aria-label="Volgende maand"
+              disabled={calendarYear === 2100 && calendarMonth === 11}
+              onClick={() => shiftMonth(1)}>Volgende →</button>
+          </div>
+        </div>
+        <p aria-live="polite"><strong>{monthLabel}</strong> · zelf ingevuld, niet uit
+          een woningplatform of agenda gesynchroniseerd.</p>
+        <div className="private-plan-month-grid" role="group"
+          aria-label={'Maandoverzicht ' + monthLabel}>
+          {['Ma','Di','Wo','Do','Vr','Za','Zo'].map(day =>
+            <strong className="private-plan-weekday" key={day}>{day}</strong>)}
+          {calendarDays.map((day, cell) => {
+            if (day === null) return <span className="private-plan-calendar-empty" key={'empty-'+cell} aria-hidden="true" />;
+            const key = [calendarYear, String(calendarMonth + 1).padStart(2,'0'),
+              String(day).padStart(2,'0')].join('-');
+            const active = calendarRows.filter(row => row.entry.when.slice(0, 10) === key);
+            return <div className="private-plan-day" key={key}
+              aria-label={day + ' ' + monthLabel + ': ' + active.length + ' eigen acties'}>
+              <span className="private-plan-day-number">{day}</span>
+              {active.map(({entry,index}) =>
+                <button type="button" className="private-plan-calendar-action"
+                  key={index}
+                  onClick={() => {
+                    edit(index);
+                    document.getElementById('plan-label')?.focus();
+                  }}
+                  title={'Bewerk eigen actie: ' + entry.label}
+                  aria-label={'Bewerk ' + entry.label + ', ' + planKinds[entry.kind]}>
+                  {entry.status === 'afgerond' ? '✓ ' : ''}{entry.label}
+                </button>)}
+            </div>;
+          })}
+        </div>
+        <p>Klik op een eigen actie in de kalender om die in het formulier te bewerken.
+          De kalender is alleen een lokale weergave, geen herinneringsdienst.</p>
+      </section>
       {ordered.length ? (
         <ol className="private-plan-items">
           {ordered.map(({entry,index}) => {
@@ -1182,6 +1254,10 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
                 <button type="button" className="secondary" onClick={() => edit(index)}>Bewerk</button>
                 <button type="button" onClick={() => changeStatus(index)}>
                   {entry.status === 'open' ? 'Zelf afvinken' : 'Heropen'}
+                </button>
+                <button type="button" className="secondary" disabled={entry.status !== 'open'}
+                  onClick={() => exportIcs(index)}>
+                  Alleen deze actie naar agenda (.ics)…
                 </button>
                 <button type="button" className="secondary" onClick={() => setDeleteIndex(index)}>
                   Verwijder…
@@ -1208,7 +1284,7 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
           Een agenda-event is geen bevestigde reactie of automatische herinnering vanuit Woonpoints.</p>
         <div className="private-plan-buttons">
           <button type="button" disabled={!entries.length} onClick={exportJson}>Download privé-JSON</button>
-          <button type="button" disabled={!pending} onClick={exportIcs}>Download agenda (.ics)</button>
+          <button type="button" disabled={!pending} onClick={() => exportIcs()}>Download alle open acties (.ics)</button>
         </div>
         <label htmlFor="plan-import">Herstel eigen Woonpoints-JSON (maximaal 16 KB)</label>
         <input id="plan-import" type="file" accept=".json,application/json"

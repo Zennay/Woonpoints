@@ -305,3 +305,22 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .private-budget-provenance h4 { margin: 4px 0 8px; font-size: 18px; color: #263f31; }
 .private-budget-provenance ul { margin: 8px 0 16px; padding-left: 22px; }
 .private-budget-provenance li { margin-bottom: 8px; overflow-wrap: anywhere; line-height: 1.55; }
+
+
+/* Privacy-first month overview of at most twelve handwritten action notes. */
+.private-plan-calendar { margin: 18px 0; border: 2px solid #b9d1be; border-radius: 14px; padding: 14px; background: #f6faf6; }
+.private-plan-calendar-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.private-plan-calendar-head h3 { margin: 0; }
+.private-plan-month-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 5px; }
+.private-plan-weekday { text-align: center; font-size: .87rem; padding: 6px 0; }
+.private-plan-day, .private-plan-calendar-empty { min-height: 67px; min-width: 0; background: #fff; border: 1px solid #cdded0; border-radius: 8px; padding: 5px; overflow-wrap: anywhere; }
+.private-plan-calendar-empty { background: transparent; border: 0; }
+.private-plan-day-number { display: block; font-size: .85rem; color: #385644; font-weight: 700; }
+.private-plan-calendar-action { display: block; width: 100%; margin: 4px 0; padding: 5px 3px; font: inherit; font-size: .77rem; text-align: left; color: #23432a; background: #e7f3e9; border: 1px solid #61956c; border-radius: 5px; cursor: pointer; overflow-wrap: anywhere; }
+.private-plan-calendar-action:focus-visible { outline: 3px solid #173d25; outline-offset: 2px; }
+@media (max-width: 620px) {
+  .private-plan-calendar { padding: 8px; }
+  .private-plan-month-grid { gap: 2px; }
+  .private-plan-day { padding: 2px; min-height: 56px; }
+  .private-plan-calendar-action { padding: 4px 1px; font-size: .69rem; }
+}
