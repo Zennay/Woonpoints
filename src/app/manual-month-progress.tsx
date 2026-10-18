@@ -2845,3 +2845,210 @@ export function PrivateMovingQuoteComparison(){
     </section>
   );
 }
+
+
+type PrivateSplitMember={id:number;alias:string;paid:string};
+const splitMember=(id:number):PrivateSplitMember=>({id,alias:`Persoon ${id}`,paid:''});
+function privateSplitValidMember(item:unknown,index:number):item is PrivateSplitMember{
+  if(!item||typeof item!=='object'||Array.isArray(item))return false;
+  const row=item as Record<string,unknown>;
+  return Object.keys(row).length===3&&row.id===index+1&&
+    typeof row.alias==='string'&&row.alias.length>0&&row.alias.length<=30&&
+    row.alias.trim()===row.alias&&!/[\\u0000-\\u001f\\u007f]/.test(row.alias)&&
+    typeof row.paid==='string'&&(row.paid===''||expenseCents(row.paid)!==null);
+}
+
+/** Simple, cent-exact personal settlement *proposal*; never executes a payment. */
+export function PrivateMovingCostSplit(){
+  const [members,setMembers]=useState<PrivateSplitMember[]>([splitMember(1),splitMember(2)]);
+  const [total,setTotal]=useState('');
+  const [pendingOffer,setPendingOffer]=useState<number|null>(null);
+  const [pendingBackup,setPendingBackup]=useState<{members:PrivateSplitMember[];total:string}|null>(null);
+  const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [confirmClear,setConfirmClear]=useState(false);
+  const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    function onOffer(event:Event){
+      const value=(event as CustomEvent<unknown>).detail;
+      if(!value||typeof value!=='object'||Array.isArray(value))return;
+      const data=value as Record<string,unknown>;
+      if(data.format==='woonpoints-moving-split-total'&&data.version===1&&
+        typeof data.plannedCents==='number'&&Number.isSafeInteger(data.plannedCents)&&
+        data.plannedCents>=0&&data.plannedCents<=9999999){
+        setPendingOffer(data.plannedCents);
+        setNotice('Eigen kostenboekbegroting aangeboden. Bevestig voordat het splitbedrag wordt vervangen.');
+      }
+    }
+    window.addEventListener('woonpoints:moving-cost-split-offer',onOffer);
+    return()=>window.removeEventListener('woonpoints:moving-cost-split-offer',onOffer);
+  },[]);
+  const totalCents=expenseCents(total);
+  const paidCents=members.map(person=>person.paid.trim()?expenseCents(person.paid):null);
+  const allKnown=paidCents.every(value=>value!==null);
+  const paidTotal=paidCents.reduce<number>((sum,value)=>sum+(value??0),0);
+  const sameTotal=totalCents!==null&&allKnown&&paidTotal===totalCents;
+  const expected=members.map((_,index)=>{
+    if(totalCents===null)return 0;
+    return Math.floor(totalCents/members.length)+(index<totalCents%members.length?1:0);
+  });
+  const balances=members.map((_,index)=>(paidCents[index]??0)-expected[index]);
+  const settlements:{from:number;to:number;cents:number}[]=[];
+  if(sameTotal){
+    const debtor=balances.map((value,id)=>({id,remaining:Math.max(0,-value)})).filter(x=>x.remaining>0);
+    const creditor=balances.map((value,id)=>({id,remaining:Math.max(0,value)})).filter(x=>x.remaining>0);
+    let d=0,c=0;
+    while(d<debtor.length&&c<creditor.length){
+      const cents=Math.min(debtor[d].remaining,creditor[c].remaining);
+      if(cents>0)settlements.push({from:debtor[d].id,to:creditor[c].id,cents});
+      debtor[d].remaining-=cents;creditor[c].remaining-=cents;
+      if(debtor[d].remaining===0)d++;
+      if(creditor[c].remaining===0)c++;
+    }
+  }
+  const state=JSON.stringify({members,total});
+  const report=[
+    'Woonpoints · eigen verhuiskostenverdeling',
+    'Uitsluitend lokale persoonlijke rekenhulp, geen betaling, schuldverklaring of bankcontrole.',
+    `Zelf gekozen totaal: ${totalCents===null?'onbekend':expenseAmount(totalCents)}`,
+    ...members.map((person,index)=>
+      `${person.alias}: eigen bijdrage ${expenseAmount(expected[index])}, `+
+      `zelf ingevoerd betaald ${paidCents[index]===null?'onbekend':expenseAmount(paidCents[index]!)}`),
+    `Totaal ingevulde betaalbedragen: ${expenseAmount(paidTotal)}`,
+    !allKnown?'Nog niet alle betaalbedragen ingevuld: geen verrekenadvies.':
+      !sameTotal?'Betaalde bedragen sluiten niet op gekozen totaal: geen verrekenadvies.':
+        settlements.length?settlements.map(item=>
+          `Voorstel: ${members[item.from].alias} → ${members[item.to].alias}: ${expenseAmount(item.cents)}`).join('\\n'):
+          'Alle eigen bedragen gelijk verdeeld; geen onderlinge verrekening nodig.',
+    'Verschillen van een cent bij een oneven totaal worden op basis van invoervolgorde toegewezen.',
+    'Het resultaat is niet bevestigd met betaalbewijzen en verstuurt geen geld.'
+  ].join('\\n')+'\\n';
+  function invalidate(){
+    setPendingBackup(null);setPendingReport(null);setConfirmClear(false);setNotice('');
+  }
+  async function loadBackup(file:File|undefined){
+    setPendingBackup(null);setPendingReport(null);
+    if(!file)return;
+    if(!file.size||file.size>8192){setNotice('JSON geweigerd: maximaal 8 KiB.');return;}
+    try{
+      const value:unknown=JSON.parse(await file.text());
+      if(!value||typeof value!=='object'||Array.isArray(value))throw Error('root');
+      const data=value as Record<string,unknown>;
+      if(data.format!=='woonpoints-private-moving-split'||data.version!==1||
+        typeof data.total!=='string'||
+        (data.total!==''&&expenseCents(data.total)===null)||
+        !Array.isArray(data.members)||data.members.length<2||data.members.length>4||
+        !data.members.every((row,index)=>privateSplitValidMember(row,index)))throw Error('fields');
+      setPendingBackup({total:data.total,members:data.members as PrivateSplitMember[]});
+      setNotice('Geldige privé-verdelingsback-up gelezen. Bevestig om de huidige invoer te vervangen.');
+    }catch{
+      setNotice('Privé-JSON geweigerd: ongeldige versie, bedragen of personen. Huidige invoer behouden.');
+    }
+  }
+  return(
+    <section className="panel" aria-labelledby="private-cost-split-heading">
+      <p className="eyebrow">VERHUISKOSTEN · PRIVÉ MET MEERDERE PERSONEN</p>
+      <h2 id="private-cost-split-heading">Verdeel eigen verhuiskosten</h2>
+      <p>Maak met twee tot vier personen een <strong>gelijke verdeling</strong> van een zelfgekozen
+        totaal. Vul per persoon zelf het al betaalde bedrag in. Een verrekenvoorstel verschijnt
+        pas als alle bedragen bekend zijn én precies optellen tot het afgesproken totaal.
+        Geen rekeningkoppeling of automatische betaling.</p>
+      {pendingOffer!==null&&<div role="group" aria-label="Bevestig begrotingsbedrag uit kostenboek">
+        <p>Eigen begroting aangeboden: <strong>{expenseAmount(pendingOffer)}</strong>.
+          Dit is geen bewezen werkelijke of betaalde uitgave. Overnemen vervangt alleen
+          het te verdelen totaal; bestaande personen/betalingen blijven staan.</p>
+        <button type="button" onClick={()=>{
+          setTotal(expenseFormAmount(pendingOffer));setPendingOffer(null);invalidate();
+          setNotice('Eigen begroting bewust overgenomen. Controleer alle betaalbedragen opnieuw.');
+        }}>Bevestig totaal overnemen</button>
+        <button type="button" onClick={()=>setPendingOffer(null)}>Annuleren</button>
+      </div>}
+      <label htmlFor="private-cost-split-total">Zelf te verdelen totaal (€)</label>
+      <input id="private-cost-split-total" inputMode="decimal" type="text" maxLength={10}
+        placeholder="Bijvoorbeeld 450,00" value={total} onChange={event=>{
+          setTotal(event.target.value);invalidate();
+        }} />
+      <label htmlFor="private-cost-split-count">Aantal personen (2–4)</label>
+      <select id="private-cost-split-count" value={members.length} onChange={event=>{
+        const count=Number(event.target.value);
+        setMembers(old=>Array.from({length:count},(_,index)=>old[index]??splitMember(index+1)));
+        invalidate();
+      }}>{[2,3,4].map(n=><option value={n} key={n}>{n}</option>)}</select>
+      <ul>{members.map((member,index)=><li key={member.id}>
+        <label htmlFor={`split-person-name-${member.id}`}>Naamlabel persoon {member.id}</label>
+        <input id={`split-person-name-${member.id}`} type="text" autoComplete="off"
+          maxLength={30} value={member.alias} onChange={event=>{
+            setMembers(old=>old.map(x=>x.id===member.id?{...x,alias:event.target.value}:x));invalidate();
+          }} />
+        <label htmlFor={`split-person-paid-${member.id}`}>Zelf ingevuld reeds betaald (€; leeg = onbekend)</label>
+        <input id={`split-person-paid-${member.id}`} type="text" inputMode="decimal"
+          maxLength={10} value={member.paid} onChange={event=>{
+            setMembers(old=>old.map(x=>x.id===member.id?{...x,paid:event.target.value}:x));invalidate();
+          }} />
+        <p>Aandeel bij gelijke verdeling: {totalCents===null?'onbekend':expenseAmount(expected[index])}.
+          Dit is een rekenafspraak, geen externe vordering.</p>
+      </li>)}</ul>
+      {totalCents===null&&<p role="alert">Vul eerst een geldig totaal tussen € 0 en € 99.999,99 in.</p>}
+      {totalCents!==null&&!allKnown&&<p>Vul voor iedere persoon een bedrag in (ook 0,00 als niets betaald is).
+        Er wordt geen verrekening voorgesteld zolang gegevens ontbreken of ongeldig zijn.</p>}
+      {totalCents!==null&&allKnown&&!sameTotal&&<p role="alert">
+        Ingevuld betaald {expenseAmount(paidTotal)} tegenover het eigen totaal {expenseAmount(totalCents)}:
+        verschil {expenseAmount(paidTotal-totalCents)}. Pas invoer aan; er is nu geen verrekenvoorstel.
+      </p>}
+      {sameTotal&&<div aria-live="polite">
+        <h3>Optionele onderlinge verrekening</h3>
+        {!settlements.length&&<p>De ingevulde bedragen zijn al gelijk verdeeld. Geen voorstel nodig.</p>}
+        <ol>{settlements.map((item,index)=><li key={index}>
+          {members[item.from].alias} zou {expenseAmount(item.cents)} aan {members[item.to].alias} kunnen overmaken.
+        </li>)}</ol>
+        <p>Deze bedragen zijn exact in centen berekend, maar er worden geen betaalopdrachten verstuurd.
+          Controleer zelf of alle kosten en eerdere betalingen kloppen.</p>
+      </div>}
+      <button type="button" onClick={()=>{
+        exportFile('woonpoints-prive-kostenverdeling.json',
+          JSON.stringify({format:'woonpoints-private-moving-split',version:1,members,total},null,2),
+          'application/json;charset=utf-8');
+        setNotice('Eigen privé-JSON aangeboden; je opslaglocatie kan synchroniseren.');
+      }}>Bewaar kostenverdeling als privé-JSON…</button>
+      <label htmlFor="private-split-restore">Herstel privé-JSON (max. 8 KiB)</label>
+      <input id="private-split-restore" type="file" accept=".json,application/json" onChange={event=>{
+        const f=event.currentTarget.files?.[0];event.currentTarget.value='';void loadBackup(f);
+      }} />
+      {pendingBackup&&<div role="group" aria-label="Bevestig privé-kostenverdeling vervangen">
+        <p>Back-up heeft {pendingBackup.members.length} personen.
+          Bevestigen vervangt alle huidige namen, betaalbedragen en het totaal in dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setMembers(pendingBackup.members);setTotal(pendingBackup.total);
+          setPendingBackup(null);setPendingReport(null);
+          setNotice('Eigen kostenverdeling hersteld. Geen betalingscontrole uitgevoerd.');
+        }}>Bevestig herstellen</button>
+        <button type="button" onClick={()=>setPendingBackup(null)}>Annuleren</button>
+      </div>}
+      {pendingReport!==state&&<button type="button" onClick={()=>{
+        setPendingReport(state);setNotice('');
+      }}>Bekijk privé-verdeling als TXT…</button>}
+      {pendingReport===state&&<div role="group" aria-label="Bevestig privé-verdelingsrapport">
+        <p>Bekijk de exacte tekst, inclusief eigen naamlabels. Onvolledige gegevens blijven
+          zichtbaar als onbekend en geven geen betaaladvies.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report}</pre>
+        <button type="button" onClick={()=>{
+          if(pendingReport!==JSON.stringify({members,total}))return;
+          exportFile('woonpoints-prive-kostenverdeling.txt',report,'text/plain;charset=utf-8');
+          setPendingReport(null);setNotice('TXT-bestand op eigen verzoek aangeboden.');
+        }}>Bevestig TXT-download</button>
+        <button type="button" onClick={()=>setPendingReport(null)}>Annuleren</button>
+      </div>}
+      {!confirmClear&&<button type="button" onClick={()=>setConfirmClear(true)}>Wis eigen verdeling…</button>}
+      {confirmClear&&<div role="group" aria-label="Bevestig privé-kostenverdeling wissen">
+        <p>Hiermee wis je alle zelf ingevoerde bedragen en naamlabels uit dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setMembers([splitMember(1),splitMember(2)]);setTotal('');invalidate();
+          setPendingOffer(null);setNotice('Eigen verdeling gewist.');
+        }}>Bevestig wissen</button>
+        <button type="button" onClick={()=>setConfirmClear(false)}>Annuleren</button>
+      </div>}
+      {notice&&<p role="status">{notice}</p>}
+      <p>Alleen je eigen rekengegevens, niet automatisch opgeslagen of verzonden.
+        Deel geen rekeningnummers of gevoelige persoonsgegevens in de labels.</p>
+    </section>
+  );
+}
