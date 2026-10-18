@@ -281,6 +281,18 @@ const statusNames: Record<JournalStatus, string> = {
   closed: 'Afgesloten', invited: 'Uitgenodigd', withdrawn: 'Ingetrokken'
 };
 
+export type PrivateMonthSnapshot = {
+  month: string|null;
+  count: number|null;
+  storage: 'browser'|'temporary'|'unknown';
+  previousNoteHeld: boolean;
+};
+export type PrivateJournalSnapshot = {
+  month: string;
+  total: number;
+  reacted: number;
+  other: number;
+};
 export type PrivateJournalCountOffer = {
   month: string;
   count: number;
@@ -289,10 +301,12 @@ export type PrivateJournalCountOffer = {
 
 /** Transfers only a voluntary aggregate; never source records or account data. */
 export function ManualReactionJournal({
-  onTransfer, onMonthCountOffer
+  onTransfer, onMonthCountOffer, onJournalSnapshot, reportMonth
 }: {
   onTransfer?: (data: string, count: number) => void;
   onMonthCountOffer?: (offer: PrivateJournalCountOffer | null) => void;
+  onJournalSnapshot?: (summary: PrivateJournalSnapshot) => void;
+  reportMonth?: string;
 } = {}) {
   const [entries, setEntries] = useState<JournalItem[]>([]);
   const [nextId, setNextId] = useState(1);
@@ -316,7 +330,7 @@ export function ManualReactionJournal({
     .filter(row => monthFilter === 'all' || row.date.slice(0, 7) === monthFilter)
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const rowCount = journal.total;
-  const currentJournalMonth = localMonthKey(new Date());
+  const currentJournalMonth = reportMonth ?? localMonthKey(new Date());
   const todayJournalDate = (() => {
     const now = new Date();
     return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
@@ -332,6 +346,17 @@ export function ManualReactionJournal({
     // request or deletion in its original source journal.
     onMonthCountOffer?.(null);
   }, [entries,pendingImport,onMonthCountOffer]);
+  useEffect(() => {
+    if (!onJournalSnapshot) return;
+    const now=new Date();
+    const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+      String(now.getDate()).padStart(2,'0')].join('-');
+    const current=entries.filter(row=>row.date.slice(0,7)===currentJournalMonth &&
+      row.date<=today);
+    const reacted=current.filter(row=>row.status==='reacted').length;
+    onJournalSnapshot({month:currentJournalMonth,total:current.length,
+      reacted,other:current.length-reacted});
+  }, [entries,currentJournalMonth,onJournalSnapshot]);
 
   function proposeMonthCount() {
     if (!onMonthCountOffer) return;
@@ -732,13 +757,18 @@ export function ManualReactionJournal({
 
 /** Shared browser-memory-only handoff. No hidden cross-tab persistence/API. */
 export function ManualPositionsWorkspace({
-  onMonthCountOffer
-}: {onMonthCountOffer?: (offer: PrivateJournalCountOffer|null)=>void} = {}) {
+  onMonthCountOffer,onJournalSnapshot,reportMonth
+}: {
+  onMonthCountOffer?: (offer: PrivateJournalCountOffer|null)=>void;
+  onJournalSnapshot?: (summary: PrivateJournalSnapshot)=>void;
+  reportMonth?: string;
+} = {}) {
   const [offer, setOffer] = useState<{ data: string; count: number } | null>(null);
   return (
     <>
       <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })}
-        onMonthCountOffer={onMonthCountOffer} />
+        onMonthCountOffer={onMonthCountOffer}
+        onJournalSnapshot={onJournalSnapshot} reportMonth={reportMonth} />
       <ManualPositionHistory journalOffer={offer} onJournalDecision={() => setOffer(null)} />
     </>
   );
@@ -3796,11 +3826,69 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
  */
 export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const [offer,setOffer]=useState<PrivateJournalCountOffer|null>(null);
+  const [month,setMonth]=useState<PrivateMonthSnapshot|null>(null);
+  const [journal,setJournal]=useState<PrivateJournalSnapshot|null>(null);
   const propose=useCallback((value:PrivateJournalCountOffer|null)=>setOffer(value),[]);
   const decide=useCallback(()=>setOffer(null),[]);
+  const updateMonth=useCallback((value:PrivateMonthSnapshot)=>setMonth(value),[]);
+  const updateJournal=useCallback((value:PrivateJournalSnapshot)=>setJournal(value),[]);
+  const activeMonth=month?.month ?? localMonthKey(new Date());
+  const sameMonth=journal?.month===activeMonth;
+  const diaryReacted=sameMonth?journal?.reacted??0:0;
+  const diaryTotal=sameMonth?journal?.total??0:0;
+  const monthCount=month?.month===activeMonth?month?.count??null:null;
+  const discrepancy=monthCount!==null && diaryTotal>0 && diaryReacted!==monthCount;
   return <>
-    <ManualMonthProgress journalOffer={offer} onJournalDecision={decide} />
+    <section className="panel private-month-pulse" aria-labelledby="private-month-pulse-heading">
+      <div>
+        <p className="eyebrow">MIJN EIGEN MAANDOVERZICHT · PRIVÉ EN ONGEVERIFIEERD</p>
+        <h2 id="private-month-pulse-heading">Mijn zelf genoteerde voortgang</h2>
+        <p>Een gecombineerd overzicht van twee <strong>handmatige</strong>
+          Woonpoints-hulpmiddelen. Je eigen maandteller en dagboek kunnen
+          verschillen: het zijn geen officiële WoningNet-reacties, zoekpunten
+          of voorspellingen.</p>
+      </div>
+      <div>
+        <div className="grid" aria-live="polite" aria-atomic="true">
+          <article className="card">
+            <h3>Eigen maandteller · {activeMonth}</h3>
+            <strong>{monthCount===null ? 'Niet ingevuld' :
+              monthCount+' / 4 zelf genoteerd'}</strong>
+            <p>{month?.storage==='temporary' ?
+              'Tijdelijke waarde in dit tabblad; browseropslag is niet bevestigd.' :
+              month?.storage==='unknown' ?
+              'Browseropslag niet beschikbaar of status onbekend.' :
+              'Eigen planningsnotitie in deze browser, niet officieel geverifieerd.'}</p>
+          </article>
+          <article className="card">
+            <h3>Eigen reactiedagboek · {activeMonth}</h3>
+            <strong>{sameMonth ? diaryReacted+' zelf gereageerd' : 'Nog laden…'}</strong>
+            <p>{sameMonth ? diaryTotal+' eigen notities tot vandaag; '+
+              (diaryTotal-diaryReacted)+' met andere status.' :
+              'Alleen eigen notities uit de huidige kalendermaand worden geteld.'}</p>
+          </article>
+        </div>
+        {month?.previousNoteHeld && <p role="status">
+          Je browser bevat nog een oudere of onleesbare maandnotitie. Deze wordt
+          niet automatisch vervangen door een dagboekvoorstel.</p>}
+        {discrepancy && <p role="status">
+          Verschil tussen jouw teller en je dagboek. Je kunt beide zelfstandig
+          corrigeren of een nieuw dagboekvoorstel ter bevestiging aanbieden.
+          Verschil betekent niet dat WoningNet een reactie heeft geweigerd.</p>}
+        {diaryReacted>4 && <p role="status">Meer dan vier eigen notities zijn als
+          gereageerd gemarkeerd. Ze worden niet automatisch tot het maanddoel
+          teruggebracht.</p>}
+        <p><a href="#manual-progress-heading">Open mijn maandplanning</a>
+          {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a></p>
+        <p>Geen accounts, adressen, externe data of netwerkverzoeken worden voor
+          dit overzicht gekoppeld. Er vindt geen achtergrondopslag of
+          automatische correctie tussen de twee onderdelen plaats.</p>
+      </div>
+    </section>
+    <ManualMonthProgress journalOffer={offer} onJournalDecision={decide}
+      onMonthSnapshot={updateMonth} />
     {children}
-    <ManualPositionsWorkspace onMonthCountOffer={propose}/>
+    <ManualPositionsWorkspace onMonthCountOffer={propose}
+      onJournalSnapshot={updateJournal} reportMonth={activeMonth}/>
   </>;
 }
