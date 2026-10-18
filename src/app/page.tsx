@@ -106,7 +106,7 @@ export default function HomePage() {
           <h2 id="nazorg-link-heading">Gebreken en open punten bijhouden</h2>
         </div>
         <div>
-          <p>Maak een privé-overzicht met eigen prioriteiten, streefdatums en opvolgstatussen. Bewaar op verzoek JSON, CSV of een leesbaar dossier. Er wordt niets naar een verhuurder of woningportaal verstuurd.</p>
+          <p>Doe eerst de begeleide startinspectie (22 controles), markeer zelf wat aandacht vraagt en zet alleen na bevestiging nieuwe punten in je privé-nazorgdossier. Beheer vervolgens deadlines, contactmomenten en optionele exports. Niets wordt naar een verhuurder of woningportaal verstuurd.</p>
           <p><a href="#nazorg">Open mijn privé-nazorgdossier ↓</a></p>
         </div>
       </section>
@@ -286,6 +286,164 @@ function calendarFor(items: Item[]): string {
   return entries.map(foldIcs).join('\r\n') + '\r\n';
 }
 
+
+type InspectionGrade = 'goed' | 'aandacht';
+type InspectionCheck = { id: string; room: string; title: string; tip: string; priority: Priority };
+const INSPECTION_CHECKS: InspectionCheck[] = [
+  { id: 'entry-lock', room: 'Entree', title: 'Deur en slot', tip: 'Controleer sluiting, sleutelwerking en zichtbare schade.', priority: 'dringend' },
+  { id: 'entry-keys', room: 'Entree', title: 'Overgedragen sleutels', tip: 'Tel zelf de ontvangen sleutels, tags en afstandsbedieningen.', priority: 'normaal' },
+  { id: 'entry-doorbell', room: 'Entree', title: 'Deurbel en intercom', tip: 'Controleer handmatig of de bediening werkt.', priority: 'normaal' },
+  { id: 'entry-smoke', room: 'Entree', title: 'Rookmelders aanwezig', tip: 'Bekijk zichtbare aanwezigheid en raadpleeg de instructies voor controle.', priority: 'dringend' },
+  { id: 'living-window', room: 'Woonkamer', title: 'Ramen en ventilatie', tip: 'Inspecteer openen, sluiten en zichtbaar vocht of tocht.', priority: 'normaal' },
+  { id: 'living-walls', room: 'Woonkamer', title: 'Wanden, plafond en vloer', tip: 'Noteer zichtbare beschadigingen zonder de oorzaak te veronderstellen.', priority: 'normaal' },
+  { id: 'living-power', room: 'Woonkamer', title: 'Verlichting en aansluitpunten', tip: 'Controleer alleen veilig bereikbare schakelaars; open geen elektra.', priority: 'dringend' },
+  { id: 'living-heat', room: 'Woonkamer', title: 'Verwarming en bediening', tip: 'Bekijk of bediening reageert, zonder installaties te openen.', priority: 'normaal' },
+  { id: 'kitchen-water', room: 'Keuken', title: 'Kraan en afvoer', tip: 'Kijk of water normaal loopt en er zichtbare lekkage is.', priority: 'dringend' },
+  { id: 'kitchen-cabinets', room: 'Keuken', title: 'Kasten en laden', tip: 'Controleer fronten, scharnieren en losse onderdelen.', priority: 'normaal' },
+  { id: 'kitchen-vent', room: 'Keuken', title: 'Ventilatie', tip: 'Controleer zichtbare roosters; demonteer geen apparaten.', priority: 'normaal' },
+  { id: 'kitchen-appliances', room: 'Keuken', title: 'Meegeleverde apparatuur', tip: 'Noteer alleen apparaten die daadwerkelijk bij de woning horen.', priority: 'normaal' },
+  { id: 'bath-shower', room: 'Badkamer', title: 'Douche en temperatuur', tip: 'Bekijk zichtbare werking en eventuele lekkage; vermijd heet water.', priority: 'dringend' },
+  { id: 'bath-drain', room: 'Badkamer', title: 'Afvoer en voegen', tip: 'Inspecteer afvoer, voegen en zichtbaar vocht.', priority: 'normaal' },
+  { id: 'bath-toilet', room: 'Badkamer', title: 'Toilet en doorspoelen', tip: 'Controleer doorspoelen en zichtbare lekkage.', priority: 'dringend' },
+  { id: 'bath-fan', room: 'Badkamer', title: 'Ventilatievoorziening', tip: 'Controleer zichtbare roosters of ventilatorbediening.', priority: 'normaal' },
+  { id: 'sleep-window', room: 'Slaapkamer', title: 'Raam, glas en tocht', tip: 'Controleer zichtbare schade en of het raam sluit.', priority: 'normaal' },
+  { id: 'sleep-finish', room: 'Slaapkamer', title: 'Wanden en vloer', tip: 'Noteer eventuele bestaande beschadigingen.', priority: 'normaal' },
+  { id: 'utility-meters', room: 'Installaties', title: 'Meterstanden zelf vastgelegd', tip: 'Vergelijk met je eigen sleuteloverdrachtsnotities; geen automatische meteropname.', priority: 'normaal' },
+  { id: 'utility-heat', room: 'Installaties', title: 'Cv/verwarmingsinformatie', tip: 'Noteer ontbrekende instructies; raak geen gasinstallaties of bedrading aan.', priority: 'dringend' },
+  { id: 'utility-moist', room: 'Installaties', title: 'Vocht en zichtbare lekkage', tip: 'Inspecteer visueel; vermoedelijke gevaarlijke schade vereist professionele hulp.', priority: 'dringend' },
+  { id: 'utility-safety', room: 'Installaties', title: 'Veilige toegang en vluchtroute', tip: 'Controleer visueel of deuren en doorgangen bereikbaar zijn.', priority: 'dringend' }
+];
+const INSPECTION_ROOMS = ['Entree', 'Woonkamer', 'Keuken', 'Badkamer', 'Slaapkamer', 'Installaties'] as const;
+
+function PrivateArrivalInspection({
+  items, onTransfer
+}: {
+  items: Item[];
+  onTransfer: (requests: Draft[]) => { added: number; skipped: number; error?: string };
+}) {
+  const [grades, setGrades] = useState<Record<string, InspectionGrade | undefined>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [confirmTransfer, setConfirmTransfer] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const checked = INSPECTION_CHECKS.filter(row => grades[row.id] !== undefined);
+  const flagged = INSPECTION_CHECKS.filter(row => grades[row.id] === 'aandacht');
+  const alreadyIncluded = (row: InspectionCheck) => items.some(item =>
+    item.room.toLocaleLowerCase('nl-NL') === row.room.toLocaleLowerCase('nl-NL') &&
+    item.title.toLocaleLowerCase('nl-NL') === row.title.toLocaleLowerCase('nl-NL') &&
+    item.status !== 'afgerond'
+  );
+  const newFlagged = flagged.filter(row => !alreadyIncluded(row));
+  const exportInspection = () => {
+    if (!checked.length) { setFeedback('Markeer eerst minstens één eigen controle.'); return; }
+    const lines = [
+      'WOONPOINTS — eigen startinspectie', 'Alleen handmatig gecontroleerde items; niet door een verhuurder geverifieerd.',
+      'Datum eigen overzicht: ' + today(), '', 'Niet gecontroleerd: ' + (INSPECTION_CHECKS.length - checked.length)
+    ];
+    for (const room of INSPECTION_ROOMS) {
+      lines.push('', room.toUpperCase());
+      for (const row of INSPECTION_CHECKS.filter(item => item.room === room)) {
+        lines.push('- [' + (grades[row.id] === 'goed' ? 'NAAR EIGEN CONTROLE IN ORDE' :
+          grades[row.id] === 'aandacht' ? 'AANDACHTSPUNT' : 'NIET GECONTROLEERD') + '] ' + row.title);
+        if (notes[row.id]?.trim()) lines.push('  Mijn toelichting: ' + notes[row.id].trim());
+      }
+    }
+    download('woonpoints-eigen-startinspectie.txt', lines.join('\n') + '\n', 'text/plain;charset=utf-8');
+    setFeedback('Privé-inspectieoverzicht gedownload. De controle is niet officieel bevestigd.');
+  };
+  const transfer = () => {
+    const requests: Draft[] = newFlagged.map(row => ({
+      title: row.title,
+      room: row.room,
+      priority: row.priority,
+      due: '',
+      note: (notes[row.id] || '').trim()
+    }));
+    const result = onTransfer(requests);
+    setConfirmTransfer(false);
+    if (result.error) setFeedback(result.error);
+    else setFeedback(result.added + ' punten toegevoegd aan jouw privé-nazorgdossier' +
+      (result.skipped ? '; ' + result.skipped + ' bestaande punten overgeslagen.' : '.'));
+  };
+  return (
+    <section className="panel" aria-labelledby="private-startinspection-heading">
+      <div>
+        <p className="eyebrow">NA SLEUTELOVERDRACHT · ZELF CONTROLEREN</p>
+        <h2 id="private-startinspection-heading">Begeleide startinspectie</h2>
+        <p>Doorloop 22 praktische punten in zes ruimtes. Markeer wat je zelf hebt bekeken als in orde of als aandachtspunt.
+          Niets wordt automatisch aangemerkt als gecontroleerd, vastgelegd bij een verhuurder of bewezen gebrek.</p>
+        <p><strong>{checked.length} / {INSPECTION_CHECKS.length}</strong> zelf beoordeeld ·
+          <strong> {flagged.length}</strong> zelf gemarkeerde aandachtspunten ·
+          <strong> {newFlagged.length}</strong> nieuwe punten voor nazorg</p>
+        <progress max={INSPECTION_CHECKS.length} value={checked.length}
+          aria-label="Zelf beoordeelde inspectiepunten" style={{width:'100%'}} />
+        <p>Bij onveilige situaties: volg de officiële nood- of storingsroute. Deze checklist is geen technische keuring.</p>
+      </div>
+      <div>
+        {INSPECTION_ROOMS.map(room => {
+          const rows = INSPECTION_CHECKS.filter(item => item.room === room);
+          const completed = rows.filter(item => grades[item.id]).length;
+          return (
+            <details key={room} className="aftercare-inspection-room">
+              <summary><strong>{room}</strong> · {completed} van {rows.length} zelf beoordeeld</summary>
+              {rows.map(row => (
+                <fieldset key={row.id} className="aftercare-inspection-check">
+                  <legend><strong>{row.title}</strong></legend>
+                  <p>{row.tip}</p>
+                  <div className="aftercare-actions">
+                    <label><input type="radio" name={'inspection-' + row.id}
+                      checked={grades[row.id] === 'goed'}
+                      onChange={() => { setGrades(previous => ({...previous,[row.id]:'goed'})); setConfirmTransfer(false); }}
+                    /> In orde volgens mij</label>
+                    <label><input type="radio" name={'inspection-' + row.id}
+                      checked={grades[row.id] === 'aandacht'}
+                      onChange={() => { setGrades(previous => ({...previous,[row.id]:'aandacht'})); setConfirmTransfer(false); }}
+                    /> Aandachtspunt</label>
+                    <button className="secondary" type="button"
+                      disabled={grades[row.id] === undefined}
+                      onClick={() => { setGrades(previous => ({...previous,[row.id]:undefined})); setConfirmTransfer(false); }}
+                    >Nog niet beoordeeld</button>
+                  </div>
+                  {grades[row.id] === 'aandacht' && (
+                    <>
+                      <label htmlFor={'inspection-note-' + row.id}>Eigen toelichting (optioneel)</label>
+                      <textarea id={'inspection-note-' + row.id}
+                        maxLength={300} value={notes[row.id] || ''}
+                        onChange={event => { setNotes(previous => ({...previous,[row.id]:event.target.value})); setConfirmTransfer(false); }}
+                        placeholder="Bijvoorbeeld: zichtbaar vocht onder de kraan — oorzaak onbekend." />
+                      {alreadyIncluded(row) && <p>Dit aandachtspunt staat al als actief punt in je nazorgdossier en wordt niet dubbel toegevoegd.</p>}
+                    </>
+                  )}
+                </fieldset>
+              ))}
+            </details>
+          );
+        })}
+        <div className="aftercare-actions">
+          <button className="secondary" type="button" disabled={checked.length === 0} onClick={exportInspection}>
+            Download mijn eigen inspectieoverzicht (TXT)
+          </button>
+          <button type="button" disabled={newFlagged.length === 0}
+            onClick={() => setConfirmTransfer(true)}>
+            Zet {newFlagged.length} aandachtspunt{newFlagged.length === 1 ? '' : 'en'} in nazorg…
+          </button>
+        </div>
+        {confirmTransfer && (
+          <div className="aftercare-confirm" role="group" aria-label="Overdracht naar nazorg bevestigen">
+            <p><strong>{newFlagged.length}</strong> door jou afgekeurde, nog niet eerder actieve punten komen
+              uitsluitend in dit tabblad als nieuwe open nazorgpunten. Er wordt niets naar anderen verstuurd.
+              De inspectiestatussen zelf worden niet automatisch opgeslagen of in een back-up opgenomen.</p>
+            <div className="aftercare-actions">
+              <button type="button" onClick={transfer} disabled={newFlagged.length === 0}>Ja, voeg toe aan mijn nazorg</button>
+              <button type="button" className="secondary" onClick={() => setConfirmTransfer(false)}>Niet toevoegen</button>
+            </div>
+          </div>
+        )}
+        <p role="status" aria-live="polite">{feedback}</p>
+      </div>
+    </section>
+  );
+}
+
 function PrivateMoveAftercare() {
   const [items, setItems] = useState<Item[]>([]);
   const [history, setHistory] = useState<FollowUp[]>([]);
@@ -329,6 +487,34 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title)),
     [items, filter]);
+
+  function createFromInspection(requests: Draft[]): { added: number; skipped: number; error?: string } {
+    if (requests.length === 0) return { added: 0, skipped: 0 };
+    const existing = new Set(items.filter(item => item.status !== 'afgerond')
+      .map(item => item.room.toLocaleLowerCase('nl-NL') + '\u0000' + item.title.toLocaleLowerCase('nl-NL')));
+    const extra: Item[] = [];
+    let skipped = 0;
+    for (const request of requests) {
+      const key = request.room.toLocaleLowerCase('nl-NL') + '\u0000' + request.title.toLocaleLowerCase('nl-NL');
+      if (existing.has(key)) { skipped++; continue; }
+      if (!validText(request.title, 1, 100) || !validText(request.room, 1, 40) ||
+          !validText(request.note, 0, 500) || !isPriority(request.priority) ||
+          request.due !== '') return { added: 0, skipped: 0, error: 'Ongeldige eigen inspectietekst; niets overgenomen.' };
+      existing.add(key);
+      extra.push({ ...request, id: 'item-' + crypto.randomUUID(), status: 'open', created: today() });
+    }
+    if (items.length + extra.length > LIMIT) return { added: 0, skipped, error: 'Er zijn maximaal 80 nazorgpunten mogelijk. Verwijder eerst oude punten.' };
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: [...items, ...extra], history
+    }, null, 2)).length > MAX_BYTES) {
+      return { added: 0, skipped, error: 'Dit zou de maximale JSON-back-up van 16 KiB overschrijden; verkort bestaande notities.' };
+    }
+    setItems(previous => [...previous, ...extra]);
+    setIncoming(null);
+    setNoticeApproved(false);
+    setMessage(extra.length + ' zelf gemarkeerde punten vanuit startinspectie toegevoegd; geen externe melding.');
+    return { added: extra.length, skipped };
+  }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -521,6 +707,14 @@ function PrivateMoveAftercare() {
         .aftercare .aftercare-note { white-space:pre-wrap; overflow-wrap:anywhere; }
         .aftercare .aftercare-warning { border-left:4px solid #9c5725; padding:12px; background:#fff5e9; margin:14px 0; }
         .aftercare .aftercare-confirm { border:2px solid #355e42; background:#edf2ee; padding:15px; border-radius:12px; margin:12px 0; }
+        .aftercare .aftercare-inspection-room { border:1px solid #bdcfc2; border-radius:10px; margin:12px 0; padding:12px 14px; background:#f8faf8; }
+        .aftercare .aftercare-inspection-room summary { cursor:pointer; padding:7px 0; font-size:17px; }
+        .aftercare .aftercare-inspection-check { border:1px solid #d7e3d9; border-radius:10px; background:#fff; margin:12px 0; padding:12px; min-width:0; }
+        .aftercare .aftercare-inspection-check legend { padding:0 4px; }
+        .aftercare .aftercare-inspection-check .aftercare-actions label { display:inline-flex; gap:7px; align-items:center; font-weight:600; margin:0; cursor:pointer; }
+        .aftercare .aftercare-inspection-check input[type="radio"] { display:inline-block; width:18px; min-width:18px; height:18px; min-height:18px; margin:0; padding:0; accent-color:#355e42; }
+        .aftercare .aftercare-inspection-room progress { display:block; }
+
         .aftercare .aftercare-stats { display:flex; flex-wrap:wrap; gap:12px; padding:0; list-style:none; }
         .aftercare .aftercare-stats li { background:#edf2ee; padding:10px 14px; border-radius:10px; }
         .aftercare .aftercare-check { display:flex; align-items:start; gap:10px; font-weight:500; margin:12px 0; }
@@ -543,6 +737,7 @@ function PrivateMoveAftercare() {
         <h2>Gebreken en open punten op één plek.</h2>
         <p className="lede">Leg zelf vast wat je na de sleuteloverdracht wilt controleren, melden of opvolgen. Alles blijft in dit tabblad totdat je bewust een bestand opslaat.</p>
       </header>
+      <PrivateArrivalInspection items={items} onTransfer={createFromInspection} />
       <section className="panel" aria-labelledby="nazorg-status">
         <div>
           <h2 id="nazorg-status">Je eigen overzicht</h2>
