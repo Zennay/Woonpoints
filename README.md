@@ -804,3 +804,23 @@ auteurschap, advertentieherkomst, WoningNet-bron, bouwkundige beoordeling,
 toewijzingskans, woninginspectie of officiële goedkeuring. Dit paneel
 verandert geen account, reacties, zoekpunten, accounttoestemming of
 `BOT_DRY_RUN=true` en staat volledig los van de live WoningNet-adapter.
+
+
+### Optionele lokale schuifvergelijking van twee zelf gekozen foto's
+
+In **Fotovergelijking** kun je nu naast de twee kolommen een
+**A/B-overvloeiingsschuif** openen zodra je bij beide woningen een
+eigen foto gekozen hebt. Op de achtergrond blijft woning A zichtbaar;
+de positie van de schuif bepaalt welk deel links met jouw gekozen
+foto van woning B bedekt wordt. Standaard is de verdeling 50/50;
+een extra knop zet die verdeling terug. Kies je een andere thumbnail,
+dan werkt de schuif direct met de nieuwe selectie.
+
+Beide originelen blijven onaangetast en de schuif verwerkt uitsluitend
+de twee tijdelijke lokale afbeeldings-URL's die de basisfotovergelijker
+al gebruikte. De weergave uploadt niets, maakt geen nieuwe opslag
+en voert geen afbeeldingherkenning, automatische uitlijning of
+achtergrondanalyse uit. Foto's met andere perspectieven en formaten
+zijn niet vanzelf vergelijkbaar; dit is geen bewijs dat afmetingen,
+kwaliteit of woningen gelijkwaardig zijn. Bij het wissen van de
+albums verdwijnen ook alle afbeeldingsvoorbeelden uit de app.
