@@ -1817,58 +1817,6 @@ export function PrivateMovingDayTimeline() {
     setNewTask('');
     edit();
   }
-  function acceptPackingBridge(replaceExisting:boolean) {
-    if(!pendingPackingBridge)return;
-    if(batchStamp!==pendingPackingBridge.destinationStamp){
-      setPendingPackingBridge(null);
-      setMessage('Studio-labels zijn ondertussen gewijzigd. Open de overdracht opnieuw vanuit de paklijst.');
-      return;
-    }
-    const groups=pendingPackingBridge.rows;
-    if(groups.length>MAX_BATCHES||(replaceExisting?groups.length:batches.length+groups.length)>MAX_BATCHES||
-      (replaceExisting?groups.length:labelCount+groups.length)>MAX_LABELS){
-      setMessage('De overdracht past niet binnen twintig reeksen en 48 etiketten. Maak eerst ruimte of kies bewust voor vervangen.');
-      return;
-    }
-    // A fresh synchronous snapshot ensures that a packing edit since preview
-    // cannot silently import an obsolete set of boxes. The source is never modified.
-    let current: PackingItem[]|null=null;
-    const receive=(event:Event)=>{
-      const value=(event as CustomEvent<unknown>).detail;
-      if(!value||typeof value!=='object'||Array.isArray(value))return;
-      const envelope=value as Record<string,unknown>;
-      const payload=envelope.data;
-      if(envelope.version!==1||envelope.section!=='packing'||!payload||
-        typeof payload!=='object'||Array.isArray(payload))return;
-      const pack=(payload as Record<string,unknown>).items;
-      if(Array.isArray(pack)&&pack.length<=80&&pack.every(validItem))current=pack as PackingItem[];
-    };
-    window.addEventListener('woonpoints:moving-workspace:snapshot',receive);
-    try {window.dispatchEvent(new Event('woonpoints:moving-workspace:request'));}
-    finally {window.removeEventListener('woonpoints:moving-workspace:snapshot',receive);}
-    const latest=current?packingBoxGroups(current).map(group=>({
-      room:group.room,code:group.box,
-      priority:group.items.some(item=>item.priority)?'direct':'eerst'
-    })):null;
-    if(!latest||JSON.stringify(latest)!==pendingPackingBridge.sourceStamp){
-      setPendingPackingBridge(null);
-      setMessage('De paklijst is veranderd of niet meer beschikbaar. Neem de huidige dozen opnieuw over.');
-      return;
-    }
-    const adopted=groups.map((row,index)=>({...row,id:nextId+index}));
-    const updated=replaceExisting?adopted:[...batches,...adopted];
-    setLastRestore({before:batches,afterStamp:JSON.stringify(updated)});
-    setBatches(updated);
-    setNextId(n=>n+adopted.length);
-    setEditing(null);
-    setDraft(initialDraft);
-    setPendingPackingBridge(null);
-    setApprovedBackup(null);
-    setPendingImport(null);
-    setClearRequested(false);
-    setMessage(adopted.length+' doosgroepen overgenomen in je eigen labelstudio. Pas etiketten aan of gebruik eenmalig Terugzetten; de oorspronkelijke paklijst is ongewijzigd.');
-  }
-
   function downloadBackup() {
     const payload = JSON.stringify({
       format: 'woonpoints-private-moving-plan', version: 1, moveDate, completed,
@@ -5604,6 +5552,58 @@ export function PrivateMovingBoxLabels() {
     } finally {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+  }
+
+  function acceptPackingBridge(replaceExisting:boolean) {
+    if(!pendingPackingBridge)return;
+    if(batchStamp!==pendingPackingBridge.destinationStamp){
+      setPendingPackingBridge(null);
+      setMessage('Studio-labels zijn ondertussen gewijzigd. Open de overdracht opnieuw vanuit de paklijst.');
+      return;
+    }
+    const groups=pendingPackingBridge.rows;
+    if(groups.length>MAX_BATCHES||(replaceExisting?groups.length:batches.length+groups.length)>MAX_BATCHES||
+      (replaceExisting?groups.length:labelCount+groups.length)>MAX_LABELS){
+      setMessage('De overdracht past niet binnen twintig reeksen en 48 etiketten. Maak eerst ruimte of kies bewust voor vervangen.');
+      return;
+    }
+    // A fresh synchronous snapshot ensures that a packing edit since preview
+    // cannot silently import an obsolete set of boxes. The source is never modified.
+    let current: PackingItem[]|null=null;
+    const receive=(event:Event)=>{
+      const value=(event as CustomEvent<unknown>).detail;
+      if(!value||typeof value!=='object'||Array.isArray(value))return;
+      const envelope=value as Record<string,unknown>;
+      const payload=envelope.data;
+      if(envelope.version!==1||envelope.section!=='packing'||!payload||
+        typeof payload!=='object'||Array.isArray(payload))return;
+      const pack=(payload as Record<string,unknown>).items;
+      if(Array.isArray(pack)&&pack.length<=80&&pack.every(validItem))current=pack as PackingItem[];
+    };
+    window.addEventListener('woonpoints:moving-workspace:snapshot',receive);
+    try {window.dispatchEvent(new Event('woonpoints:moving-workspace:request'));}
+    finally {window.removeEventListener('woonpoints:moving-workspace:snapshot',receive);}
+    const latest=current?packingBoxGroups(current).map(group=>({
+      room:group.room,code:group.box,
+      priority:group.items.some(item=>item.priority)?'direct':'eerst'
+    })):null;
+    if(!latest||JSON.stringify(latest)!==pendingPackingBridge.sourceStamp){
+      setPendingPackingBridge(null);
+      setMessage('De paklijst is veranderd of niet meer beschikbaar. Neem de huidige dozen opnieuw over.');
+      return;
+    }
+    const adopted=groups.map((row,index)=>({...row,id:nextId+index}));
+    const updated=replaceExisting?adopted:[...batches,...adopted];
+    setLastRestore({before:batches,afterStamp:JSON.stringify(updated)});
+    setBatches(updated);
+    setNextId(n=>n+adopted.length);
+    setEditing(null);
+    setDraft(initialDraft);
+    setPendingPackingBridge(null);
+    setApprovedBackup(null);
+    setPendingImport(null);
+    setClearRequested(false);
+    setMessage(adopted.length+' doosgroepen overgenomen in je eigen labelstudio. Pas etiketten aan of gebruik eenmalig Terugzetten; de oorspronkelijke paklijst is ongewijzigd.');
   }
 
   function downloadBackup() {
