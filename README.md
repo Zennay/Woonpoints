@@ -243,3 +243,19 @@ extra kosten; automatisch synchroniseren tussen panelen gebeurt nooit. De woning
 wissen wist de aparte kostenberekening niet: gebruik daarvoor **Wis beide scenario's**.
 De gegevens bestaan uitsluitend in het browser-tabblad en worden nergens geüpload.
 Exporteer alleen zelf gekozen privébestanden, zonder namen of adressen.
+
+
+### Eén compleet eigen beslisdossier in plaats van losse exports
+
+Na het bewust overnemen van twee woningen naar de kostenvergelijker toont
+**Hoe passen deze woningen bij je oorspronkelijke voorkeuren?** opnieuw
+de handmatig vastgelegde kamers, reistijd, balkon en oorspronkelijke
+geschiktheid. De knop **Download volledig beslisdossier (woning + kosten)**
+schrijft pas op jouw verzoek een begrensd TXT-bestand met de bevroren
+woninglijst- en voorkeurenmomentopname én je later handmatig ingevoerde
+maand- en eenmalige kosten. Een wijziging in het kostenformulier verandert
+niet achteraf je oorspronkelijke woningkenmerken of voorkeuren.
+Gebruik opnieuw de overdrachtsknop om bewust een nieuwe momentopname te maken.
+Het is geen officieel woningaanbod, toewijzings- of huurtoeslagadvies.
+Bestanden kunnen via de door jou gekozen opslagprovider buiten Woonpoints komen;
+zonder downloaden blijft alles uitsluitend in dit tabblad.
