@@ -3839,7 +3839,7 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const monthCount=month?.month===activeMonth?month?.count??null:null;
   const discrepancy=monthCount!==null && diaryTotal>0 && diaryReacted!==monthCount;
   return <>
-    <section className="panel" aria-labelledby="private-month-pulse-heading">
+    <section className="panel private-month-pulse" aria-labelledby="private-month-pulse-heading">
       <div>
         <p className="eyebrow">MIJN EIGEN MAANDOVERZICHT · PRIVÉ EN ONGEVERIFIEERD</p>
         <h2 id="private-month-pulse-heading">Mijn zelf genoteerde voortgang</h2>
