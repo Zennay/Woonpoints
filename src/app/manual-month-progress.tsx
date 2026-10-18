@@ -5434,10 +5434,13 @@ export function PrivateMovingBoxLabels() {
   }))), [batches]);
   const printRooms=useMemo(()=>[...new Set(batches.map(b=>b.room))].sort((a,b)=>
     a.localeCompare(b,'nl-NL')),[batches]);
+  // Removed/renamed rooms must not leave an invisible stale filter while
+  // the select visibly says "Alle kamers".
+  const effectivePrintRoom=printRooms.includes(printRoom)?printRoom:'alle';
   const printLabels=useMemo(()=>labels.filter(label=>
-    (printRoom==='alle'||label.room===printRoom)&&
+    (effectivePrintRoom==='alle'||label.room===effectivePrintRoom)&&
     (printPriority==='alle'||label.priority===printPriority)
-  ),[labels,printRoom,printPriority]);
+  ),[labels,effectivePrintRoom,printPriority]);
   const pages = useMemo(() => Array.from({length: Math.ceil(printLabels.length / 6)},
     (_, i) => printLabels.slice(i * 6, i * 6 + 6)), [printLabels]);
   const backupPreview = useMemo(() => writeBoxLabelBackup(batches), [batches]);
