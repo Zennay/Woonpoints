@@ -18,4 +18,4 @@ Dit is **geen juridische borgsomvordering**, geen bewijs van een werkelijk betaa
 
 ## Integratie
 
-Nieuwe zelfstandige clientcomponent `src/app/private-deposit-ledger.tsx` is in `src/app/page.tsx` ingevoegd en onder `private-deposit-heading` toegevoegd aan QuickFind. De bestaande verhuismap, nazorg, inspectie, kostenboek, importcontracten en de `BOT_DRY_RUN`-grens zijn onveranderd. Bestaande verplichte CI en merge/release-autorisatie blijven vereist; de broncommit is geen bewijs van productie-deployment.
+De clientcomponent is in de bestaande Docker-allowlisted `src/app/page.tsx` geïntegreerd en onder `private-deposit-heading` toegevoegd aan QuickFind. Geen nieuwe Docker-COPY-bron of wildcard-toestemming nodig. De bestaande verhuismap, nazorg, inspectie, kostenboek, importcontracten en de `BOT_DRY_RUN`-grens zijn onveranderd. Bestaande verplichte CI en merge/release-autorisatie blijven vereist; de broncommit is geen bewijs van productie-deployment.
