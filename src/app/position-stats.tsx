@@ -539,10 +539,11 @@ const defaults: Preferences = {maxRent: 1000, minRooms: 2, maxTravel: 45, prefer
 const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: false};
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
-export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingPrefill}: {
+export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingPrefill, onMovePrefill}: {
   onCostPrefill?: (selected: [Home, Home], preferences: Preferences) => void;
   onPlanPrefill?: (selected: Home) => void;
   onViewingPrefill?: (selected: [Home, Home]) => void;
+  onMovePrefill?: (selected: Home) => void;
 } = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
@@ -902,6 +903,14 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
                   document.getElementById('private-plan-title')?.scrollIntoView({behavior:'smooth', block:'start'});
                 }}>
                 Plan vervolgactie voor deze woning ↓
+              </button>}
+              {onMovePrefill && <button type="button" className="secondary"
+                onClick={() => {
+                  onMovePrefill({...row.home});
+                  setNotice('Jouw eigen woningkenmerken aangeboden aan het vrijblijvende verhuisplan. Daar bevestig je eerst of suggesties worden toegevoegd.');
+                  document.getElementById('private-moving-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+                }}>
+                Bereid verhuisplan voor deze woning voor ↓
               </button>}
               <button type="button" className="secondary" onClick={() => {
                 setCompared([]);
@@ -1448,6 +1457,7 @@ export function ManualHousingDecisionWorkspace() {
     useState<{label:string; kind?:PrivatePlanKind} | null>(null);
   const [longTermOffer, setLongTermOffer] = useState<PrivateLongTermOffer | null>(null);
   const [viewingOffer, setViewingOffer] = useState<[string, string] | null>(null);
+  const [movingOffer, setMovingOffer] = useState<Home | null>(null);
   return (
     <>
       <ManualHousingShortlist onCostPrefill={(selected, preferences) =>
@@ -1456,7 +1466,8 @@ export function ManualHousingDecisionWorkspace() {
           preferences: {...preferences}
         })}
         onPlanPrefill={home => setPlanPrefill({...home})}
-        onViewingPrefill={selected => setViewingOffer([selected[0].label, selected[1].label])} />
+        onViewingPrefill={selected => setViewingOffer([selected[0].label, selected[1].label])}
+        onMovePrefill={home => setMovingOffer({...home})} />
       <ManualHousingCostComparison handoff={handoff}
         onLongTermOffer={offer => setLongTermOffer(offer)} />
       <PrivateLongTermHousingCosts offer={longTermOffer}
@@ -1465,6 +1476,7 @@ export function ManualHousingDecisionWorkspace() {
         onOfferHandled={() => setViewingOffer(null)}
         onPlanFollowup={label => setPlanPrefill({label, kind:'beslissing'})} />
       <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
+      <PrivateMovingChecklist offer={movingOffer} onOfferHandled={() => setMovingOffer(null)} />
     </>
   );
 }
@@ -3256,7 +3268,10 @@ function privateMoveArchiveRead(raw: string): {movingDate:string;items:PrivateMo
     return null;
   }
 }
-export function PrivateMovingChecklist() {
+export function PrivateMovingChecklist({offer,onOfferHandled}: {
+  offer?: Home | null;
+  onOfferHandled?: () => void;
+} = {}) {
   const [movingDate,setMovingDate] = useState('');
   const [items,setItems] = useState<PrivateMoveTask[]>(privateMoveDefaults);
   const [customLabel,setCustomLabel] = useState('');
@@ -3289,6 +3304,37 @@ export function PrivateMovingChecklist() {
     setCustomLabel('');
     setPendingImport(null);
     setMessage('Eigen taak toegevoegd. Alleen in dit browsertabblad.');
+  }
+
+
+  // The optional shortlist-to-move transfer is intentionally additive and
+  // does not auto-accept a home, clear checked tasks or save anything.
+  const offeredSuggestions = offer ? ([
+    {label:'Bepaal verhuisdozen voor '+offer.rooms+' zelf genoteerde kamers',offset:-45},
+    {label:'Controleer budget bij eigen huurindicatie van €'+offer.rent,offset:-45},
+    {label:'Loop je eigen reisroute van '+offer.travel+' minuten na',offset:-21},
+    {label:'Meet zelf de doorgangen en indeling voor '+offer.rooms+' kamers',offset:-7},
+    ...(offer.balcony ? [{label:'Controleer de eigen gewenste balkoninrichting',offset:-7}] : [])
+  ] as const).filter(row=>!items.some(item=>item.label.toLowerCase()===row.label.toLowerCase())) : [];
+  const offerWellFormed = Boolean(offer && normalizeManualHome(offer) &&
+    typeof offer.label === 'string' && offer.label.trim() === offer.label &&
+    offer.label.length >= 1 && offer.label.length <= 64);
+  const transferWillFit = offeredSuggestions.length > 0 && offeredSuggestions.length <= 36-items.length;
+  function acceptShortlistSuggestion() {
+    if (!offer || !offerWellFormed || !transferWillFit || pendingImport || confirmReset) {
+      setMessage('Overdracht niet toegepast. Controleer eerst bestaande herstel-/wisvragen en de maximale checklist.');
+      return;
+    }
+    const proposed=offeredSuggestions.map((row,index)=>({
+      id:'c-'+Date.now().toString(36)+'-'+index.toString(36)+'-'+Math.random().toString(36).slice(2,10),
+      label:row.label,
+      offset:row.offset,
+      done:false
+    }));
+    setItems(current=>[...current,...proposed]);
+    setFilter('open');
+    setMessage(proposed.length+' nieuwe stappen uit jouw eigen woningaannames toegevoegd. Je overige taken en vinkjes zijn behouden; geen woning geaccepteerd of toegewezen.');
+    onOfferHandled?.();
   }
 
   // At most five calendar entries, one per unfinished phase. This is an
@@ -3402,6 +3448,31 @@ export function PrivateMovingChecklist() {
         jouw voortgang wilt bewaren.</p>
     </div>
     <div>
+      {offer && <div className="month-csv-confirm" role="group"
+        aria-label="Bevestig verhuisplan op basis van eigen woning">
+        <h3>Vrijblijvende stappen op basis van jouw eigen woningnotitie</h3>
+        <p>Voor <strong>{offer.label}</strong> heb je zelf {offer.rooms} kamers,
+          €{offer.rent} maandhuur, {offer.travel} minuten reistijd
+          {offer.balcony ? ' en een balkon' : ' en geen balkon'} ingevuld.
+          Dit zijn niet extern gecontroleerde gegevens en er is geen
+          woningtoewijzing of contract bevestigd.</p>
+        <p>Voeg alleen naar eigen keuze de volgende
+          <strong> {offeredSuggestions.length} nieuwe checkliststappen</strong> toe.
+          Al bestaande gelijknamige taken worden overgeslagen. Eerdere
+          voortgang en de verhuisdatum blijven exact behouden.</p>
+        {offerWellFormed && offeredSuggestions.length>0 &&
+          <ul>{offeredSuggestions.map(item=><li key={item.label}>{item.label}</li>)}</ul>}
+        {!transferWillFit && <p role="alert">Er is onvoldoende ruimte in je checklist
+          of deze suggesties staan er al. Verwijder desgewenst eerst eigen taken.</p>}
+        {(pendingImport || confirmReset) && <p role="alert">Rond eerst een openstaand herstel-
+          of wisverzoek af voordat je suggesties toevoegt.</p>}
+        <button type="button" disabled={!offerWellFormed || !transferWillFit || Boolean(pendingImport) || confirmReset}
+          onClick={acceptShortlistSuggestion}>Ja, voeg alleen deze stappen toe</button>
+        <button type="button" className="secondary" onClick={()=>{
+          onOfferHandled?.();
+          setMessage('Voorstel genegeerd. De bestaande checklist blijft ongewijzigd.');
+        }}>Nee, behoud mijn eigen checklist</button>
+      </div>}
       <label htmlFor="moving-date">Mijn vermoedelijke verhuisdag (optioneel)</label>
       <input id="moving-date" type="date" min="2000-01-01" max="2099-12-31"
         value={movingDate} onChange={event=>{
