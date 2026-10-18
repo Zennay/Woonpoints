@@ -1,5 +1,5 @@
 import { PrivateMovingDayTimeline } from './manual-month-progress';
-import PrivateMovingPackingInventory from './private-moving-inventory';
+import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
