@@ -275,6 +275,74 @@ const readBackup = (text: string): AftercareBackup => {
   return { items: data.items as Item[], history: events };
 };
 
+
+// Combine only independently validated local backups. Identical IDs with
+// changed content are conflicts, never silently edited or renamed. Reuse the
+// exact 16KiB v2 import contract before exposing any merged state.
+function planPrivateAftercareMerge(
+  current: AftercareBackup, additional: AftercareBackup
+): {
+  ready: boolean; reason: string; items: Item[]; history: FollowUp[];
+  newPoints: number; newContacts: number; skippedPoints: number;
+  skippedContacts: number; conflictingPoints: number; conflictingContacts: number;
+} {
+  const existingPoints = new Map(current.items.map(item => [item.id, item]));
+  const existingContacts = new Map(current.history.map(event => [event.id, event]));
+  const pointFields = (row: Item) => JSON.stringify([
+    row.id, row.title, row.room, row.priority, row.status, row.due, row.note, row.created
+  ]);
+  const contactFields = (row: FollowUp) => JSON.stringify([
+    row.id, row.issueId, row.kind, row.day, row.detail
+  ]);
+  let skippedPoints = 0;
+  let skippedContacts = 0;
+  let conflictingPoints = 0;
+  let conflictingContacts = 0;
+  const newPoints: Item[] = [];
+  const newContacts: FollowUp[] = [];
+  for (const row of additional.items) {
+    const existing = existingPoints.get(row.id);
+    if (!existing) newPoints.push({ ...row });
+    else if (pointFields(existing) === pointFields(row)) skippedPoints++;
+    else conflictingPoints++;
+  }
+  for (const row of additional.history) {
+    const existing = existingContacts.get(row.id);
+    if (!existing) newContacts.push({ ...row });
+    else if (contactFields(existing) === contactFields(row)) skippedContacts++;
+    else conflictingContacts++;
+  }
+  const merged = {
+    items: [...current.items.map(row => ({ ...row })), ...newPoints],
+    history: [...current.history.map(row => ({ ...row })), ...newContacts]
+  };
+  const base = {
+    ...merged,
+    newPoints: newPoints.length,
+    newContacts: newContacts.length,
+    skippedPoints, skippedContacts, conflictingPoints, conflictingContacts
+  };
+  const fail = (reason: string) => ({ ...base, ready: false, reason });
+  if (conflictingPoints || conflictingContacts) {
+    return fail('Overeenkomstige record-ID’s hebben afwijkende gegevens. Samenvoegen is geblokkeerd: kies zelf welk volledig dossier je wilt herstellen; er wordt niets overschreven.');
+  }
+  if (!newPoints.length && !newContacts.length) {
+    return fail('Alle aangeleverde punten en contactmomenten staan al ongewijzigd in dit tabblad.');
+  }
+  if (merged.items.length > LIMIT || merged.history.length > 160) {
+    return fail('Te veel gezamenlijke punten of contactmomenten voor het bestaande privé-dossier.');
+  }
+  const payload = JSON.stringify({kind: KIND, schema: 2, ...merged}, null, 2);
+  if (new TextEncoder().encode(payload).length > MAX_BYTES) {
+    return fail('Samenvoegen zou de bestaande veilige 16 KiB JSON-back-uplimiet overschrijden.');
+  }
+  // Uses the unchanged authoritative import validator to enforce referential
+  // integrity, eight notes per issue and exact recognised schema fields.
+  try { readBackup(payload); }
+  catch { return fail('Samenvoegen zou ongeldige of te veel contactnotities opleveren.'); }
+  return {...base, ready: true, reason: ''};
+}
+
 function download(name: string, body: string, mime: string) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(new Blob([body], { type: mime }));
@@ -1066,6 +1134,7 @@ function PrivateMoveAftercare() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
+  const [incomingMode, setIncomingMode] = useState<'replace' | 'merge'>('replace');
   const [incomingSource, setIncomingSource] = useState('');
   const [incomingRiskApproved, setIncomingRiskApproved] = useState(false);
   const [aftercareImportUndo, setAftercareImportUndo] = useState<{
@@ -1227,6 +1296,8 @@ function PrivateMoveAftercare() {
     pendingJsonExport.historyCount === history.length;
   const aftercareImportSignature = JSON.stringify({ items, history });
   const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
+  const incomingMerge = incoming === null ? null :
+    planPrivateAftercareMerge({items, history}, incoming);
   const aftercareUndoCurrent = aftercareImportUndo !== null &&
     aftercareImportUndo.importedSignature === aftercareImportSignature;
   const removalUndoCurrent = removalUndo !== null &&
@@ -1934,6 +2005,7 @@ function PrivateMoveAftercare() {
     const file = event.target.files?.[0];
     event.target.value = '';
     setIncoming(null);
+    setIncomingMode('replace');
     setIncomingSource('');
     setIncomingRiskApproved(false);
     if (!file) return;
@@ -1980,21 +2052,33 @@ function PrivateMoveAftercare() {
   function confirmAftercareImport() {
     if (incoming === null || !incomingCurrent || !incomingRiskApproved) {
       setIncomingRiskApproved(false);
-      setMessage('Import geweigerd: controleer eerst de actuele wijzigingen en bevestig de vervanging opnieuw.');
+      setMessage('Import geweigerd: controleer opnieuw het actuele dossier en de gekozen importwijze.');
       return;
     }
+    const merged = incomingMode === 'merge'
+      ? planPrivateAftercareMerge({items, history}, incoming) : null;
+    if (merged && !merged.ready) {
+      setIncomingRiskApproved(false);
+      setMessage('Samenvoegen geweigerd: ' + merged.reason);
+      return;
+    }
+    const next: AftercareBackup = merged
+      ? {items: merged.items, history: merged.history}
+      : {items: incoming.items, history: incoming.history};
     const previous: AftercareBackup = {
       items: items.map(item => ({ ...item })),
       history: history.map(event => ({ ...event }))
     };
-    const importedSignature = JSON.stringify({ items: incoming.items, history: incoming.history });
+    const importedSignature = JSON.stringify(next);
     setAftercareImportUndo({ previous, importedSignature });
-    setItems(incoming.items);
-    setHistory(incoming.history);
+    setItems(next.items);
+    setHistory(next.history);
     resetAftercareRestoreEphemera();
     setHistoryTarget(null);
     setHistoryDeletePending(null);
+    setClearUndo(null);
     setIncoming(null);
+    setIncomingMode('replace');
     setIncomingSource('');
     setIncomingRiskApproved(false);
     setDraft(EMPTY);
@@ -2005,7 +2089,9 @@ function PrivateMoveAftercare() {
     setIssuePriority('alle');
     setIssueRoom('alle');
     setFilter('alles');
-    setMessage('Import bevestigd. Alle punten zichtbaar; de vorige lokale status is eenmaal veilig herstelbaar zolang niets verandert.');
+    setMessage(incomingMode === 'merge'
+      ? 'Eigen bestanden veilig samengevoegd: bestaande punten en contactnotities niet vervangen. De vorige tabbladstatus is eenmalig herstelbaar zolang niets verandert.'
+      : 'Import bevestigd. Alle punten zichtbaar; de vorige lokale status is eenmaal veilig herstelbaar zolang niets verandert.');
   }
   function undoAftercareImport() {
     if (!aftercareImportUndo || !aftercareUndoCurrent) {
@@ -2911,13 +2997,44 @@ function PrivateMoveAftercare() {
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && incomingImpact !== null &&
             <div className="aftercare-confirm" role="group" aria-label="Gevolgen nazorgimport beoordelen">
-              <h3>Bekijk welke eigen gegevens worden vervangen</h3>
+              <h3>Kies hoe je dit eigen bestand verwerkt</h3>
+              <div className="aftercare-actions" role="group" aria-label="Manier van eigen nazorgimport">
+                <button type="button" className={incomingMode === 'replace' ? '' : 'secondary'}
+                  aria-pressed={incomingMode === 'replace'} onClick={() => {
+                    setIncomingMode('replace'); setIncomingRiskApproved(false);
+                  }}>Bestaande gegevens vervangen</button>
+                <button type="button" className={incomingMode === 'merge' ? '' : 'secondary'}
+                  aria-pressed={incomingMode === 'merge'} onClick={() => {
+                    setIncomingMode('merge'); setIncomingRiskApproved(false);
+                  }}>Alleen nieuwe gegevens veilig samenvoegen</button>
+              </div>
               <p>Gecontroleerd bestand: {incoming.items.length} punten en {incoming.history.length}
                 {' '}contactmomenten. Huidige tab: {items.length} punten en {history.length}
                 {' '}contactmomenten. Niets wordt gewijzigd vóór je aparte bevestiging.</p>
-              <p>Dit overzicht toont namen, eigen statuswijzigingen en aantallen. Vrije
-                privénotities worden niet weergegeven, maar hun wijzigingen tellen wel mee.</p>
-              {([
+              {incomingMode === 'replace' && <p>Deze vervangende import verwijdert huidige
+                eigen regels die ontbreken in de back-up. Het overzicht toont wijzigingen,
+                inclusief wijzigingen aan verborgen notities, maar nooit hun vrije tekst.</p>}
+              {incomingMode === 'merge' && incomingMerge && <div className="aftercare-history"
+                role="status" aria-live="polite">
+                <h4>Voorbeeld veilig samenvoegen (zonder overschrijven)</h4>
+                <p><strong>{incomingMerge.newPoints} extra eigen punten</strong> en
+                  <strong> {incomingMerge.newContacts} extra contactmomenten</strong>.
+                  {' '}{incomingMerge.skippedPoints} identieke punten en
+                  {' '}{incomingMerge.skippedContacts} identieke contactmomenten blijven ongewijzigd.</p>
+                <p>Bestaande {items.length} punten en {history.length} contactnotities blijven intact.
+                  Na samenvoegen zijn er {incomingMerge.items.length} punten en
+                  {' '}{incomingMerge.history.length} contactmomenten.</p>
+                <p>{incomingMerge.conflictingPoints} conflicterende punt-ID’s en
+                  {' '}{incomingMerge.conflictingContacts} conflicterende contact-ID’s.
+                  Bij hetzelfde ID met andere velden wordt <strong>niets</strong> overschreven,
+                  ook geen verborgen privétekst of zelf genoteerde verzendstatus.</p>
+                {!incomingMerge.ready && <p className="aftercare-warning" role="alert">
+                  Samenvoegen is niet mogelijk: {incomingMerge.reason}
+                </p>}
+                <p>Per punt blijven maximaal 8 contactmomenten gelden; ook na samenvoegen
+                  moet de hele privéback-up binnen de bestaande 16 KiB passen.</p>
+              </div>}
+              {incomingMode === 'replace' && ([
                 {title:'Nazorgpunten', impact:incomingImpact.points},
                 {title:'Zelf genoteerde contactmomenten', impact:incomingImpact.contacts}
               ]).map(group => <details key={group.title} className="aftercare-history">
@@ -2941,16 +3058,24 @@ function PrivateMoveAftercare() {
               <label className="aftercare-check" htmlFor="nazorg-import-impact-ack">
                 <input type="checkbox" id="nazorg-import-impact-ack"
                   checked={incomingCurrent && incomingRiskApproved}
-                  disabled={!incomingCurrent}
+                  disabled={!incomingCurrent || (incomingMode === 'merge' && !incomingMerge?.ready)}
                   onChange={event => setIncomingRiskApproved(event.target.checked)}/>
-                Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen,
-                inclusief mogelijk verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.
+                {incomingMode === 'merge'
+                  ? 'Ik kies uitsluitend nieuwe, niet-conflicterende eigen punten en contactnotities toe te voegen. Ik heb de aantallen en grenzen gecontroleerd; mijn huidige dossier wordt niet vervangen.'
+                  : 'Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen, inclusief verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.'}
               </label>
               <div className="aftercare-actions">
-                <button type="button" disabled={!incomingCurrent || !incomingRiskApproved}
-                  onClick={confirmAftercareImport}>Ja, vervang mijn hele nazorgdossier</button>
+                <button type="button"
+                  disabled={!incomingCurrent || !incomingRiskApproved ||
+                    (incomingMode === 'merge' && !incomingMerge?.ready)}
+                  onClick={confirmAftercareImport}>
+                  {incomingMode === 'merge'
+                    ? 'Ja, voeg uitsluitend deze nieuwe eigen gegevens toe'
+                    : 'Ja, vervang mijn hele nazorgdossier'}
+                </button>
                 <button type="button" className="secondary" onClick={() => {
-                  setIncoming(null); setIncomingSource(''); setIncomingRiskApproved(false);
+                  setIncoming(null); setIncomingMode('replace');
+                  setIncomingSource(''); setIncomingRiskApproved(false);
                   setMessage('Import geannuleerd; bestaande nazorgpunten en contactmomenten behouden.');
                 }}>Annuleer import</button>
               </div>
