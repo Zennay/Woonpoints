@@ -234,3 +234,12 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .housing-choice-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .housing-item button + button { margin-left: 8px; }
 @media (max-width: 520px) { .housing-pair-grid { grid-template-columns: 1fr; } }
+
+/* Browser-memory correction controls: explicit save/cancel and reversible removal. */
+.housing-edit-form { margin: 12px 0; border: 2px solid #b9d1be; border-radius: 12px; background: #fff; padding: 10px; }
+.housing-edit-form fieldset { margin: 0; }
+.housing-edit-form label { font-size: 14px; }
+.housing-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.housing-edit-actions button { margin: 0; }
+.housing-undo { border: 2px solid #355e42; border-radius: 12px; padding: 12px; background: #eef5ef; margin: 12px 0; }
+.housing-undo p { margin: 0 0 10px; }
