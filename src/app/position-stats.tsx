@@ -720,11 +720,11 @@ export function ManualHousingShortlist() {
           {comparison && <div className="housing-pair-grid">
             <article>
               <h4>{homes[compared[0]]?.label}</h4>
-              <p>{comparison.choices[0].suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
+              <p>{comparison.choices[0]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <article>
               <h4>{homes[compared[1]]?.label}</h4>
-              <p>{comparison.choices[1].suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
+              <p>{comparison.choices[1]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <div className="housing-pair-facts">
               <p><strong>Maandhuurverschil:</strong> €{comparison.monthlyRentGap}
