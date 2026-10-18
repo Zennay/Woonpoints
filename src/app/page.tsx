@@ -4525,6 +4525,97 @@ function privateUtilityCalendar(entries: Record<PrivateUtilityKey, PrivateUtilit
   return lines.join('\r\n') + '\r\n';
 }
 
+
+type PrivateUtilityBucket = 'overdue' | 'soon' | 'later' | 'undated' | 'done';
+const PRIVATE_UTILITY_BUCKETS: {
+  id: PrivateUtilityBucket; title: string; description: string
+}[] = [
+  { id: 'overdue', title: 'Eigen controledatum verstreken',
+    description: 'Kijk na of je eigen genoteerde stap is bijgewerkt.' },
+  { id: 'soon', title: 'Binnen 7 kalenderdagen',
+    description: 'Binnenkort zelf controleren; dit is geen officiële deadline.' },
+  { id: 'later', title: 'Later gepland',
+    description: 'Nog niet afgerond, maar je eigen datum ligt verder weg.' },
+  { id: 'undated', title: 'Nog geen datum',
+    description: 'Open taken waarvoor je zelf nog een controlemoment kunt kiezen.' },
+  { id: 'done', title: 'Zelf afgehandeld',
+    description: 'Alleen jouw notitie, niet onafhankelijk geverifieerd.' }
+];
+
+/** Read-only local overview; no reminders scheduled and no external deadlines invented. */
+function PrivateUtilityDeadlineDesk({
+  entries, today
+}: {
+  entries: Record<PrivateUtilityKey, PrivateUtilityStep>; today: string
+}) {
+  const [selected, setSelected] = useState<PrivateUtilityBucket | 'all'>('all');
+  const items = PRIVATE_UTILITIES.map(item => {
+    const step = entries[item.id];
+    let bucket: PrivateUtilityBucket = 'undated';
+    if (step.state === 'confirmed' || step.state === 'not-applicable') bucket = 'done';
+    else if (step.date && handoverValidDay(step.date)) {
+      if (step.date < today) bucket = 'overdue';
+      else {
+        // Gregorian civil dates at UTC noon avoid local DST and offset differences.
+        const days = Math.round((Date.parse(step.date + 'T12:00:00Z') -
+          Date.parse(today + 'T12:00:00Z')) / 86400000);
+        bucket = days <= 7 ? 'soon' : 'later';
+      }
+    }
+    return { ...item, step, bucket };
+  });
+  const counts = Object.fromEntries(PRIVATE_UTILITY_BUCKETS.map(bucket =>
+    [bucket.id, items.filter(item => item.bucket === bucket.id).length]
+  )) as Record<PrivateUtilityBucket, number>;
+  const ordered = items.filter(item => selected === 'all' || item.bucket === selected)
+    .sort((a, b) => {
+      const order = (item: typeof a) => PRIVATE_UTILITY_BUCKETS.findIndex(
+        group => group.id === item.bucket);
+      return order(a) - order(b) || (a.step.date || '9999').localeCompare(
+        b.step.date || '9999') || a.name.localeCompare(b.name, 'nl-NL');
+    });
+  return <section aria-labelledby="utility-deadline-desk-heading"
+    style={{ marginTop: 24, padding: 16, background: '#f3f7f4',
+      border: '1px solid #bbd2c2', borderRadius: 12 }}>
+    <h3 id="utility-deadline-desk-heading">Mijn controle-inbox</h3>
+    <p>Prioriteit uitsluitend op basis van <strong>jouw eigen ingevulde datums</strong>.
+      Dit zijn geen wettelijke deadlines, automatische afspraken of officieel gemelde stappen.</p>
+    <div role="group" aria-label="Filter mijn verhuiscontrolemomenten"
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 9 }}>
+      <button type="button" className="secondary" aria-pressed={selected === 'all'}
+        onClick={() => setSelected('all')}>Alle 6</button>
+      {PRIVATE_UTILITY_BUCKETS.map(bucket => <button type="button"
+        className="secondary" key={bucket.id} aria-pressed={selected === bucket.id}
+        onClick={() => setSelected(bucket.id)}>
+        {bucket.title} ({counts[bucket.id]})
+      </button>)}
+    </div>
+    {ordered.length === 0 ? <p>Geen stappen in dit overzicht.</p> :
+      <ol style={{ marginTop: 14 }}>
+        {ordered.map(item => <li key={item.id} style={{ marginBottom: 12 }}>
+          <strong>{item.name}</strong> · {PRIVATE_UTILITY_BUCKETS.find(
+            bucket => bucket.id === item.bucket)?.title}
+          <br />
+          <span>{item.step.date ? 'Eigen datum: ' + item.step.date :
+            'Geen controledatum gekozen'} · {item.step.state === 'requested'
+            ? 'zelf aangevraagd, wacht op bevestiging' :
+            item.step.state === 'confirmed' ? 'zelf als afgerond genoteerd' :
+            item.step.state === 'not-applicable' ? 'niet van toepassing' :
+            'nog te regelen'}</span>
+          <br />
+          <a href={'#utility-step-' + item.id}>Bewerk deze stap ↑</a>
+        </li>)}
+      </ol>}
+    <p role="status" aria-live="polite">
+      {counts.overdue} eigen datums verstreken · {counts.soon} binnen 7 dagen ·
+      {' '}{counts.undated} open zonder datum. Open of aangevraagd betekent
+      <strong> nooit automatisch bevestigd</strong>.
+    </p>
+    <p>Filteren is alleen schermweergave. Er worden geen taken verwijderd, derden benaderd
+      of notificaties aangemaakt.</p>
+  </section>;
+}
+
 /**
  * A purely manual, ephemeral checklist. No supplier contact, WoningNet access
  * or local storage. A calendar file may be shared by an external calendar app
@@ -4637,7 +4728,7 @@ function PrivateUtilityTransfer() {
       en wat je zelf als afgerond hebt genoteerd. Een status is nooit officiële bevestiging.</p>
     <div style={{ display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 310px), 1fr))', gap: 12 }}>
-      {PRIVATE_UTILITIES.map(item => <fieldset key={item.id} style={{
+      {PRIVATE_UTILITIES.map(item => <fieldset key={item.id} id={'utility-step-' + item.id} style={{
         border: '1px solid #c4d6c9', borderRadius: 12, padding: 14, minWidth: 0
       }}>
         <legend><strong>{item.name}</strong></legend>
@@ -4667,7 +4758,8 @@ function PrivateUtilityTransfer() {
       {' '}{upcoming.length} toekomstige controleherinneringen mogelijk.
     </p>
     {invalid && <p role="alert">Controleer de ingevoerde datums.</p>}
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+    <PrivateUtilityDeadlineDesk entries={entries} today={today} />
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
       <button type="button" disabled={invalid}
         onClick={() => openPreview('txt')}>Bekijk volledig privé-overzicht (TXT)</button>
       <button type="button" className="secondary" disabled={invalid || !upcoming.length}
