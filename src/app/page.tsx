@@ -202,6 +202,51 @@ const csvCell = (value: string) => {
   return '"' + safe.replace(/"/g, '""') + '"';
 };
 
+
+const escapeIcs = (value: string) => value
+  .replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n')
+  .replace(/;/g, '\\;').replace(/,/g, '\\,');
+function foldIcs(line: string): string {
+  const encode = new TextEncoder();
+  let length = 0;
+  let output = '';
+  for (const point of line) {
+    const size = encode.encode(point).length;
+    if (length + size > 70) { output += '\r\n '; length = 1; }
+    output += point;
+    length += size;
+  }
+  return output;
+}
+function nextDay(day: string) {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+function calendarFor(items: Item[]): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const entries = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'CALSCALE:GREGORIAN',
+    'PRODID:-//Woonpoints//Private Aftercare//NL', 'METHOD:PUBLISH'
+  ];
+  for (const item of items) {
+    if (!validDate(item.due) || item.status === 'afgerond') continue;
+    entries.push(
+      'BEGIN:VEVENT',
+      'UID:' + item.id + '@woonpoints.local',
+      'DTSTAMP:' + stamp,
+      'DTSTART;VALUE=DATE:' + item.due.replace(/-/g, ''),
+      'DTEND;VALUE=DATE:' + nextDay(item.due).replace(/-/g, ''),
+      'SUMMARY:' + escapeIcs('Eigen nazorg: ' + item.room + ' — ' + item.title),
+      'DESCRIPTION:' + escapeIcs('Persoonlijk ingevoerde deadline, geen afspraak met verhuurder. Status: ' + item.status),
+      'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY',
+      'DESCRIPTION:Eigen nazorgherinnering', 'END:VALARM',
+      'END:VEVENT'
+    );
+  }
+  entries.push('END:VCALENDAR');
+  return entries.map(foldIcs).join('\r\n') + '\r\n';
+}
+
 function PrivateMoveAftercare() {
   const [items, setItems] = useState<Item[]>([]);
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -215,6 +260,11 @@ function PrivateMoveAftercare() {
   const currentDay = today();
   const active = items.filter(item => item.status !== 'afgerond');
   const overdue = active.filter(item => item.due && item.due < currentDay);
+  const dueActive = active.filter(item => item.due).sort((a, b) =>
+    a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
+  const horizon = nextDay(new Date(Date.UTC(...currentDay.split('-').map(Number).map((n, i) => i === 1 ? n - 1 : n))).toISOString().slice(0, 10));
+  const upcoming = dueActive.filter(item => item.due >= currentDay && item.due <= horizon);
+
   const shown = useMemo(() => items.filter(item => filter === 'alles' ||
     (filter === 'actief' ? item.status !== 'afgerond' : item.status === 'afgerond'))
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
@@ -271,6 +321,12 @@ function PrivateMoveAftercare() {
     download('woonpoints-nazorg.csv', [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n',
       'text/csv;charset=utf-8');
     setMessage('Privé-CSV gemaakt. Dit is geen verstuurde gebrekenmelding.');
+  }
+
+  function exportCalendar() {
+    if (dueActive.length === 0) { setMessage('Voeg eerst een open punt met eigen streefdatum toe.'); return; }
+    download('woonpoints-eigen-nazorgdeadlines.ics', calendarFor(dueActive), 'text/calendar;charset=utf-8');
+    setMessage('Eigen ICS-agenda gemaakt. Import en herinneringen worden uitsluitend door je agenda-app beheerd.');
   }
   function exportText() {
     const lines = ['WOONPOINTS — eigen nazorgoverzicht', 'Niet verzonden of juridisch geverifieerd.', ''];
@@ -336,6 +392,24 @@ function PrivateMoveAftercare() {
           <li><strong>{overdue.length}</strong> eigen deadlines verstreken</li>
           <li><strong>{items.filter(item => item.status === 'afgerond').length}</strong> afgerond</li>
         </ul>
+      </section>
+
+      <section className="panel" aria-labelledby="nazorg-calendar-title">
+        <div>
+          <p className="eyebrow">EIGEN AGENDA</p>
+          <h2 id="nazorg-calendar-title">Deadline-overzicht</h2>
+          <p>Bekijk je eerstvolgende zelf gekozen streefdatums. Exporteer alleen niet-afgeronde punten met een datum naar een ICS-bestand. Import in een agenda-app is altijd een afzonderlijke keuze.</p>
+          <p><strong>{upcoming.length}</strong> punten binnen 31 kalenderdagen · <strong>{overdue.length}</strong> verstreken · <strong>{dueActive.length}</strong> met nog open eigen datum.</p>
+          <button disabled={!dueActive.length} onClick={exportCalendar}>Download ICS voor mijn agenda</button>
+          <p>Geen pushmeldingen, geen automatische agendatoegang en geen aangenomen verhuurderafspraken. De agenda-app kan het gekozen bestand buiten Woonpoints bewaren of synchroniseren.</p>
+        </div>
+        <div>
+          <h3>Komende eigen streefdatums</h3>
+          {upcoming.length === 0 ? <p>Geen open punten met een datum in de komende 31 dagen.</p> :
+            <ol>{upcoming.slice(0, 12).map(item =>
+              <li key={item.id}><strong>{item.due}</strong> — {item.room}: {item.title} ({item.priority}, {item.status})</li>)}</ol>}
+          {upcoming.length > 12 && <p>En nog {upcoming.length - 12} punten. Bekijk de volledige lijst hieronder of exporteer de ICS.</p>}
+        </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-form-title">
         <div>
