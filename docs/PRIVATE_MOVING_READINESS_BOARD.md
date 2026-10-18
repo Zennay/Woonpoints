@@ -27,19 +27,28 @@ organisaties, boekingen, accountdata of berichten naar derden.
    controledatums en invoerwaarschuwingen.
 3. Volg **Open en werk bij** om het echte brononderdeel te openen. Na wijzigingen,
    import of undo wordt het regiebord automatisch bijgewerkt.
-4. Via **Privéstatus bekijken en zelf exporteren** kan de gebruiker exact de
-   gegenereerde TXT inspecteren en daarna bewust downloaden. Het overzicht
-   bevat alleen vaste onderdelen, aantallen, aandachtspunten en interne
-   `#`-ankers; **geen persoonlijke acties, bedragen, contactnamen of adressen**.
-5. Als een onderdeel nog niet geladen is, wordt geen onvolledig overzicht
-   geëxporteerd. Als de teller vóór downloaden verandert, vervalt de preview.
+4. Het regiebord verzamelt de **open, zelfgekozen controledatums** uit de
+   bestaande plan-B- en nutsvoorzieningsmodules, sorteert die op datum en
+   toont verwijzingen naar de oorspronkelijke invoer. Afgeronde taken verdwijnen
+   automatisch uit de open agenda.
+5. Via **Privéstatus bekijken en zelf exporteren** controleer je vooraf de
+   exacte TXT en optioneel één gecombineerde, handmatig te downloaden
+   **ICS-agenda-export**. De TXT bevat alleen vaste onderdelen, aantallen en
+   interne `#`-ankers. De ICS bevat uitsluitend zelfgekozen datums en vaste
+   scenariotitels, dus **geen privéacties, bedragen, contactnamen of adressen**.
+   Zonder open datums is de agendaknop uitgeschakeld.
+6. Als een onderdeel nog niet geladen is, wordt geen onvolledig overzicht
+   geëxporteerd. Als invoer vóór het downloaden verandert, vervalt de preview.
 
 ## Gegevensveiligheid
 
 - Geen netwerkaanroep, API-, SQLite- of serverwijziging.
 - Geen localStorage, cookies of automatische browseropslag. Alle voortgang wordt
   alleen uit de reeds bestaande tabbladstatus van de broncomponenten gelezen.
-- Geen externe meldingen, Agenda-import, betalingen of automatische acties.
+- Geen externe meldingen, agenda-import, betalingen of automatische acties.
+- Agenda-export voldoet aan RFC 5545-regelvouw en geeft zelfgekozen, niet
+  officieel gevalideerde dagafspraken; daadwerkelijk importeren blijft een
+  handmatige keuze van de gebruiker.
 - Eigen TXT-download is opt-in; externe synchronisatie van de downloadmap is
   een persoonlijke keuze.
 - Geen wijzigingen in de zelfstandige privé-back-upformaten of herstel/undo
@@ -49,6 +58,7 @@ organisaties, boekingen, accountdata of berichten naar derden.
 
 Geïntegreerd in de bestaande gesloten productiebron
 `src/app/page.tsx`. Vier componenten publiceren uitsluitend
-`{done,total,attention,invalid}` via stabiele React-state callbacks;
+`{done,total,attention,invalid,reminders?}` via stabiele React-state callbacks;
+  `reminders` bevat alleen vaste scenario-ID/naam en zelfgekozen datum;
 het dashboard leest geen private detailwaarden. Toegevoegd aan de bestaande
 anker-/zoeknavigatie. Geen nieuwe dependencies, CI-workflows of QA-bestanden.
