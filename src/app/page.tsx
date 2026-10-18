@@ -1,4 +1,5 @@
 import { PrivateMovingDayTimeline } from './manual-month-progress';
+import PrivateMovingPackingInventory from './private-moving-inventory';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
@@ -47,6 +48,7 @@ export default function HomePage() {
             ['private-moving-volume-heading', 'Verhuisvolume'],
             ['private-moving-workspace-heading', 'Verhuiswerkmap'],
             ['private-moving-day-heading', 'Verhuisdag'],
+            ['private-packing-heading', 'Paklijst'],
             ['private-handover-heading', 'Sleutelrapport'],
             ['private-document-readiness-heading', 'Documenten'],
             ['private-moving-expenses-heading', 'Werkelijke kosten'],
@@ -83,6 +85,7 @@ export default function HomePage() {
       <PrivateMovingVolume />
       <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
+      <PrivateMovingPackingInventory />
       <PrivateMovingHandover />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
