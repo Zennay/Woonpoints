@@ -26,6 +26,28 @@ The first baseline intentionally does **not** place live WoningNet reactions. Br
 - Per-account consent and execution audit trail.
 - Email/WhatsApp notifications as a later integration phase.
 
+
+## Handmatige maandgrafiek (zonder WoningNet-koppeling)
+
+Het dashboard biedt naast de bestaande losse positieberekening nu een
+**maandelijkse eindpositiegeschiedenis**. Vul per woning uitsluitend
+`JJJJ-MM-DD,positie/totaal` in, bijvoorbeeld `2026-09-21,8/110`.
+De pagina groepeert de getypte resultaten per kalendermaand en toont een
+responsieve grafiek, een toegankelijk tabeloverzicht, gemiddeld en mediaan
+van de eindpositie, een gelijk gewogen positiepercentiel en het verschil
+met de voorgaande **ingevulde** maand.
+
+- Maximaal 120 handmatig getypte woningen, 24 maanden, 8192 tekens.
+- Alleen echte geldige kalenderdagen en posities 1..aantal zijn toegestaan.
+- **Alle gegevens blijven in het geheugen van dit browsertabblad**.
+  Er is geen API-request, cookie, accountkoppeling, lokale opslag of export;
+  met **Wis maandhistorie** kun je de notities direct leegmaken.
+- Percentage betekent relatieve positie **binnen je ingevulde woningen**,
+  niet de kans op woningtoewijzing. Een lege maand wordt nooit geschat.
+- Dit is een onafhankelijk M1-instrument tot een toestemming- en
+  brongeverifieerde read-only WoningNet-invoer echt beschikbaar is.
+  Het beïnvloedt zoekpunten, reacties en `BOT_DRY_RUN` niet.
+
 ## Repository layout
 
 - `src/app/` — Next.js dashboard shell.

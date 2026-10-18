@@ -80,3 +80,53 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .position-stats-results dt { font-size: 13px; }
 .position-stats-results dd { margin: 8px 0 0; font-size: 22px; font-weight: 800; }
 @media (max-width: 650px) { .position-stats-results dl { grid-template-columns: 1fr; } }
+
+/* Explicitly typed and never transmitted position history, M1 read-only preview. */
+.month-position-history p { color: #536059; line-height: 1.5; }
+.month-position-history label { display: block; font-weight: 700; margin-bottom: 10px; }
+.month-position-history textarea {
+  display: block; width: 100%; min-height: 150px; padding: 12px;
+  resize: vertical; font: inherit; color: #18231c; background: #fff;
+  border: 2px solid #536d5a; border-radius: 10px;
+}
+.month-position-history button {
+  border: 0; border-radius: 9px; min-height: 44px; padding: 10px 16px;
+  color: #fff; background: #355e42; font: inherit; font-weight: 700; cursor: pointer;
+}
+.month-position-history button:disabled { opacity: .45; cursor: not-allowed; }
+.month-position-history button:focus-visible,
+.month-position-history textarea:focus-visible,
+.month-position-history summary:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+.month-position-history summary { cursor: pointer; font-weight: 700; color: #355e42; }
+.month-position-results h3 { font-size: 18px; margin-bottom: 10px; }
+.month-position-bars {
+  display: flex; align-items: flex-end; gap: 12px; overflow-x: auto;
+  padding: 10px 4px 16px; border-bottom: 1px solid #dfe7e1;
+}
+.month-bar-column {
+  flex: 1 0 58px; min-width: 58px; max-width: 108px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.month-bar-value { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.month-bar-rail {
+  display: block; height: 150px; width: 38px; position: relative;
+  background: #edf2ee; border-radius: 7px 7px 0 0;
+  border: 1px solid #d0e0d4; overflow: hidden;
+}
+.month-bar-fill {
+  position: absolute; bottom: 0; left: 0; width: 100%;
+  background: #386e4a; border-radius: 5px 5px 0 0;
+}
+.month-bar-label { text-align: center; font-size: 12px; white-space: nowrap; }
+.month-history-table-wrap { width: 100%; overflow-x: auto; margin-top: 18px; }
+.month-history-table-wrap table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.month-history-table-wrap th, .month-history-table-wrap td {
+  text-align: left; padding: 10px 8px; border-bottom: 1px solid #dfe7e1; white-space: nowrap;
+}
+.month-history-table-wrap thead th { background: #edf2ee; color: #263f31; }
+.month-history-table-wrap caption { text-align: left; margin-bottom: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .month-position-bars *, .month-position-history * { scroll-behavior: auto; animation: none; }
+}
