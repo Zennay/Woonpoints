@@ -5166,6 +5166,30 @@ export function PrivateMovingPackingInventory(){
         een eigen doosnummer komen mee; er wordt geen adres toegevoegd.</p>
       <p>{boxGroups.length} dozen met inhoudsregels · {unlabelled} nog niet uitgepakte
         regel(s) zonder doosnummer niet opgenomen.</p>
+      <div className="boxBridgeAction">
+        <p><strong>Nieuw: gebruik je bestaande doosgegevens in de labelstudio.</strong>
+          Neem kamer, eigen dooscode en prioriteit over als eenmalige, controleerbare
+          momentopname. Privé inhoudsomschrijvingen komen niet mee; die voeg je
+          desgewenst later zelf toe. Bestaande studio-labels blijven intact.</p>
+        <button type="button" disabled={!boxGroups.length||boxGroups.length>20}
+          onClick={()=>{
+            // One explicit same-document transfer. No persistence, storage or remote request.
+            const proposal=boxGroups.map(group=>({
+              room:group.room,code:group.box,
+              priority:group.items.some(item=>item.priority)?'direct':'eerst'
+            }));
+            window.dispatchEvent(new CustomEvent('woonpoints:box-studio:propose',{
+              detail:{version:1,groups:proposal}
+            }));
+            window.location.hash='#dozenlabels';
+          }}>
+          Neem {boxGroups.length} eigen {boxGroups.length===1?'doos':'dozen'} over naar labelstudio
+        </button>
+        {boxGroups.length>20&&<p role="status">
+          De studio kan maximaal twintig unieke doosreeksen overnemen.
+          Gebruik de bestaande losse HTML-export of beperk eerst het aantal
+          actuele doosgroepen; er worden geen groepen stilzwijgend weggelaten.</p>}
+      </div>
       {duplicateCodes.length>0&&<p role="status">
         Let op: de dooscode(s) {duplicateCodes.join(', ')} komen in meerdere
         kamers voor. Controleer de kamernaam op ieder geprint etiket.</p>}
