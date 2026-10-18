@@ -1188,6 +1188,9 @@ export function PrivateMovingVolume() {
   const [capacity,setCapacity]=useState('10');
   const [message,setMessage]=useState('');
   const [preview,setPreview]=useState<string|null>(null);
+  const [pendingArchive,setPendingArchive]=useState<{
+    rows:Array<Omit<Item,'id'>>; margin:string; capacity:string; signature:string
+  }|null>(null);
   const parse=(raw:string,min:number,max:number,integer=false):number|null=>{
     const value=raw.trim();
     if(!/^\d+(?:[.,]\d{1,2})?$/.test(value))return null;
@@ -1209,6 +1212,7 @@ export function PrivateMovingVolume() {
   const rawTotal=measured.reduce((sum,row)=>sum+(row.volume??0),0);
   const loadEstimate=valid?rawTotal*(1+overhead!/100):0;
   const safeTotal=valid&&loadEstimate<=200;
+  const currentSignature=JSON.stringify({rows:items.map(({id,...rest})=>rest),margin,capacity});
   const trips=safeTotal&&loadEstimate>0?Math.ceil(loadEstimate/vanCapacity!):0;
   const fmt=(n:number)=>new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(n);
   const change=(id:number,key:keyof Omit<Item,'id'>,value:string)=>{
@@ -1222,6 +1226,75 @@ export function PrivateMovingVolume() {
     }]);
     setPreview(null);setMessage('');
   };
+  function exportOwnInventory(){
+    if(!safeTotal){setMessage('Herstelbestand kan alleen worden bewaard bij geldige invoer.');return;}
+    const data={format:'woonpoints-private-volume-v1',
+      rows:items.map(({id,...rest})=>rest),margin,capacity};
+    const content=JSON.stringify(data,null,2)+'\n';
+    const url=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;
+    link.download='woonpoints-eigen-verhuisinventaris.json';link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setPendingArchive(null);
+    setMessage('Eigen JSON-inventaris aangeboden. De gekozen opslaglocatie kan synchroniseren.');
+  }
+  async function prepareInventoryRestore(file:File|undefined){
+    setPendingArchive(null);
+    if(!file)return;
+    if(file.size<1||file.size>8192){
+      setMessage('Bestand geweigerd: maximaal 8 KiB privé-JSON.');
+      return;
+    }
+    try {
+      const source=await file.text();
+      if(new TextEncoder().encode(source).byteLength>8192)throw Error('bytes');
+      const candidate:unknown=JSON.parse(source);
+      if(!candidate||typeof candidate!=='object'||Array.isArray(candidate)||
+        Object.getPrototypeOf(candidate)!==Object.prototype)throw Error('root');
+      const doc=candidate as Record<string,unknown>;
+      if(Object.keys(doc).join(',')!=='format,rows,margin,capacity'||
+        doc.format!=='woonpoints-private-volume-v1'||
+        typeof doc.margin!=='string'||typeof doc.capacity!=='string'||
+        !Array.isArray(doc.rows)||doc.rows.length<1||doc.rows.length>25 ||
+        parse(doc.margin,0,50)===null||parse(doc.capacity,1,30)===null)throw Error('shape');
+      const rows:Array<Omit<Item,'id'>>=[];
+      let total=0;
+      for(const line of doc.rows){
+        if(!line||typeof line!=='object'||Array.isArray(line)||
+          Object.getPrototypeOf(line)!==Object.prototype)throw Error('row');
+        const v=line as Record<string,unknown>;
+        if(Object.keys(v).join(',')!=='name,width,depth,height,quantity' ||
+          typeof v.name!=='string'||typeof v.width!=='string'||
+          typeof v.depth!=='string'||typeof v.height!=='string'||
+          typeof v.quantity!=='string'||v.name.trim().length<1||
+          v.name.trim().length>48||/[\u0000-\u001F\u007F]/.test(v.name))throw Error('fields');
+        const w=parse(v.width,1,400),d=parse(v.depth,1,400),
+          h=parse(v.height,1,400),q=parse(v.quantity,0,100,true);
+        if(w===null||d===null||h===null||q===null)throw Error('numbers');
+        total+=w*d*h*q/1000000;
+        rows.push({name:v.name,width:v.width,depth:v.depth,
+          height:v.height,quantity:v.quantity});
+      }
+      if(total*(1+(parse(doc.margin,0,50)??0)/100)>200)throw Error('too-large');
+      if(JSON.stringify(doc,null,2)+'\n'!==source)throw Error('canonical');
+      setPendingArchive({rows,margin:doc.margin,capacity:doc.capacity,signature:currentSignature});
+      setMessage('Geldige eigen inventaris gelezen. Bevestig apart voordat je de huidige regels vervangt.');
+    } catch {
+      setMessage('Verhuisbestand geweigerd: verkeerde velden, wijziging, hoeveelheid of formaat. Huidige inventaris behouden.');
+    }
+  }
+  function restoreOwnInventory(){
+    if(!pendingArchive||pendingArchive.signature!==currentSignature){
+      setPendingArchive(null);setMessage('Huidige inventaris gewijzigd. Kies het herstelbestand opnieuw.');
+      return;
+    }
+    setItems(pendingArchive.rows.map(row=>({...row,id:nextId.current++})));
+    setMargin(pendingArchive.margin);setCapacity(pendingArchive.capacity);
+    setPreview(null);setPendingArchive(null);
+    setMessage('Eigen inventaris bewust in dit tabblad hersteld. Niets is extern verstuurd.');
+  }
+
   function makePreview(){
     if(!safeTotal){setMessage('Controleer eerst alle afmetingen, aantallen en de capaciteit.');return;}
     const lines=[
@@ -1320,6 +1393,33 @@ export function PrivateMovingVolume() {
           <p>Een nulhoeveelheid telt niet mee. Een ritindicatie kan te laag zijn
             als goederen niet stapelbaar zijn of de bus een lagere gewichtslimiet heeft.</p>
         </div>}
+      <div className="month-csv-confirm">
+        <h3>Eigen inventaris bewust bewaren of herstellen</h3>
+        <p>Bewaar een volledige privé-JSON om je maten en aantallen later
+          weer zelf in te laden. Dit gebeurt nooit automatisch.
+          Controleer eigen itemnamen op persoonlijke gegevens.</p>
+        <button type="button" onClick={exportOwnInventory} disabled={!safeTotal}>
+          Bewaar mijn complete privé-inventaris als JSON…
+        </button>
+        <label htmlFor="mv-private-restore">Kies een eigen eerder bewaarde inventaris (max. 8 KiB)</label>
+        <input id="mv-private-restore" type="file" accept=".json,application/json"
+          onChange={e=>{const file=e.currentTarget.files?.[0];e.currentTarget.value='';
+            void prepareInventoryRestore(file);}} />
+        {pendingArchive&&<div role="group" aria-label="Bevestig eigen inventaris vervangen">
+          <p>Je bestand bevat <strong>{pendingArchive.rows.length}</strong> eigen
+            regels. Vervangen verwijdert jouw huidige {items.length} regels op
+            dit scherm. Het verandert geen andere Woonpoints-sectie of bestanden.</p>
+          {pendingArchive.signature!==currentSignature&&<p role="alert">
+            Je huidige invoer is veranderd; selecteer het bestand opnieuw.</p>}
+          <button type="button" disabled={pendingArchive.signature!==currentSignature}
+            onClick={restoreOwnInventory}>
+            Ja, vervang alleen mijn verhuisinventaris
+          </button>
+          <button type="button" className="secondary" onClick={()=>{
+            setPendingArchive(null);setMessage('Herstel geannuleerd. Eigen invoer behouden.');
+          }}>Nee, behoud mijn huidige inventaris</button>
+        </div>}
+      </div>
       <div className="month-csv-confirm">
         <h3>Bewaar eventueel je eigen overzicht</h3>
         <button type="button" onClick={makePreview} disabled={!safeTotal}>
