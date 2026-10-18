@@ -5668,5 +5668,10 @@ export function PrivateMovingBoxLabelsShell({children}:{children:React.ReactNode
     window.addEventListener('hashchange',sync);
     return()=>window.removeEventListener('hashchange',sync);
   },[]);
-  return showLabels ? <PrivateMovingBoxLabels/> : <>{children}</>;
+  // Keep both client workspaces mounted: toggling the hash must not silently discard
+  // unsaved box labels or private homepage editor state in this same browser tab.
+  return <>
+    <div hidden={showLabels} aria-hidden={showLabels}>{children}</div>
+    <div hidden={!showLabels} aria-hidden={!showLabels}><PrivateMovingBoxLabels/></div>
+  </>;
 }
