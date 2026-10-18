@@ -521,3 +521,22 @@ Dit is een rekenkundige gevoeligheidsindicator, **geen** juridische
 of financiële betaalbaarheidstoets. Geen inkomen, toeslag, wettelijke
 huurverhoging, daadwerkelijke energiekosten of WoningNet-rechten worden
 gecontroleerd; er gaat geen data naar een server.
+
+
+### Privéagenda: tijd per datum en lengte zelf kiezen
+
+Bij de maandplanning kun je naast iedere eigen datum een **lokale begintijd**
+invullen en apart een lengte van 15, 30 of 60 minuten kiezen. De standaard
+09:00/15 minuten is alleen een voorstel, geen officiële deadline. De
+app weigert lege/ongeldige tijden, afspraken die pas na middernacht
+eindigen, en afspraken op vandaag waarvan het startmoment al voorbij is.
+Voor het huidige maanddoel accepteert het formulier uitsluitend datums
+tussen vandaag en de werkelijke laatste kalenderdag van de huidige maand.
+Geen extra rechten, serverkoppelingen of nieuwe opslag.
+
+De bestaande twee stappen blijven: eerst een datumvoorstel expliciet
+overnemen, daarna **bewust** een ICS-bestand downloaden en zelf in de
+gewenste agenda importeren. De app maakt niet stilzwijgend afspraken,
+notificaties of WoningNet-reacties. Alle tijden worden als door de gebruiker
+gekozen lokale (zwevende) agendatijd in het ICS-bestand gezet; de eigen
+agenda en ingestelde tijdzone bepalen de uiteindelijke herinneringen.
