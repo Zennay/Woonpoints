@@ -3666,9 +3666,28 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
   const [editingMonth,setEditingMonth] = useState<string|null>(null);
   const [pendingDelete,setPendingDelete] = useState<string|null>(null);
   const [pendingImport,setPendingImport] = useState<PrivatePointsEntry[]|null>(null);
+  const [pendingImportSource,setPendingImportSource]=useState<string|null>(null);
+  const readSequence=useRef(0);
+  const [restoreUndo,setRestoreUndo]=useState<{
+    previous:PrivatePointsEntry[]; importedSignature:string
+  }|null>(null);
+  const [pendingExport,setPendingExport]=useState<{kind:'json'|'csv';source:string}|null>(null);
+  const [exportApproved,setExportApproved]=useState(false);
   const [confirmClear,setConfirmClear] = useState(false);
   const [message,setMessage] = useState('');
   const sorted = [...rows].sort((a,b) => a.month.localeCompare(b.month));
+  const signature=JSON.stringify(rows);
+  const backupJson=JSON.stringify({format:PRIVATE_POINTS_ARCHIVE,entries:sorted},null,2)+'\n';
+  const backupCsv=['month,points',...sorted.map(row=>row.month+','+String(row.points))]
+    .join('\r\n')+'\r\n';
+  const exportText=pendingExport?.kind==='csv'?backupCsv:backupJson;
+  const exportStillCurrent=pendingExport!==null&&pendingExport.source===signature;
+  const importStillCurrent=pendingImport!==null&&pendingImportSource===signature;
+  const canUndoRestore=restoreUndo!==null&&restoreUndo.importedSignature===signature;
+  const importAdded=pendingImport?.filter(x=>!rows.some(r=>r.month===x.month)).length??0;
+  const importChanged=pendingImport?.filter(x=>rows.some(r=>
+    r.month===x.month&&r.points!==x.points)).length??0;
+  const importRemoved=rows.filter(x=>!pendingImport?.some(r=>r.month===x.month)).length;
   const monthExists = rows.some(row => row.month === month);
   const parsedPoints = /^\d{1,5}$/.test(points) ? Number(points) : NaN;
   const canSave = privatePointsMonthValid(month) && Number.isSafeInteger(parsedPoints) &&
@@ -3714,7 +3733,9 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
   }
   async function selectCsvArchive(file: File|undefined) {
-    setPendingImport(null);
+    const token=++readSequence.current;
+    const source=signature;
+    setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
     if (file.size < 1 || file.size > 4096) {
       setMessage('CSV geweigerd: maximaal 4 KiB toegestaan.');
@@ -3722,15 +3743,19 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
     try {
       const imported = privatePointsDecodeCsv(await file.text());
+      if(token!==readSequence.current)return;
       if (!imported) throw new Error('invalid');
-      setPendingImport(imported);
+      setPendingImport(imported);setPendingImportSource(source);
       setMessage('Eigen CSV gelezen; bevestig apart of je de huidige maandstanden wilt vervangen.');
     } catch {
+      if(token!==readSequence.current)return;
       setMessage('CSV geweigerd: gebruik exact month,points en geldige unieke maand,gehele-punten-regels. Huidige notities behouden.');
     }
   }
   async function selectArchive(file: File|undefined) {
-    setPendingImport(null);
+    const token=++readSequence.current;
+    const source=signature;
+    setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
     if (file.size < 1 || file.size > 16384) {
       setMessage('Bestand geweigerd: gebruik eigen Woonpoints-JSON tot maximaal 16 KiB.');
@@ -3738,12 +3763,55 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
     try {
       const imported = privatePointsDecodeArchive(await file.text());
+      if(token!==readSequence.current)return;
       if (!imported) throw new Error('invalid');
-      setPendingImport(imported);
+      setPendingImport(imported);setPendingImportSource(source);
       setMessage('Geldig privébestand. Bevestig apart of de huidige notities mogen worden vervangen.');
     } catch {
+      if(token!==readSequence.current)return;
       setMessage('Bestand geweigerd: verkeerde versie, dubbele maanden of ongeldige punten. Bestaande notities behouden.');
     }
+  }
+  function downloadPreviewedPoints(){
+    if(!pendingExport||!exportStillCurrent||!exportApproved){
+      setPendingExport(null);setExportApproved(false);
+      setMessage('De eigen punten of toestemming zijn gewijzigd. Bekijk opnieuw.');
+      return;
+    }
+    if(pendingExport.kind==='json')downloadPrivatePointsArchive(sorted);
+    else downloadPrivatePointsCsv(sorted);
+    setPendingExport(null);setExportApproved(false);
+    setMessage('Exact gecontroleerd privébestand aangeboden. Je opslaglocatie kan synchroniseren.');
+  }
+  function applyPointsImport(){
+    if(!pendingImport||!importStillCurrent){
+      setPendingImport(null);setPendingImportSource(null);
+      setMessage('Je eigen punten zijn sinds de bestandskeuze gewijzigd. Niets vervangen.');
+      return;
+    }
+    setRestoreUndo({
+      previous:rows.map(row=>({...row})),
+      importedSignature:JSON.stringify(pendingImport)
+    });
+    setRows(pendingImport.map(row=>({...row})));
+    setPendingImport(null);setPendingImportSource(null);
+    setPendingDelete(null);setConfirmClear(false);
+    setPendingExport(null);setExportApproved(false);
+    setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+    setMessage('Eigen puntenhistorie hersteld. Eenmalig ongedaan maken kan zolang niets wijzigt.');
+  }
+  function undoPointsImport(){
+    if(!restoreUndo||!canUndoRestore){
+      setRestoreUndo(null);
+      setMessage('Terugdraaien geweigerd: eigen punten zijn na import gewijzigd.');
+      return;
+    }
+    setRows(restoreUndo.previous.map(row=>({...row})));
+    setRestoreUndo(null);setPendingImport(null);setPendingImportSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingDelete(null);setConfirmClear(false);
+    setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+    setMessage('Vorige eigen puntenhistorie teruggezet; externe bestanden ongewijzigd.');
   }
   return <section className="panel private-points" aria-labelledby="private-points-heading">
     <div>
@@ -3831,16 +3899,36 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
       </div>}
       <div className="private-points-actions">
         <button type="button" disabled={!rows.length} onClick={()=>{
-          downloadPrivatePointsArchive(sorted);
-          setMessage('Privé-JSON aangeboden om zelf op te slaan; de gekozen map kan synchroniseren.');
-        }}>Bewaar eigen maandstanden als JSON…</button>
+          setPendingExport({kind:'json',source:signature});setExportApproved(false);setMessage('');
+        }}>Bekijk complete privé-JSON…</button>
         <button type="button" disabled={!rows.length} onClick={()=>{
-          downloadPrivatePointsCsv(sorted);
-          setMessage('Eigen numerieke CSV aangeboden. Controleer de gekozen bestandslocatie.');
-        }}>Bewaar eigen maandstanden als CSV…</button>
+          setPendingExport({kind:'csv',source:signature});setExportApproved(false);setMessage('');
+        }}>Bekijk volledige numerieke CSV…</button>
         <button type="button" className="secondary" disabled={!rows.length}
           onClick={()=>setConfirmClear(true)}>Wis alle maandstanden…</button>
       </div>
+      {pendingExport&&<div className="private-points-confirm" role="group"
+        aria-label="Controleer exacte privé-puntenexport">
+        {!exportStillCurrent&&<p role="alert">Je eigen punten zijn na de voorvertoning
+          gewijzigd. Bekijk de actuele inhoud opnieuw voordat je downloadt.</p>}
+        <p>Dit is de volledige huidige {pendingExport.kind.toUpperCase()}.
+          Alleen eigen maanden en punten; nooit een officieel woningportaalbewijs.
+          De gekozen opslaglocatie kan synchroniseren.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflow:'auto'}}>
+          {exportStillCurrent?exportText:'Eerdere preview niet meer actueel.'}
+        </pre>
+        <label htmlFor="private-points-export-approval" style={{display:'flex',alignItems:'center',gap:8}}>
+          <input id="private-points-export-approval" type="checkbox"
+            checked={exportApproved} disabled={!exportStillCurrent}
+            onChange={event=>setExportApproved(event.target.checked)}/>
+          Ik heb de exacte inhoud bekeken en wil zelf dit bestand bewaren
+        </label>
+        <button type="button" disabled={!exportStillCurrent||!exportApproved}
+          onClick={downloadPreviewedPoints}>Download gecontroleerd privébestand</button>
+        <button type="button" className="secondary" onClick={()=>{
+          setPendingExport(null);setExportApproved(false);
+        }}>Annuleren</button>
+      </div>}
       {confirmClear && <div className="private-points-confirm" role="group" aria-label="Bevestig alle notities wissen">
         <p>Alle {rows.length} eigen maandstanden uit dit tabblad verwijderen?</p>
         <button type="button" onClick={()=>{
@@ -3864,20 +3952,51 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
       <p>De CSV gebruikt uitsluitend twee vaste kolommen:
         <code>month,points</code> en bijvoorbeeld <code>2026-10,12</code>.
         Alleen hele, zelf afgelezen punten, geen formules of vrije tekst.</p>
-      {pendingImport && <div className="private-points-confirm" role="group" aria-label="Bevestig privé-puntenbestand herstellen">
-        <p>Dit bestand bevat {pendingImport.length} geldige eigen maandstanden.
-          Bevestigen vervangt alle {rows.length} huidige notities, niet je
-          accountgegevens of andere Woonpoints-onderdelen.</p>
-        <button type="button" onClick={()=>{
-          setRows(pendingImport);setPendingImport(null);setPendingDelete(null);
-          setConfirmClear(false);setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
-          setMessage('Eigen puntenhistorie na bevestiging lokaal hersteld. Geen officiële bronverificatie.');
-        }}>Vervang huidige maandstanden</button>
+      {pendingImport&&<div className="private-points-confirm" role="group"
+        aria-label="Controleer impact en bevestig privé-puntenbestand herstellen">
+        {!importStillCurrent&&<p role="alert">De huidige punten zijn sinds
+          de bestandskeuze veranderd. Overschrijven is geblokkeerd.</p>}
+        <p>Gekozen bestand: {pendingImport.length} maandstanden.
+          Huidige invoer: {rows.length} maandstanden. De vervanging
+          voegt <strong>{importAdded}</strong> maanden toe,
+          wijzigt <strong>{importChanged}</strong> puntenstanden
+          en verwijdert <strong>{importRemoved}</strong> oude maanden.</p>
+        <p>Controleer alle verschillen:</p>
+        <ul>{pendingImport.map(entry=>{
+          const current=rows.find(row=>row.month===entry.month);
+          return <li key={entry.month}>{entry.month}: {entry.points} punten · {
+            current===undefined?'nieuwe maand':
+            current.points===entry.points?'ongewijzigd':
+            'gewijzigd van '+current.points+' naar '+entry.points
+          }</li>;
+        })}
+          {rows.filter(entry=>!pendingImport.some(row=>row.month===entry.month))
+            .map(entry=><li key={'deleted-'+entry.month}>
+              {entry.month}: {entry.points} punten · wordt verwijderd
+            </li>)}
+        </ul>
+        <p>Alleen deze puntenhistorie wordt vervangen, nooit je account
+          of andere Woonpoints-onderdelen. Je vorige invoer blijft tijdelijk
+          éénmalig herstelbaar zolang je na de import niets wijzigt.</p>
+        <button type="button" disabled={!importStillCurrent}
+          onClick={applyPointsImport}>Vervang na mijn controle deze puntenhistorie</button>
         <button type="button" className="secondary" onClick={()=>{
-          setPendingImport(null);setMessage('Import geannuleerd: de huidige maandstanden zijn behouden.');
+          setPendingImport(null);setPendingImportSource(null);
+          setMessage('Import geannuleerd: de huidige punten zijn behouden.');
         }}>Behoud huidige punten</button>
       </div>}
-      {message && <p role="status" aria-live="polite">{message}</p>}
+      {restoreUndo&&<div className="private-points-confirm" role="group"
+        aria-label="Laatste puntenimport eenmalig ongedaan maken">
+        <p>{canUndoRestore?
+          'Je kunt de laatste puntenimport eenmalig terugdraaien.':
+          'Sinds de import zijn je punten veranderd. Automatisch terugdraaien zou eigen wijzigingen kunnen verliezen en is geblokkeerd.'}</p>
+        <button type="button" disabled={!canUndoRestore} onClick={undoPointsImport}>
+          Draai laatste puntenimport éénmalig terug
+        </button>
+        <button type="button" className="secondary"
+          onClick={()=>setRestoreUndo(null)}>Verwerp tijdelijk herstelpunt</button>
+      </div>}
+      {message&&<p role="status" aria-live="polite">{message}</p>}
     </div>
   </section>;
 }
