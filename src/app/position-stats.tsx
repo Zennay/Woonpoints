@@ -3534,6 +3534,7 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
   const [customLabel,setCustomLabel] = useState('');
   const [customOffset,setCustomOffset] = useState(-21);
   const [filter,setFilter] = useState<'open'|'all'|'done'>('open');
+  const [paperScope,setPaperScope] = useState<'open'|'all'>('open');
   const [pendingImport,setPendingImport] = useState<{movingDate:string;items:PrivateMoveTask[]}|null>(null);
   const [confirmReset,setConfirmReset] = useState(false);
   const [message,setMessage] = useState('');
@@ -3592,6 +3593,45 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
     setFilter('open');
     setMessage(proposed.length+' nieuwe stappen uit jouw eigen woningaannames toegevoegd. Je overige taken en vinkjes zijn behouden; geen woning geaccepteerd of toegewezen.');
     onOfferHandled?.();
+  }
+
+
+  // A human-readable optional paper handoff; never an account/worker export.
+  // User labels are limited by the existing add/import admission guards.
+  const paperRows=items.filter(row=>paperScope==='all'||!row.done);
+  const paperLines=[
+    'WOONPOINTS · EIGEN VERHUISCHECKLIST',
+    'Privéplanning · geen officiële datum, woningaanbieding of WoningNet-reactie.',
+    'Gekozen verhuisdag: '+(movingDate||'niet ingevuld'),
+    'Overzicht: '+completed+' afgevinkt / '+items.length+' eigen stappen.',
+    'Selectie: '+(paperScope==='all'?'alle taken inclusief afgeronde':'alleen open taken'),
+    ''
+  ];
+  PRIVATE_MOVE_OFFSETS.forEach(offset=>{
+    const rows=paperRows.filter(row=>row.offset===offset);
+    if (!rows.length) return;
+    paperLines.push(phases[offset]+' · '+privateMoveDue(movingDate,offset));
+    rows.forEach(row=>paperLines.push((row.done?'[x] ':'[ ] ')+row.label));
+    paperLines.push('');
+  });
+  paperLines.push('Controleer dit overzicht zelf. Alleen jouw exportactie kan een bestand');
+  paperLines.push('op je apparaat of gekozen cloudlocatie bewaren.');
+  const paperContent=paperLines.join('\r\n')+'\r\n';
+  function downloadPaperChecklist() {
+    if (pendingImport || confirmReset || !paperRows.length) {
+      setMessage('Tekstoverdracht niet beschikbaar. Rond eerst een open herstel-/wisvraag af of selecteer taken.');
+      return;
+    }
+    const url=URL.createObjectURL(new Blob([paperContent],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-eigen-verhuischecklist-'+
+      (paperScope==='all'?'compleet':'open')+'.txt';
+    link.rel='noopener';
+    document.body.appendChild(link);
+    link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen leesbare checklist aangeboden als TXT. De gekozen opslaglocatie kan buiten Woonpoints synchroniseren.');
   }
 
   // At most five calendar entries, one per unfinished phase. This is an
@@ -3784,6 +3824,30 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
           <p>Maximaal 36 stappen, waarvan de twaalf suggesties vaste uitgangspunten zijn.</p>
         </fieldset>
       </form>
+      <div className="manual-reminder-suggest">
+        <h3>Neem je eigen checklist leesbaar mee</h3>
+        <p>Maak uitsluitend op eigen verzoek een TXT-document met persoonlijke
+          richtmomenten, open stappen en eventueel jouw afgevinkte voortgang.
+          Het bestand bevat je zelf ingevoerde taakteksten; kies dus zorgvuldig
+          waar je het opslaat of met wie je het deelt.</p>
+        <label htmlFor="moving-paper-scope">Welke stappen wil je meenemen?</label>
+        <select id="moving-paper-scope" value={paperScope}
+          onChange={event=>setPaperScope(event.target.value as typeof paperScope)}>
+          <option value="open">Alleen nog open stappen</option>
+          <option value="all">Alle stappen met afvinkstatus</option>
+        </select>
+        <details>
+          <summary>Bekijk eerst de exacte tekst voor jouw export</summary>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+            maxHeight:320,overflowY:'auto'}}>{paperContent}</pre>
+        </details>
+        <button type="button" onClick={downloadPaperChecklist}
+          disabled={!paperRows.length || Boolean(pendingImport) || confirmReset}>
+          Bewaar gekozen eigen checklist als TXT…
+        </button>
+        <p>Geen automatische opslag of synchronisatie, printertoegang,
+          accountactie of officiële bevestiging van een verhuizing.</p>
+      </div>
       <div className="month-history-actions">
         <button type="button" onClick={exportArchive}>Bewaar eigen checklist als privé-JSON…</button>
         <button type="button" onClick={exportMovingCalendar}
