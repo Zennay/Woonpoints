@@ -407,6 +407,41 @@ const INSPECTION_BACKUP_BYTES = 16 * 1024;
 const MAX_CUSTOM_INSPECTION_CHECKS = 12;
 const INSPECTION_ALL_ROOMS = [...INSPECTION_ROOMS, 'Overig'] as const;
 
+/** Offline report with an inert HTML/CSP envelope: escape all personal values, never fetch anything. */
+function printableInspectionHtml(
+  checks: InspectionCheck[], grades: Record<string, InspectionGrade | undefined>,
+  notes: Record<string, string>, includeNotes: boolean
+): string {
+  const safe = (s: string) => s.replace(/[&<>"']/g, ch =>
+    ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch] || ch));
+  const count = checks.filter(c => grades[c.id] === 'aandacht' || grades[c.id] === 'goed').length;
+  const flagged = checks.filter(c => grades[c.id] === 'aandacht').length;
+  const rooms = INSPECTION_ALL_ROOMS.map(room => {
+    const records = checks.filter(c => c.room === room);
+    if (!records.length) return '';
+    return '<section><h2>' + safe(room) + '</h2><table><thead><tr><th>Mijn controlepunt</th><th>Eigen oordeel</th><th>Prioriteit</th></tr></thead><tbody>' +
+      records.map(c => {
+        const grade = grades[c.id];
+        const status = grade === 'goed' ? 'Volgens mij in orde' : grade === 'aandacht' ? 'Mijn aandachtspunt' : 'Niet gecontroleerd';
+        const privateText = includeNotes && grade === 'aandacht' && notes[c.id]?.trim()
+          ? '<p class="note">Eigen toelichting: ' + safe(notes[c.id].trim()) + '</p>' : '';
+        return '<tr><th scope="row">' + safe(c.title) + (c.id.startsWith('custom-') ? ' (eigen punt)' : '') +
+          privateText + '</th><td>' + status + '</td><td>' + safe(c.priority) + '</td></tr>';
+      }).join('') + '</tbody></table></section>';
+  }).join('\n');
+  return [
+    '<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;">',
+    '<title>Mijn startinspectie · Woonpoints</title>',
+    '<style>@page{size:A4;margin:15mm}body{font:12pt/1.45 Arial,sans-serif;max-width:950px;margin:24px auto;padding:12px;color:#172f1e}h2{font-size:16pt;margin-top:24px}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10pt}th,td{border:1px solid #92a699;padding:9px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th:first-child{width:54%}.note{font-weight:normal;white-space:pre-wrap}.warning{border:2px solid #687d6f;padding:12px}tr{break-inside:avoid}@media print{body{margin:0;padding:0}h2{break-after:avoid}}</style></head><body>',
+    '<h1>Mijn eigen startinspectie</h1><p>Samengesteld op ' + safe(today()) + '</p>',
+    '<p>' + count + ' van ' + checks.length + ' zelf beoordeeld · ' + flagged + ' aandachtspunten · ' + (checks.length - count) + ' niet gecontroleerd.</p>',
+    '<p class="warning">Eigen checklist. Geen officiële keuring, juridisch oordeel, verzendbewijs of bevestiging door een verhuurder. Volg bij onveiligheid de officiële nood- of storingsroute.</p>',
+    rooms, '<footer><p>Privétoelichtingen ' + (includeNotes ? 'bewust opgenomen' : 'niet opgenomen') + '. Dit bestand is uitsluitend op eigen verzoek lokaal samengesteld.</p></footer>',
+    '</body></html>'
+  ].join('\n');
+}
+
 function inspectionBackupContents(
   grades: Record<string, InspectionGrade | undefined>,
   notes: Record<string, string>,
@@ -532,11 +567,31 @@ function PrivateArrivalInspection({
   const [feedback, setFeedback] = useState('');
   const [pendingRestore, setPendingRestore] = useState<InspectionBackup | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [printIncludeNotes, setPrintIncludeNotes] = useState(false);
+  const [printPreview, setPrintPreview] = useState<{signature:string;includeNotes:boolean}|null>(null);
   const allChecks: InspectionCheck[] = [...INSPECTION_CHECKS, ...customChecks.map(check => ({
     ...check, tip: 'Zelf toegevoegd controlepunt; dit is geen geverifieerde inspectie-eis.'
   }))];
   const checked = allChecks.filter(row => grades[row.id] !== undefined);
   const flagged = allChecks.filter(row => grades[row.id] === 'aandacht');
+  const printSignature = JSON.stringify(allChecks.map(c => [
+    c.id, c.room, c.title, c.priority, grades[c.id] || 'niet',
+    grades[c.id] === 'aandacht' ? (notes[c.id] || '').trim() : ''
+  ]));
+  const printCurrent = printPreview !== null && printPreview.signature === printSignature &&
+    printPreview.includeNotes === printIncludeNotes;
+  const savePrintableInspection = () => {
+    if (!printCurrent || (!checked.length && !customChecks.length)) {
+      setFeedback('Bekijk eerst de actuele afdrukgegevens.'); return;
+    }
+    const html = printableInspectionHtml(allChecks, grades, notes, printIncludeNotes);
+    if (new TextEncoder().encode(html).length > 80 * 1024) {
+      setFeedback('Afdrukbestand te groot; verkort eigen toelichtingen.'); return;
+    }
+    download('woonpoints-eigen-startinspectie-afdruk.html', html, 'text/html;charset=utf-8');
+    setPrintPreview(null);
+    setFeedback('Privé-HTML gedownload. Open het lokaal om te printen of als PDF te bewaren. Niets verzonden.');
+  };
   const alreadyIncluded = (row: InspectionCheck) => items.some(item =>
     item.room.toLocaleLowerCase('nl-NL') === row.room.toLocaleLowerCase('nl-NL') &&
     item.title.toLocaleLowerCase('nl-NL') === row.title.toLocaleLowerCase('nl-NL') &&
@@ -784,6 +839,43 @@ function PrivateArrivalInspection({
             onClick={() => setConfirmTransfer(true)}>
             Zet {newFlagged.length} aandachtspunt{newFlagged.length === 1 ? '' : 'en'} in nazorg…
           </button>
+        </div>
+        <div className="aftercare-confirm" role="group" aria-label="Mijn afdrukbare startinspectie">
+          <h3>Mijn startinspectie afdrukken</h3>
+          <p>Maak een offline HTML-rapport met alle standaard- en eigen controlepunten,
+            ook als ze nog niet beoordeeld zijn. Je privétoelichtingen blijven standaard verborgen.</p>
+          <label className="aftercare-check"><input type="checkbox" checked={printIncludeNotes}
+            onChange={e => { setPrintIncludeNotes(e.target.checked); setPrintPreview(null); }} />
+            Neem bewust mijn privétoelichtingen bij aandachtspunten op
+          </label>
+          <button type="button" className="secondary"
+            disabled={checked.length === 0 && customChecks.length === 0}
+            onClick={() => setPrintPreview({signature:printSignature, includeNotes:printIncludeNotes})}>
+            Bekijk mijn afdrukvoorbeeld…
+          </button>
+          {printPreview && !printCurrent &&
+            <p role="status">Gegevens of privacykeuze gewijzigd. Bekijk eerst opnieuw het huidige rapport.</p>}
+          {printCurrent && <div role="group" aria-label="Mijn actuele afdrukvoorbeeld bevestigen">
+            <p><strong>{checked.length}</strong> beoordeeld · <strong>{flagged.length}</strong> aandachtspunten ·
+              <strong> {allChecks.length - checked.length}</strong> niet gecontroleerd · privétoelichtingen
+              {printIncludeNotes ? ' ingeschakeld' : ' uitgeschakeld'}.</p>
+            <details><summary>Controleer alle {allChecks.length} rapportregels</summary>
+              <ol>{allChecks.map(c => <li key={c.id}><strong>{c.room}: {c.title}</strong> — {
+                grades[c.id] === 'goed' ? 'Volgens mij in orde' :
+                grades[c.id] === 'aandacht' ? 'Mijn aandachtspunt' : 'Niet gecontroleerd'
+              } ({c.priority})
+                {printIncludeNotes && grades[c.id] === 'aandacht' && notes[c.id]?.trim() &&
+                  <p className="aftercare-note">Eigen toelichting: {notes[c.id].trim()}</p>}
+              </li>)}</ol>
+            </details>
+            <div className="aftercare-actions">
+              <button type="button" onClick={savePrintableInspection}>Ja, download mijn HTML-afdrukbestand</button>
+              <button type="button" className="secondary" onClick={() => setPrintPreview(null)}>Niet downloaden</button>
+            </div>
+            <p>Open het bestand zelf in je browser en kies Afdrukken of Bewaar als PDF.
+              Je printer of bestandsmap kan informatie buiten Woonpoints bewaren.
+              Niets wordt naar WoningNet, een verhuurder of een server verzonden.</p>
+          </div>}
         </div>
         {confirmTransfer && (
           <div className="aftercare-confirm" role="group" aria-label="Overdracht naar nazorg bevestigen">
