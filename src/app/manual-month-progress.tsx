@@ -3228,6 +3228,47 @@ type MovingWorkspaceArchiveV5=Omit<MovingWorkspaceArchiveV4,'version'> & {
   version:5;
   helpers:{helpers:MovingHelperEntry[]};
 };
+
+type MovingAddressEntry={
+  id:string;label:string;status:'Nog regelen'|'Zelf gemeld'|'Niet van toepassing';date:string;note:string;
+};
+type MovingWorkspaceArchiveV6=Omit<MovingWorkspaceArchiveV5,'version'> & {
+  version:6;address:{items:MovingAddressEntry[]};
+};
+const MOVING_ADDRESS_DEFAULTS=[
+  ['gemeente','Gemeente of BRP'],['post','Post doorsturen'],
+  ['bank','Bank- en betaalgegevens'],['werk','Werkgever of opdrachtgever'],
+  ['zorg','Zorgverzekeraar'],['huisarts','Huisarts en zorgverleners'],
+  ['energie','Energiecontract'],['internet','Internet en televisie'],
+  ['verzekeringen','Overige verzekeringen'],['abonnementen','Abonnementen en bezorgingen']
+] as const;
+function validMovingWorkspaceAddress(value:unknown):value is MovingWorkspaceArchiveV6['address']{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const data=value as Record<string,unknown>;
+  if(Object.keys(data).join('|')!=='items'||!Array.isArray(data.items)||
+    data.items.length<10||data.items.length>22)return false;
+  const seen=new Set<string>();
+  for(const raw of data.items){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+    const row=raw as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='date|id|label|note|status'||
+      typeof row.id!=='string'||typeof row.label!=='string'||
+      typeof row.date!=='string'||typeof row.note!=='string')return false;
+    const builtin=MOVING_ADDRESS_DEFAULTS.find(([id])=>id===row.id);
+    if(builtin){
+      if(row.label!==builtin[1])return false;
+    }else if(!/^custom-[0-9]+-[0-9]+$/.test(row.id))return false;
+    if(seen.has(row.id)||!row.label||row.label.length>65||
+      row.label!==row.label.trim()||row.note.length>160||
+      row.note!==row.note.trim()||/[\u0000-\u001f\u007f]/.test(row.label+row.note)||
+      !['Nog regelen','Zelf gemeld','Niet van toepassing'].includes(String(row.status))||
+      (row.date!==''&&!dateOnly(row.date)))return false;
+    seen.add(row.id);
+  }
+  return MOVING_ADDRESS_DEFAULTS.every(([id])=>seen.has(id))&&
+    [...seen].filter(id=>id.startsWith('custom-')).length<=12;
+}
+
 function validMovingWorkspaceHelpers(raw:unknown):raw is MovingWorkspaceArchiveV5['helpers']{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
   const data=raw as Record<string,unknown>;
@@ -3355,17 +3396,19 @@ function validMovingWorkspaceDocuments(value:unknown):
 }
 
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 | MovingWorkspaceArchiveV4 | MovingWorkspaceArchiveV5 {
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 | MovingWorkspaceArchiveV4 | MovingWorkspaceArchiveV5 | MovingWorkspaceArchiveV6 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  const v2=obj.version===2,v3=obj.version===3,v4=obj.version===4,v5=obj.version===5;
+  const v2=obj.version===2,v3=obj.version===3,v4=obj.version===4,
+    v5=obj.version===5,v6=obj.version===6;
   const keys=Object.keys(obj).sort().join('|');
-  if(keys!==(v5?'documents|expenses|format|handover|helpers|packing|quotes|split|timeline|version':
+  if(keys!==(v6?'address|documents|expenses|format|handover|helpers|packing|quotes|split|timeline|version':
+    v5?'documents|expenses|format|handover|helpers|packing|quotes|split|timeline|version':
     (v3||v4)?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
     v2?'documents|expenses|format|handover|quotes|split|timeline|version':
     'expenses|format|quotes|split|version') ||
     obj.format !== 'woonpoints-private-moving-workspace' ||
-    (obj.version!==1&&!v2&&!v3&&!v4&&!v5))return false;
+    (obj.version!==1&&!v2&&!v3&&!v4&&!v5&&!v6))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3389,14 +3432,15 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
     new Set(expenseIds).size===expenseIds.length &&
-    (!(v2||v3||v4||v5) || (validMovingWorkspaceTimeline(obj.timeline)&&
+    (!(v2||v3||v4||v5||v6) || (validMovingWorkspaceTimeline(obj.timeline)&&
       validMovingWorkspaceHandover(obj.handover)&&
       validMovingWorkspaceDocuments(obj.documents))) &&
     (!v3 || validMovingWorkspacePacking(obj.packing)) &&
-    (!(v4||v5) || validMovingWorkspacePackingV4(obj.packing)) &&
-    (!v5 || validMovingWorkspaceHelpers(obj.helpers));
+    (!(v4||v5||v6) || validMovingWorkspacePackingV4(obj.packing)) &&
+    (!(v5||v6) || validMovingWorkspaceHelpers(obj.helpers)) &&
+    (!v6 || validMovingWorkspaceAddress(obj.address));
 }
-function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5):string{
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6):string{
   return JSON.stringify(data);
 }
 
@@ -3447,7 +3491,7 @@ function movingReportLine(value:string):string{
   return value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,900);
 }
 function buildPrivateMovingReport(
-  archive:MovingWorkspaceArchiveV5,sections:MovingReportSection[],
+  archive:MovingWorkspaceArchiveV6,sections:MovingReportSection[],
   actions:PrivateMovingAction[],today:string|null
 ):string{
   const lines:string[]=[
@@ -3566,7 +3610,7 @@ const MOVE_DAY_PHASES:{id:MoveDayPhase;name:string}[]=[
   {id:'vertrek',name:'2. Vertrek'},
   {id:'aankomst',name:'3. Aankomst'}
 ];
-function buildMoveDaySteps(a:MovingWorkspaceArchiveV5):MoveDayStep[]{
+function buildMoveDaySteps(a:MovingWorkspaceArchiveV6):MoveDayStep[]{
   const result:MoveDayStep[]=[];
   const add=(phase:MoveDayPhase,id:string,status:MoveDayStep['status'],title:string,detail:string,href:string)=>{
     result.push({phase,id,status,title,detail,href});
