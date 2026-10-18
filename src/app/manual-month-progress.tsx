@@ -764,7 +764,222 @@ export default function ManualMonthProgress({journalOffer,onJournalDecision,onMo
         {conflict && <p role="alert">De notitie is gewijzigd in een ander tabblad of de opslagstatus is onbekend. De vorige actie is niet uitgevoerd; controleer de huidige stand en probeer opnieuw.</p>}
         {deleteError && <p role="alert">Verwijderen niet gelukt. Probeer opnieuw; opgeslagen gegevens kunnen nog aanwezig zijn.</p>}
         {!storageWorks && <p role="status">{manualStorageWarning(storageWorks, hasUnsaved)}</p>}
+        <PrivateMonthCountHistory currentMonth={month} currentCount={count}
+          locked={opaqueStoredNote} />
       </div>
     </section>
   );
+}
+
+
+/** Personal, deliberately separate historical notes: never inferred from WoningNet. */
+type PersonalMonthHistoryRow = {month:string;count:number};
+const PRIVATE_HISTORY_MAX = 36;
+function privateHistoryValid(rows:unknown): rows is PersonalMonthHistoryRow[] {
+  if (!Array.isArray(rows) || rows.length>PRIVATE_HISTORY_MAX) return false;
+  const existing=new Set<string>(),today=localMonthKey(new Date());
+  for(const raw of rows) {
+    if(!raw || typeof raw!=='object' || Array.isArray(raw)) return false;
+    const item=raw as Record<string,unknown>;
+    if(Object.keys(item).sort().join('|')!=='count|month' ||
+       typeof item.month!=='string' ||
+       !/^20\d{2}-(?:0[1-9]|1[0-2])$/.test(item.month) || item.month>today ||
+       typeof item.count!=='number' || !Number.isSafeInteger(item.count) ||
+       item.count<0 || item.count>MANUAL_MONTHLY_GOAL ||
+       existing.has(item.month)) return false;
+    existing.add(item.month);
+  }
+  return true;
+}
+function decodePersonalHistoryCsv(raw:string):PersonalMonthHistoryRow[]|null {
+  if(!raw || new TextEncoder().encode(raw).byteLength>2048 ||
+     /[^\x0A\x0D\x20-\x7E]/.test(raw)) return null;
+  const normalized=raw.replace(/\r\n/g,'\n');
+  if(normalized.includes('\r')) return null;
+  const lines=(normalized.endsWith('\n')?normalized.slice(0,-1):normalized).split('\n');
+  if(lines[0]!=='month,count' || lines.length<2 ||
+     lines.length>PRIVATE_HISTORY_MAX+1) return null;
+  const entries:PersonalMonthHistoryRow[]=[];
+  for(const line of lines.slice(1)) {
+    if(!/^20\d{2}-(?:0[1-9]|1[0-2]),[0-4]$/.test(line)) return null;
+    const [month,count]=line.split(',');
+    entries.push({month,count:Number(count)});
+  }
+  if(!privateHistoryValid(entries)) return null;
+  return entries.sort((a,b)=>a.month.localeCompare(b.month));
+}
+/** Only locally typed/frozen counts. Not a monthly WoningNet eligibility history. */
+function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
+  currentMonth:string|null;
+  currentCount:number|null;
+  locked:boolean;
+}) {
+  const [rows,setRows]=useState<PersonalMonthHistoryRow[]>([]);
+  const [draftMonth,setDraftMonth]=useState(()=>localMonthKey(new Date()));
+  const [draftCount,setDraftCount]=useState('');
+  const [pendingRow,setPendingRow]=useState<PersonalMonthHistoryRow|null>(null);
+  const [pendingArchive,setPendingArchive]=useState<PersonalMonthHistoryRow[]|null>(null);
+  const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [message,setMessage]=useState('');
+  const sorted=[...rows].sort((a,b)=>a.month.localeCompare(b.month));
+  const recent=sorted.at(-1),previous=sorted.at(-2);
+  const monthNow=localMonthKey(new Date());
+  function offerRow(row:PersonalMonthHistoryRow) {
+    if(!privateHistoryValid([row]) || pendingArchive) {
+      setMessage('Geen geldig eigen maandvoorstel of nog een openstaand herstelbestand.');
+      return;
+    }
+    if(rows.some(value=>value.month===row.month) || rows.length>=PRIVATE_HISTORY_MAX) {
+      setPendingRow(row);
+      setMessage('Deze maand bestaat al of het archief is vol. Controleer het voorstel vóór vervangen.');
+      return;
+    }
+    setRows(current=>[...current,row]);setPendingDelete(null);
+    setMessage('Eigen historische maandnotitie toegevoegd, zonder WoningNet-broncontrole.');
+  }
+  function saveManual(event:React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if(!/^[0-4]$/.test(draftCount) || !privateHistoryValid([{month:draftMonth,count:Number(draftCount)}])) {
+      setMessage('Kies een geldige maand vanaf 2000 t/m nu en een eigen tellerstand van 0 tot 4.');
+      return;
+    }
+    offerRow({month:draftMonth,count:Number(draftCount)});
+  }
+  async function importCsv(file:File|undefined) {
+    setPendingArchive(null);setPendingRow(null);
+    if(!file) return;
+    if(file.size<1 || file.size>2048) {
+      setMessage('CSV geweigerd: maximaal 2 KiB en alleen bekende maand-, tellerkolommen.');
+      return;
+    }
+    try {
+      const parsed=decodePersonalHistoryCsv(await file.text());
+      if(!parsed) throw new Error('invalid');
+      setPendingArchive(parsed);
+      setMessage('Eigen CSV gelezen; bevestig of je volledige lokale maandarchief vervangen mag worden.');
+    } catch {
+      setMessage('CSV geweigerd: ongeldige maanden, dubbele waarden, vreemde inhoud of formaat. Huidige historie behouden.');
+    }
+  }
+  function downloadCsv() {
+    if(!privateHistoryValid(sorted) || !sorted.length) {
+      setMessage('Er is nog geen geldig eigen historisch maandarchief om te bewaren.');
+      return;
+    }
+    const csv=['month,count',...sorted.map(row=>row.month+','+row.count)].join('\r\n')+'\r\n';
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-eigen-maandteller-historie.csv';
+    link.rel='noopener';document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen maandgeschiedenis aangeboden als CSV; je bestandslocatie kan synchroniseren.');
+  }
+  return <div className="manual-reminder-suggest" aria-labelledby="private-month-history-heading">
+    <h3 id="private-month-history-heading">Bewaar zelf een historie van maandtellerstanden</h3>
+    <p>Leg per kalendermaand één <strong>eigen, niet-geverifieerde</strong>
+      eind- of tussenstand vast. Oudere maanden worden nooit geschat of
+      automatisch uit WoningNet opgehaald. Je kunt maximaal {PRIVATE_HISTORY_MAX}
+      zelf ingevoerde maanden bijhouden, alleen in dit browsertabblad.</p>
+    {currentMonth===monthNow && currentCount!==null && !locked && <div>
+      <p>Je huidige eigen teller voor {currentMonth} staat op {currentCount}.
+        Dit is uitsluitend jouw persoonlijke notitie.</p>
+      <button type="button" onClick={()=>offerRow({month:currentMonth,count:currentCount})}
+        disabled={Boolean(pendingArchive)}>Neem huidige eigen maandstand bewust over</button>
+    </div>}
+    <form onSubmit={saveManual}>
+      <fieldset>
+        <legend>Noteer een maand uit je eigen herinnering of privébestand</legend>
+        <label htmlFor="personal-history-month">Kalendermaand</label>
+        <input id="personal-history-month" type="month" min="2000-01"
+          max={monthNow} value={draftMonth}
+          onChange={e=>setDraftMonth(e.target.value)} />
+        <label htmlFor="personal-history-count">Eigen maandstand (0–4)</label>
+        <input id="personal-history-count" type="number" min="0"
+          max={MANUAL_MONTHLY_GOAL} step="1" inputMode="numeric"
+          value={draftCount} onChange={e=>setDraftCount(e.target.value)} />
+        <button type="submit" disabled={Boolean(pendingArchive)}>
+          Voeg deze eigen maandstand toe
+        </button>
+      </fieldset>
+    </form>
+    {pendingRow && <div className="month-csv-confirm" role="group"
+      aria-label="Bevestig een bestaande historische maand vervangen">
+      <p>Je bestaande maand {pendingRow.month} wordt bewust vervangen door
+        de eigen stand {pendingRow.count}. Dit heeft geen effect op de
+        actuele lokale teller of een echte WoningNet-reactie.</p>
+      <button type="button" onClick={()=>{
+        if(!privateHistoryValid([pendingRow])) {setPendingRow(null);return;}
+        setRows(current=>{
+          const remaining=current.filter(row=>row.month!==pendingRow.month);
+          if(remaining.length>=PRIVATE_HISTORY_MAX) return current;
+          return [...remaining,pendingRow];
+        });
+        setPendingRow(null);setPendingDelete(null);
+        setMessage('Eigen historische maandstand bijgewerkt; actuele maandteller niet gewijzigd.');
+      }}>Ja, vervang deze historische maand</button>
+      <button type="button" onClick={()=>{
+        setPendingRow(null);setMessage('Vervangen geannuleerd; bestaande historie behouden.');
+      }}>Behoud huidige maandstand</button>
+    </div>}
+    <p><strong>{rows.length}</strong> zelf genoteerde maanden.
+      {recent?' Laatste eigen notitie: '+recent.month+' · '+recent.count+'.':''}</p>
+    {recent && previous && <p>Verschil met vorige <em>ingevulde</em>
+      maand ({previous.month}): <strong>
+        {recent.count-previous.count>0?'+':''}{recent.count-previous.count}
+      </strong>. Ontbrekende maanden zijn niet bijgeschat.</p>}
+    {sorted.length>0 && <div className="month-history-table-wrap">
+      <table>
+        <caption>Eigen maandtellerhistorie, geen officieel bronbewijs</caption>
+        <thead><tr><th scope="col">Maand</th><th scope="col">Eigen stand</th>
+          <th scope="col">Handeling</th></tr></thead>
+        <tbody>{sorted.map(row=><tr key={row.month}>
+          <th scope="row">{row.month}</th><td>{row.count} / 4</td>
+          <td><button type="button" onClick={()=>setPendingDelete(row.month)}>
+            Verwijder…</button></td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    {pendingDelete && <div className="month-csv-confirm" role="group"
+      aria-label="Bevestig historische maand verwijderen">
+      <p>Wil je de eigen maandnotitie {pendingDelete} uit dit
+        archief verwijderen? Dit verandert geen actuele teller.</p>
+      <button type="button" onClick={()=>{
+        setRows(current=>current.filter(row=>row.month!==pendingDelete));
+        setPendingDelete(null);setPendingRow(null);
+        setMessage('Deze eigen historische notitie verwijderd.');
+      }}>Ja, verwijder deze maand</button>
+      <button type="button" onClick={()=>setPendingDelete(null)}>
+        Behoud deze maand</button>
+    </div>}
+    <div className="month-history-actions">
+      <button type="button" onClick={downloadCsv} disabled={!sorted.length}>
+        Bewaar mijn eigen maandhistorie als CSV…
+      </button>
+    </div>
+    <label htmlFor="personal-history-import">Open eigen eerdere Woonpoints-maandstand
+      of maandhistorie (CSV, maximaal 2 KiB)</label>
+    <input id="personal-history-import" type="file" accept=".csv,text/csv"
+      onChange={e=>{const file=e.currentTarget.files?.[0];
+        e.currentTarget.value='';void importCsv(file);}} />
+    {pendingArchive && <div className="month-csv-confirm" role="group"
+      aria-label="Bevestig volledige eigen maandhistorie vervangen">
+      <p>Deze CSV bevat {pendingArchive.length} zelf genoteerde maanden en
+        vervangt na bevestiging alle {rows.length} huidige historienotities.
+        De actuele maandteller blijft gescheiden en ongewijzigd.</p>
+      <button type="button" onClick={()=>{
+        if(!privateHistoryValid(pendingArchive)){setPendingArchive(null);return;}
+        setRows([...pendingArchive]);setPendingArchive(null);
+        setPendingRow(null);setPendingDelete(null);
+        setMessage('Eigen maandhistorie lokaal hersteld; geen WoningNet-bronbewijs.');
+      }}>Ja, vervang alleen mijn historische notities</button>
+      <button type="button" onClick={()=>{
+        setPendingArchive(null);setMessage('CSV-herstel geannuleerd; historie behouden.');
+      }}>Behoud mijn historische notities</button>
+    </div>}
+    {message && <p role="status">{message}</p>}
+    <p>CSV-import en -export gebeuren alleen na jouw keuze. Bestanden op
+      een gesynchroniseerde locatie kunnen buiten Woonpoints worden
+      opgeslagen. Dit is geen officieel reactieregister, zoekpuntenstand
+      of garantie op geldige maandreacties.</p>
+  </div>;
 }
