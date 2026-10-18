@@ -121,14 +121,14 @@ const initialCards = [
 const PrivateDepositLedger = (() => {
 type DepositEvent = {
   id: string;
-  kind: 'terugontvangen' | 'ingehouden';
+  kind: 'terugontvangen' | 'ingehouden' | 'gepland';
   date: string;
   label: string;
   amountCents: number;
 };
 type DepositBackup = {
   kind: 'woonpoints-private-borgboek';
-  schema: 1;
+  schema: 2;
   depositCents: number;
   entries: DepositEvent[];
 };
@@ -166,22 +166,38 @@ function safeLabel(value: unknown): value is string {
 function validateBackup(value: unknown): DepositBackup {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       !exactKeys(value, ['kind', 'schema', 'depositCents', 'entries'])) throw Error('schema');
-  const backup = value as Partial<DepositBackup>;
-  if (backup.kind !== KIND || backup.schema !== 1 || !validCents(backup.depositCents) ||
-      !Array.isArray(backup.entries) || backup.entries.length > MAX_ENTRIES) throw Error('data');
+  const backup = value as Record<string, unknown>;
+  if (backup.kind !== KIND || (backup.schema !== 1 && backup.schema !== 2) ||
+      !validCents(backup.depositCents) || !Array.isArray(backup.entries) ||
+      backup.entries.length > MAX_ENTRIES) throw Error('data');
   const seen = new Set<string>();
-  for (const entry of backup.entries) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
-        !exactKeys(entry, ['id', 'kind', 'date', 'label', 'amountCents']) ||
-        typeof entry.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(entry.id) ||
-        seen.has(entry.id) ||
-        (entry.kind !== 'terugontvangen' && entry.kind !== 'ingehouden') ||
-        !isValidDate(entry.date) || !safeLabel(entry.label) ||
-        !validCents(entry.amountCents) || entry.amountCents === 0) throw Error('entry');
+  const entries: DepositEvent[] = [];
+  for (const unknownEntry of backup.entries) {
+    if (!unknownEntry || typeof unknownEntry !== 'object' || Array.isArray(unknownEntry) ||
+        !exactKeys(unknownEntry, ['id', 'kind', 'date', 'label', 'amountCents'])) throw Error('entry');
+    const entry = unknownEntry as Record<string, unknown>;
+    const validKind = entry.kind === 'terugontvangen' || entry.kind === 'ingehouden' ||
+      (backup.schema === 2 && entry.kind === 'gepland');
+    if (typeof entry.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(entry.id) ||
+        seen.has(entry.id) || !validKind || !isValidDate(entry.date) ||
+        !safeLabel(entry.label) || !validCents(entry.amountCents) ||
+        entry.amountCents === 0) throw Error('entry');
     seen.add(entry.id);
+    entries.push({
+      id: entry.id, kind: entry.kind as DepositEvent['kind'],
+      date: entry.date, label: entry.label, amountCents: entry.amountCents
+    });
   }
-  return backup as DepositBackup;
+  // Preserve all valid legacy records, but their future-dated "already received"
+  // items are never counted in the actual balance.
+  return { kind: KIND, schema: 2, depositCents: backup.depositCents, entries };
 }
+function depositToday(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+}
+
 function saveFile(name: string, contents: string, type: string) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const anchor = document.createElement('a');
@@ -206,15 +222,21 @@ function PrivateDepositLedger() {
   const [txtConfirmed, setTxtConfirmed] = useState(false);
   const depositCents = parseEuro(deposit);
   const current: DepositBackup | null = depositCents === null ? null : {
-    kind: KIND, schema: 1, depositCents, entries
+    kind: KIND, schema: 2, depositCents, entries
   };
   const summary = useMemo(() => {
-    const refunded = entries.filter(item => item.kind === 'terugontvangen')
+    const today = depositToday();
+    const actual = entries.filter(item => item.date <= today);
+    const refunded = actual.filter(item => item.kind === 'terugontvangen')
       .reduce((sum, item) => sum + item.amountCents, 0);
-    const deducted = entries.filter(item => item.kind === 'ingehouden')
+    const deducted = actual.filter(item => item.kind === 'ingehouden')
       .reduce((sum, item) => sum + item.amountCents, 0);
+    const planned = entries.filter(item => item.kind === 'gepland')
+      .reduce((sum, item) => sum + item.amountCents, 0);
+    const plannedOverdue = entries.filter(item => item.kind === 'gepland' && item.date < today).length;
+    const legacyFuture = entries.filter(item => item.kind !== 'gepland' && item.date > today).length;
     const rest = depositCents === null ? null : depositCents - refunded - deducted;
-    return { refunded, deducted, rest };
+    return { refunded, deducted, planned, plannedOverdue, legacyFuture, rest };
   }, [entries, depositCents]);
 
   function changeDeposit(value: string) {
@@ -224,9 +246,10 @@ function PrivateDepositLedger() {
     event.preventDefault();
     const cents = parseEuro(eventAmount);
     if (entries.length >= MAX_ENTRIES || !safeLabel(eventLabel.trim()) ||
-        !isValidDate(eventDate) || cents === null || cents === 0 ||
+        !isValidDate(eventDate) || (eventKind !== 'gepland' && eventDate > depositToday()) ||
+        cents === null || cents === 0 ||
         depositCents === null) {
-      setNotice('Controleer de datum, omschrijving, oorspronkelijke borg en bedrag (maximaal 24 regels).');
+      setNotice('Controleer borg, datum, omschrijving en bedrag. Een al ontvangen/ingehouden bedrag kan niet in de toekomst gedateerd zijn (max. 24 regels).');
       return;
     }
     setEntries(previous => [...previous, {
@@ -235,6 +258,17 @@ function PrivateDepositLedger() {
     }]);
     setEventLabel(''); setEventAmount(''); setNotice('Eigen gebeurtenis toegevoegd.');
     setPending(null);
+  }
+  function confirmPlannedReceipt(id: string) {
+    const planned = entries.find(item => item.id === id && item.kind === 'gepland');
+    if (!planned || !window.confirm('Heb je dit bedrag daadwerkelijk ontvangen? De verwachte datum wordt vervangen door vandaag. Controleer eerst je eigen bankoverzicht.')) return;
+    setEntries(previous => previous.map(item =>
+      item.id === id && item.kind === 'gepland' ?
+        { ...item, kind: 'terugontvangen', date: depositToday() } : item
+    ));
+    setPending(null);
+    setTxtConfirmed(false);
+    setNotice('Eigen verwachting handmatig als ontvangen genoteerd. Dit is geen bankverificatie.');
   }
   function removeEvent(id: string) {
     setEntries(previous => previous.filter(item => item.id !== id));
@@ -256,6 +290,9 @@ function PrivateDepositLedger() {
       'Oorspronkelijke borg (zelf ingevuld): ' + euro(current.depositCents),
       'Zelf genoteerd terugontvangen: ' + euro(summary.refunded),
       'Zelf genoteerde inhoudingen: ' + euro(summary.deducted),
+      'Geplande maar niet bevestigde terugbetalingen (niet meetellen): ' + euro(summary.planned),
+      'Nog open geplande datums in het verleden: ' + summary.plannedOverdue,
+      'Oude toekomstige ontvangst-/inhoudingsdatums buiten saldo: ' + summary.legacyFuture,
       'Nog niet verklaard / saldo: ' + euro(summary.rest || 0),
       'Dit overzicht zegt niets over de rechtsgeldigheid van inhoudingen of terugbetaling.',
       '', ...entries.map(e => e.date + ' | ' + e.kind + ' | ' + euro(e.amountCents) + ' | ' + e.label)
@@ -307,7 +344,7 @@ function PrivateDepositLedger() {
       <div>
         <p className="eyebrow">NA DE VERHUIZING · ALLEEN IN DIT TABBLAD</p>
         <h2 id="private-deposit-heading">Mijn privé-borgboek</h2>
-        <p>Leg je oorspronkelijke borg, zelf ontvangen terugbetalingen en eigen notities over inhoudingen vast.
+        <p>Leg je oorspronkelijke borg, daadwerkelijk ontvangen terugbetalingen, geplande bedragen en eigen notities over inhoudingen vast.
           De berekening is alleen je persoonlijke administratie; dit is geen betalingsbewijs, juridisch oordeel
           of verificatie bij een verhuurder.</p>
       </div>
@@ -320,9 +357,12 @@ function PrivateDepositLedger() {
         <dl>
           <div><dt>Zelf terugontvangen</dt><dd>{euro(summary.refunded)}</dd></div>
           <div><dt>Zelf genoteerd ingehouden</dt><dd>{euro(summary.deducted)}</dd></div>
+          <div><dt>Gepland maar nog niet bevestigd (telt niet mee)</dt><dd>{euro(summary.planned)}</dd></div>
           <div><dt>Nog niet verklaard (geen opeisbaar saldo)</dt>
             <dd>{summary.rest === null ? 'Vul borg in' : euro(summary.rest)}</dd></div>
         </dl>
+        {summary.plannedOverdue > 0 && <p role="status">{summary.plannedOverdue} eigen geplande terugbetaling(en) met een verstreken datum. Controleer de werkelijke ontvangst zelf.</p>}
+        {summary.legacyFuture > 0 && <p role="alert">{summary.legacyFuture} toekomstige boeking(en) uit oudere gegevens tellen nog niet mee als werkelijk ontvangen/ingehouden. Corrigeer de eigen administratie indien nodig.</p>}
         {summary.rest !== null && summary.rest < 0 &&
           <p role="alert">Je ingevoerde terugbetalingen en inhoudingen zijn samen hoger dan de oorspronkelijke borg. Controleer de eigen cijfers.</p>}
         <form onSubmit={addEvent}>
@@ -332,8 +372,9 @@ function PrivateDepositLedger() {
             onChange={e => setEventKind(e.target.value as DepositEvent['kind'])}>
             <option value="terugontvangen">Bedrag daadwerkelijk ontvangen (eigen notitie)</option>
             <option value="ingehouden">Inhouding zelf genoteerd (niet juridisch beoordeeld)</option>
+            <option value="gepland">Verwachte terugbetaling (nog NIET ontvangen)</option>
           </select>
-          <label htmlFor="deposit-date">Datum</label>
+          <label htmlFor="deposit-date">{eventKind === 'gepland' ? 'Zelf verwachte ontvangstdatum' : 'Datum van eigen feitelijke notitie'}</label>
           <input id="deposit-date" type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} required />
           <label htmlFor="deposit-label">Korte omschrijving (geen persoonsgegevens)</label>
           <input id="deposit-label" value={eventLabel} maxLength={80}
@@ -348,6 +389,9 @@ function PrivateDepositLedger() {
           <ul>{entries.map(entry => <li key={entry.id}>
             <strong>{entry.date} · {entry.kind} · {euro(entry.amountCents)}</strong>
             {' — '}{entry.label}{' '}
+            {entry.kind === 'gepland' && <button type="button" onClick={() => confirmPlannedReceipt(entry.id)}>
+              Markeer na eigen controle als ontvangen
+            </button>}{' '}
             <button type="button" onClick={() => removeEvent(entry.id)}
               aria-label={'Verwijder eigen notitie ' + entry.date + ' ' + entry.label}>Verwijder</button>
           </li>)}</ul>}
