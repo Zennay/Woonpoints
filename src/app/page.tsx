@@ -592,6 +592,7 @@ const MOVING_FALLBACK_LIMIT=8192;
 /** Private, opt-in recovery across accidental reloads in the same tab only.
  * Never syncs, writes by default, or uses localStorage. JSON schema is always revalidated. */
 const PRIVATE_TAB_RECOVERY_REVOKE_EVENT='woonpoints:private-tab-recovery-revoke:v1';
+const PRIVATE_TAB_RECOVERY_STATUS_EVENT='woonpoints:private-tab-recovery-status:v1';
 function usePrivateTabRecovery<T>(
   storageKey:string,initial:()=>T,encode:(data:T)=>string,
   decode:(raw:string)=>T|null,maxBytes:number
@@ -648,6 +649,9 @@ function usePrivateTabRecovery<T>(
       setStorageMessage('Automatisch tabbladherstel gestopt: invoer niet herstelbaar of opslag geweigerd. Download zelf een geldige JSON-back-up.');
     }
   },[value,hydrated,enabled,storageKey,flagKey,encode,maxBytes]);
+  useEffect(()=>{
+    if(hydrated)window.dispatchEvent(new Event(PRIVATE_TAB_RECOVERY_STATUS_EVENT));
+  },[enabled,hydrated]);
   function enable(){
     if(!hydrated||enabled)return;
     try{
@@ -942,6 +946,20 @@ function PrivateMovingReadinessBoard({rows}:{
 }){
   const [confirmRevokeAll,setConfirmRevokeAll]=useState(false);
   const [revokeMessage,setRevokeMessage]=useState('');
+  const [activeTabCopies,setActiveTabCopies]=useState<number|null>(null);
+  useEffect(()=>{
+    function refresh(){
+      const keys=[FALLBACK_TAB_STORAGE_KEY,JOURNEY_TAB_STORAGE_KEY,
+        METER_TAB_STORAGE_KEY,UTILITY_TAB_STORAGE_KEY];
+      try{
+        setActiveTabCopies(keys.filter(key=>
+          window.sessionStorage.getItem(key+':opted-in')==='yes').length);
+      }catch{setActiveTabCopies(null);}
+    }
+    refresh();
+    window.addEventListener(PRIVATE_TAB_RECOVERY_STATUS_EVENT,refresh);
+    return ()=>window.removeEventListener(PRIVATE_TAB_RECOVERY_STATUS_EVENT,refresh);
+  },[]);
   function revokeAllTabRecovery(){
     if(!confirmRevokeAll)return;
     // Each mounted hook must also stop future writes. No backend or cross-origin request.
@@ -955,6 +973,7 @@ function PrivateMovingReadinessBoard({rows}:{
         window.sessionStorage.removeItem(key);
       }catch{denied++;}
     }
+    window.dispatchEvent(new Event(PRIVATE_TAB_RECOVERY_STATUS_EVENT));
     setConfirmRevokeAll(false);
     setRevokeMessage(denied>0?
       'De browser heeft opslagverwijdering niet overal bevestigd. Wis zo nodig sitegegevens handmatig.':
@@ -1049,7 +1068,9 @@ function PrivateMovingReadinessBoard({rows}:{
       stap is geen bevestiging van een organisatie.</p>
     <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
       <summary style={{cursor:'pointer',fontWeight:700}}>
-        Privacy: alle tijdelijke tabbladherstelkopieën beheren
+        Privacy: tijdelijke tabbladherstelkopieën beheren
+        {activeTabCopies===null?' (opslagstatus onbekend)':
+          ' ('+activeTabCopies+'/4 ingeschakeld)'}
       </summary>
       <p>Woonreis, plan B, meterstanden en nutsvoorzieningen bieden elk een
         afzonderlijke opt-in voor niet-versleutelde sessie-opslag. De exacte
