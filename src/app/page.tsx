@@ -2540,6 +2540,12 @@ function PrivateMoveAftercare() {
                     onClick={() => openIssueFromInbox(item.id)}>
                     Open het bijbehorende eigen nazorgpunt ↓
                   </button>
+                  <button type="button" className="secondary" onClick={() => {
+                    beginContactCorrection(event);
+                    openIssueFromInbox(item.id);
+                  }}>
+                    Corrigeer deze eigen tijdlijnnotitie ↓
+                  </button>
                 </li>)}
             </ol>}
           {contactTimeline.length > 20 && <button type="button" className="secondary"
@@ -2826,7 +2832,9 @@ function PrivateMoveAftercare() {
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
                 {item.note && <p className="aftercare-note">{item.note}</p>}
-                <details className="aftercare-history">
+                <details className="aftercare-history"
+                  open={Boolean(contactCorrection && history.some(event =>
+                    event.id === contactCorrection.id && event.issueId === item.id))}>
                   <summary>Mijn contacthistorie ({history.filter(event => event.issueId === item.id).length})</summary>
                   <p>Alleen wat je zelf invult. Geen e-mail-, verhuurder- of WoningNet-verificatie.</p>
                   {history.filter(event => event.issueId === item.id).length > 0 ?
