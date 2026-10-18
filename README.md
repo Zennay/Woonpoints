@@ -105,6 +105,15 @@ op. Kies eerst je maximale huur, minimumkamers en maximale reistijd.
   gerangschikt: maximaal 40 punten huurruimte, 35 reistijdruimte, 15 extra
   kamers en optioneel 10 balkonpunten. Dit is **geen woningkans,
   WoningNet-ranking, inkomenscheck of gegarandeerde toelating**.
+- **Bewerk deze woning** opent een expliciet bewerkformulier voor dezelfde
+  privéwoningnotitie. De huidige rangorde en de twee-woningenvergelijking
+  veranderen pas als **Bewaar aanpassingen** geldig is; **Annuleren**
+  behoudt de oorspronkelijke waarden.
+- **Verwijder deze woning** biedt nu **Herstel laatst verwijderde woning**
+  zolang dit tabblad nog open is en je geen nieuwe woning toevoegt, andere
+  woning bewerkt, bestand terugzet of de gehele lijst wist. De herstelactie
+  voert niets uit op WoningNet en verzendt geen gegevens; een gewiste
+  vergelijking of verloren tabbladsessie blijft gewist.
 - Met **Selecteer voor vergelijking** kun je twee van de eigen woningen rechtstreeks
   naast elkaar zetten. De schermvergelijking toont bij welke kandidaat
   de genoteerde huur lager is, de reistijd korter en er meer kamers zijn.
