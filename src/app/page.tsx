@@ -1,4 +1,4 @@
-import { PrivateReactionWorkflow } from './position-stats';
+import { PrivateReactionWorkflow, PrivateReactionPacing } from './position-stats';
 import PositionStats from './position-stats';
 import { ManualHousingDecisionWorkspace } from './position-stats';
 
@@ -31,6 +31,7 @@ export default function HomePage() {
           {([
             ['projectstatus-heading', 'Status'],
             ['manual-progress-heading', 'Maanddoel'],
+            ['private-reaction-pacing-heading', 'Maandplan'],
             ['private-points-heading', 'Zoekpunten'],
             ['reaction-journal-title', 'Reacties'],
             ['housing-shortlist-heading', 'Woningen'],
@@ -63,6 +64,7 @@ export default function HomePage() {
       <PrivateReactionWorkflow>
         <PositionStats />
       </PrivateReactionWorkflow>
+      <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace />
 
       <section className="panel">

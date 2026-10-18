@@ -716,3 +716,34 @@ daarom terecht **Onbekend** waar broncontrole ontbreekt.
 - Zelfs een verschil van nul is een *persoonlijke waarneming*, geen
   officiële toekenning of voorspelling. De WoningNet-worker blijft in
   dry-run en account-/toestemmings-/releasegates blijven intact.
+
+
+## Vrijblijvend maandplan voor zelf woonaanbod bekijken
+
+Onder **Maandplan** vind je nu een los, privé hulppaneel voor de zelfgekozen
+maand. Vul je eigen aantal al gedane kijkmomenten (0–4) en elders
+zelf geplande momenten in. De tool stelt de overige dagen gespreid voor,
+rekening houdend met de echte kalenderdagen, reeds verstreken dagen en
+desgewenst uitsluitend werkdagen. Elk voorgesteld kijkmoment is vervolgens
+zelf aan te passen binnen de overgebleven geldige maanddagen; dubbele of
+verstreken datums blokkeren de export totdat ze zijn hersteld. Als er onvoldoende dagen over zijn,
+wordt dat expliciet getoond; acties schuiven niet stilzwijgend naar een
+volgende maand. Bij reeds vier ingevulde/geplande aandachtspunten stelt
+de tool niets extra's voor.
+
+Alleen na een expliciete knopdruk kan een standaard **voorlopig ICS-bestand**
+met uitsluitend de voorgestelde *kijkmomenten* lokaal worden aangeboden.
+Er staan geen adressen, persoonsgegevens, WoningNet-accounts, opt-in
+reminders, echte woningreacties of geheime gegevens in. Importeren in een
+eigen agenda is de verantwoordelijkheid van de agenda-app; een cloud-
+gesynchroniseerde agenda kan die suggesties vervolgens elders bewaren.
+Het tabblad bewaart zelf geen gegevens en maakt geen API-verzoeken.
+
+**Belangrijk:** dit is geen officiële bron, registratiesysteem of
+reactieautomatisering. Een moment van woonaanbod bekijken is geen
+geldige maandreactie, zoekpunt, uitnodiging, toewijzing of bewijs dat er
+via WoningNet iets is gedaan. De gebruiker moet altijd zelf het aanbod,
+zijn/haar daadwerkelijke reactie en de actuele regels controleren.
+Bestaande `BOT_DRY_RUN=true`, producttoestemming en releasegates blijven
+ongewijzigd. Dit paneel is technisch en qua bronpaden onafhankelijk van
+de afzonderlijke handmatige maandhistorie.
