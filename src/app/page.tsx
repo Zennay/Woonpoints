@@ -1850,6 +1850,28 @@ function PrivateMoveAftercare() {
     }
   }
 
+  function resetAftercareRestoreEphemera() {
+    // Replaced local data invalidates preexisting selections, message previews,
+    // bulk undo and all export/download consents, not just the visible edit form.
+    setChosenIssueIds([]);
+    setNoticeDraft('');
+    setNoticeSource('');
+    setNoticeApproved(false);
+    setBulkSelectedIds([]);
+    setPendingBulk(null);
+    setBulkUndo(null);
+    setPendingTextExport(null);
+    setPendingCsvExport(null);
+    setPendingJsonExport(null);
+    setJsonExportApproved(false);
+    setCompleteBackupPreview(null);
+    setCompleteSummaryText('');
+    setCompleteSummarySource('');
+    setCompleteSummaryApproved(false);
+    setPendingCompleteImport(null);
+    setPendingCompleteSource('');
+    setImportRiskApproved(false);
+  }
   function confirmAftercareImport() {
     if (incoming === null || !incomingCurrent || !incomingRiskApproved) {
       setIncomingRiskApproved(false);
@@ -1864,6 +1886,7 @@ function PrivateMoveAftercare() {
     setAftercareImportUndo({ previous, importedSignature });
     setItems(incoming.items);
     setHistory(incoming.history);
+    resetAftercareRestoreEphemera();
     setHistoryTarget(null);
     setHistoryDeletePending(null);
     setIncoming(null);
@@ -1887,6 +1910,7 @@ function PrivateMoveAftercare() {
     }
     setItems(aftercareImportUndo.previous.items);
     setHistory(aftercareImportUndo.previous.history);
+    resetAftercareRestoreEphemera();
     setIncoming(null);
     setIncomingRiskApproved(false);
     setIncomingSource('');
