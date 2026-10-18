@@ -4000,6 +4000,7 @@ export function PrivateReactionPacing() {
   const [alreadyPlanned, setAlreadyPlanned] = useState('0');
   const [workdaysOnly, setWorkdaysOnly] = useState(true);
   const [message, setMessage] = useState('');
+  const [dateChoices, setDateChoices] = useState<Record<number, string>>({});
   useEffect(() => {
     const now = new Date();
     setMonth(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
@@ -4032,6 +4033,9 @@ export function PrivateReactionPacing() {
         openDates[Math.floor(((i + 1) * openDates.length) / (Math.min(missing, openDates.length) + 1))])
     : [];
   const insufficient = missing > proposed.length;
+  const selected = proposed.map((day, i) => dateChoices[i] ?? day);
+  const selectionValid = selected.every(day => openDates.includes(day)) &&
+    new Set(selected).size === selected.length;
   const fmt = (date: string) => {
     const [y,m,d] = date.split('-').map(Number);
     return new Intl.DateTimeFormat('nl-NL', {
@@ -4039,14 +4043,15 @@ export function PrivateReactionPacing() {
     }).format(new Date(y,m-1,d,12));
   };
   function downloadPlan() {
-    if (!validMonth || !countsOk || missing === 0 || insufficient || proposed.length !== missing) {
+    if (!validMonth || !countsOk || missing === 0 || insufficient ||
+        proposed.length !== missing || !selectionValid) {
       setMessage('Er zijn onvoldoende geldige toekomstige dagen voor een volledige planning.');
       return;
     }
     const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
     const lines = ['BEGIN:VCALENDAR','VERSION:2.0','CALSCALE:GREGORIAN',
       'PRODID:-//Woonpoints//Prive maandreactieplan//NL','METHOD:PUBLISH'];
-    for (const date of proposed) {
+    for (const date of selected) {
       const [year,m,d] = date.split('-').map(Number);
       const following = new Date(year,m-1,d+1,12);
       const end = String(following.getFullYear()) +
@@ -4092,16 +4097,22 @@ export function PrivateReactionPacing() {
     <div>
       <label htmlFor="pacing-month">Kalendermaand</label>
       <input id="pacing-month" type="month" min="2000-01" max="2099-12"
-        value={month} onChange={event=>{setMonth(event.target.value);setMessage('');}}/>
+        value={month} onChange={event=>{
+          setMonth(event.target.value);setDateChoices({});setMessage('');
+        }}/>
       <label htmlFor="pacing-count">Zelf al gedaan deze maand (0–4, niet geverifieerd)</label>
       <input id="pacing-count" type="number" min="0" max="4" step="1"
-        value={selfCount} onChange={event=>{setSelfCount(event.target.value);setMessage('');}}/>
+        value={selfCount} onChange={event=>{
+          setSelfCount(event.target.value);setDateChoices({});setMessage('');
+        }}/>
       <label htmlFor="pacing-planned">Zelf elders al gepland (0–4)</label>
       <input id="pacing-planned" type="number" min="0" max="4" step="1"
-        value={alreadyPlanned} onChange={event=>{setAlreadyPlanned(event.target.value);setMessage('');}}/>
+        value={alreadyPlanned} onChange={event=>{
+          setAlreadyPlanned(event.target.value);setDateChoices({});setMessage('');
+        }}/>
       <label style={{display:'flex',gap:8,alignItems:'center'}}>
         <input type="checkbox" checked={workdaysOnly} onChange={event=>{
-          setWorkdaysOnly(event.target.checked);setMessage('');
+          setWorkdaysOnly(event.target.checked);setDateChoices({});setMessage('');
         }}/>
         Alleen op werkdagen voorstellen
       </label>
@@ -4119,17 +4130,28 @@ export function PrivateReactionPacing() {
           een actie naar de volgende maand.</p>}
         {proposed.length>0 && <div>
           <h3>Vrijblijvende suggesties</h3>
-          <ol>{proposed.map(day=><li key={day}>{fmt(day)}</li>)}</ol>
+          <ol>{selected.map((day, i)=><li key={i}>
+            <label htmlFor={'pacing-day-'+i}>Aandachtspunt {i+1}</label>
+            <select id={'pacing-day-'+i} value={day}
+              onChange={event=>{
+                setDateChoices(previous=>({...previous,[i]:event.target.value}));
+                setMessage('');
+              }}>
+              {openDates.map(date=><option value={date} key={date}>{fmt(date)}</option>)}
+            </select>
+          </li>)}</ol>
+          {!selectionValid && <p role="alert">Kies voor ieder aandachtspunt een andere, nog toekomstige datum in dezelfde maand.</p>}
+          <p>Je kunt elke voorgestelde datum zelf aanpassen. Alle dagen blijven voorlopig en persoonlijk.</p>
           <p>Datums zijn uitsluitend voorgestelde kijkmomenten, geen deadlines
             van een verhuurder of bevestigde afspraken.</p>
         </div>}
         <button type="button" onClick={downloadPlan}
-          disabled={missing===0 || insufficient || proposed.length!==missing}>
+          disabled={missing===0 || insufficient || proposed.length!==missing || !selectionValid}>
           Bewaar alleen deze suggesties als voorlopige agenda-ICS…
         </button>
       </>}
       <button type="button" className="secondary" onClick={()=>{
-        setSelfCount('0');setAlreadyPlanned('0');setMessage('');
+        setSelfCount('0');setAlreadyPlanned('0');setDateChoices({});setMessage('');
       }}>Wis mijn aantallen</button>
       <p aria-live="polite">{message}</p>
       <p>Een ICS-download gebeurt alleen na jouw klik. Je kalenderprovider kan
