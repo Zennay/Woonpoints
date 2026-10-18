@@ -1189,9 +1189,13 @@ function PrivateMoveAftercare() {
   }
 
   function toggleNoticeItem(id: string) {
-    setChosenIssueIds(prev => prev.includes(id)
-      ? prev.filter(existing => existing !== id)
-      : prev.length >= 12 ? prev : [...prev, id]);
+    setChosenIssueIds(previous => {
+      // Completed/deleted points cannot permanently consume one of the 12 choices.
+      const current = previous.filter(key => active.some(item => item.id === key));
+      return current.includes(id)
+        ? current.filter(existing => existing !== id)
+        : current.length >= 12 ? current : [...current, id];
+    });
     setNoticeApproved(false);
   }
   function createNoticeDraft() {
@@ -1365,7 +1369,7 @@ function PrivateMoveAftercare() {
                   {entry.ownFutureAppointment ? ' · Eigen toekomstige afspraaknotitie aanwezig' : ''}
                 </p>
                 <button type="button" className="secondary"
-                  disabled={!chosenIssueIds.includes(entry.item.id) && chosenIssueIds.length >= 12}
+                  disabled={!chosenIssueIds.includes(entry.item.id) && noticeItems.length >= 12}
                   onClick={() => openNoticeFromInbox(entry.item.id, 'eerste-melding')}>
                   {chosenIssueIds.includes(entry.item.id) ? 'Bekijk mijn conceptselectie ↓' : 'Neem op in eigen concept ↓'}
                 </button>
