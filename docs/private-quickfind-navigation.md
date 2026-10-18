@@ -1,7 +1,11 @@
 # Woonpoints snelzoeken en privé-navigatie
 
 De startpagina heeft tientallen losse privéhulpmiddelen. Met **Ctrl+K**
-(of **⌘K** op macOS) spring je rechtstreeks naar de zoekbalk. Zoek naar
+(of **⌘K** op macOS) spring je rechtstreeks naar de zoekbalk. Kies met
+**↑ / ↓** tussen de zoekresultaten; de geselecteerde schermnaam wordt ook
+voor schermlezers aangekondigd. Druk op **Enter** om meteen naar het
+gekozen, bekende schermanker te gaan; ook deze sprong wordt in de
+private ↗ Recent-lijst bijgehouden. Zoek naar
 een schermnaam of praktische term: bijvoorbeeld `dozen`, `bonnetjes`,
 `meteropname`, `woning kiezen` of `gebreken`. Accenten tellen niet
 mee; de resultaten bestaan uitsluitend uit vooraf gedefinieerde
