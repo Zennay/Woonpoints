@@ -1776,6 +1776,25 @@ export function PrivateMovingDayTimeline() {
   const [pending, setPending] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<{ moveDate: string; completed: string[]; extras: ExtraTask[] } | null>(null);
   const [message, setMessage] = useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'timeline',data:{moveDate,completed,extras}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[moveDate,completed,extras]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setMoveDate(archive.timeline.moveDate);setCompleted(archive.timeline.completed);setExtras(archive.timeline.extras);setNewTask('');setNewOffset('-7');setPending(null);setPendingRestore(null);
+      setMessage('De planning is uit de privé-werkmap hersteld na je bevestiging.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
 
   const dateValid = dateOnly(moveDate) !== null;
   const tasks = [...DEFAULT_TASKS, ...extras]
@@ -1980,6 +1999,25 @@ export function PrivateMovingHandover() {
   const [pendingExport, setPendingExport] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'handover',data:{entries}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[entries]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setEntries(archive.handover.entries);setStage('in');setForm(handoverEmpty());setPendingSave(null);setPendingExport(null);setConfirmClear(false);
+      setNotice('Sleutel- en meteropnamen zijn uit de privé-werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
 
   function change<K extends keyof PrivateHandoverForm>(name:K, value:PrivateHandoverForm[K]) {
     setForm(old => ({...old, [name]:value}));
@@ -2145,6 +2183,25 @@ export function PrivateMoveDocumentReadiness(){
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [pendingClear,setPendingClear]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'documents',data:{extras,states,dates}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[extras,states,dates]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setExtras(archive.documents.extras);setStates(archive.documents.states);setDates(archive.documents.dates);setTitle('');setPendingBackup(null);setPendingReport(null);setPendingClear(false);
+      setNotice('Documentstatussen zijn uit de privé-werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const docs=[...READINESS_DEFAULTS,...extras];
   const actionable=docs.filter(item=>(states[item.id]||'needed')!=='skip');
   const ready=actionable.filter(item=>states[item.id]==='ready').length;
