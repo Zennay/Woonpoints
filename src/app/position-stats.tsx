@@ -1954,11 +1954,12 @@ function readPrivateCostOption(raw: PrivateCostInputs): PrivateCostOption | null
   return {rent, extras, moving, growth};
 }
 function projectPrivateHousingCosts(option: PrivateCostOption, years: number) {
-  let cumulative = option.moving;
+  let cumulative = 0;
   return Array.from({length: years}, (_, i) => {
     const year = i + 1;
     const monthlyRent = option.rent * Math.pow(1 + option.growth / 100, i);
-    const yearly = (monthlyRent + option.extras) * 12;
+    // Include one-time moving costs in year one, never in later years.
+    const yearly = (monthlyRent + option.extras) * 12 + (i === 0 ? option.moving : 0);
     cumulative += yearly;
     return {year, monthlyRent, yearly, cumulative};
   });
@@ -1972,7 +1973,7 @@ export function PrivateLongTermHousingCosts() {
   const [message, setMessage] = useState('');
   const left = readPrivateCostOption(first);
   const right = readPrivateCostOption(second);
-  const years = /^[1-9]|10$/.test(horizon) && Number.isInteger(Number(horizon)) &&
+  const years = /^(?:[1-9]|10)$/.test(horizon) && Number.isInteger(Number(horizon)) &&
     Number(horizon) >= 1 && Number(horizon) <= 10 ? Number(horizon) : null;
   const leftRows = left && years ? projectPrivateHousingCosts(left, years) : null;
   const rightRows = right && years ? projectPrivateHousingCosts(right, years) : null;
@@ -2069,7 +2070,7 @@ export function PrivateLongTermHousingCosts() {
           verhuiskosten (€0–€50.000), huurstijging (0–25%) en duur (1–10 jaar) in.
           Een komma of punt voor centen is toegestaan.</p>}
         {last && <div className="private-budget-provenance" aria-live="polite">
-          <h3>Na {years} {years === 1 ? 'jaar' : 'jaar'}</h3>
+          <h3>Na {years} jaar</h3>
           <p>Totale geschatte uitgaven inclusief eenmalige startkosten:
             <strong> A {format(last.a.cumulative)}</strong> en
             <strong> B {format(last.b.cumulative)}</strong>.</p>
