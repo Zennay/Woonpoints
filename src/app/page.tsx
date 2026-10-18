@@ -836,9 +836,9 @@ function PrivateMovingReadinessBoard({rows}:{
   const reminders=rows.flatMap(row=>row.pulse?.reminders??[])
     .sort((a,b)=>a.day.localeCompare(b.day)||a.origin.localeCompare(b.origin)||a.id.localeCompare(b.id));
   const calendar=(()=>{
-    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}Z$/,'Z');
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
     const escape=(value:string)=>value.replace(/\\/g,'\\\\')
-      .replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\\r?\\n/g,'\\n');
+      .replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
     const lines=['BEGIN:VCALENDAR','VERSION:2.0',
       'PRODID:-//Woonpoints//Private Moving Readiness//NL',
       'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
@@ -854,7 +854,18 @@ function PrivateMovingReadinessBoard({rows}:{
         'DESCRIPTION:Persoonlijke Woonpoints-controledatum. Geen externe afspraak of bevestiging.',
         'END:VEVENT');
     }
-    return [...lines,'END:VCALENDAR',''].join('\\r\\n');
+    // Fold at <=70 UTF-8 octets, without splitting multibyte characters.
+    const encoder=new TextEncoder();
+    const fold=(line:string)=>{
+      let out='',octets=0;
+      for(const character of line){
+        const bytes=encoder.encode(character).length;
+        if(octets+bytes>70){out+='\r\n ';octets=1;}
+        out+=character;octets+=bytes;
+      }
+      return out;
+    };
+    return [...lines,'END:VCALENDAR',''].map(fold).join('\r\n');
   })();
   const formatLine=(value:string)=>value.replace(/[\u0000-\u001f\u007f-\u009f]/gu,' ').trim();
   const report=[
