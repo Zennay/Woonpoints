@@ -625,12 +625,13 @@ function usePrivateTabRecovery<T>(
     try{
       const raw=encode(value);
       if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      if(decode(raw)===null)throw Error('schema');
       window.sessionStorage.setItem(storageKey,raw);
       window.sessionStorage.setItem(flagKey,'yes');
     }catch{
       setEnabled(false);
       try{clear();}catch{/* Fail closed; no claim of successful removal. */}
-      setStorageMessage('Automatisch tabbladherstel gestopt: opslag geweigerd. Download zelf een JSON-back-up.');
+      setStorageMessage('Automatisch tabbladherstel gestopt: invoer niet herstelbaar of opslag geweigerd. Download zelf een geldige JSON-back-up.');
     }
   },[value,hydrated,enabled,storageKey,flagKey,encode,maxBytes]);
   function enable(){
@@ -638,6 +639,7 @@ function usePrivateTabRecovery<T>(
     try{
       const raw=encode(value);
       if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      if(decode(raw)===null)throw Error('schema');
       window.sessionStorage.setItem(storageKey,raw);
       window.sessionStorage.setItem(flagKey,'yes');
       setEnabled(true);
@@ -645,7 +647,7 @@ function usePrivateTabRecovery<T>(
     }catch{
       setEnabled(false);
       try{clear();}catch{/* May be inaccessible. */}
-      setStorageMessage('Opslaan geweigerd: sessie-opslag ontbreekt of is vol. Gebruik de JSON-download.');
+      setStorageMessage('Opslaan geweigerd: invoer niet herstelbaar of sessie-opslag ontbreekt. Gebruik de JSON-download.');
     }
   }
   function disable(){
@@ -5575,11 +5577,44 @@ function handoverRestore(raw: string): {
  * Private moving-day worksheet; no WoningNet API, account, localStorage,
  * third-party sync, automatic supplier submission, or energy-usage inference.
  */
+
+type PrivateMeterTabData={
+  readings:Record<HandoverHomeKey,HandoverReading>;
+  included:Record<HandoverMeterKey,boolean>
+};
+const METER_TAB_STORAGE_KEY='woonpoints:private-meter-handover:tab-recovery:v1';
+function initialMeterTab():PrivateMeterTabData{
+  return {
+    readings:{
+      old:{day:'',values:{...HANDOVER_EMPTY_VALUES}},
+      new:{day:'',values:{...HANDOVER_EMPTY_VALUES}}
+    },
+    included:{powerDay:true,powerNight:false,gas:true,water:true,heat:false}
+  };
+}
+function encodeMeterTab(value:PrivateMeterTabData):string{
+  return handoverBackup(value.readings,value.included);
+}
+function decodeMeterTab(raw:string):PrivateMeterTabData|null{
+  try{return handoverRestore(raw);}catch{return null;}
+}
 function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
-  const [readings, setReadings] = useState<Record<HandoverHomeKey, HandoverReading>>(HANDOVER_EMPTY);
-  const [included, setIncluded] = useState<Record<HandoverMeterKey, boolean>>({
-    powerDay: true, powerNight: false, gas: true, water: true, heat: false
-  });
+  const {value:meterTab,setValue:setMeterTab,enabled:rememberMeters,
+    hydrated:metersReady,storageMessage:metersStorageMessage,
+    enable:enableMetersRestore,disable:disableMetersRestore}
+    =usePrivateTabRecovery<PrivateMeterTabData>(
+      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096);
+  const {readings,included}=meterTab;
+  const setReadings=(change:Record<HandoverHomeKey,HandoverReading>|
+    ((before:Record<HandoverHomeKey,HandoverReading>)=>Record<HandoverHomeKey,HandoverReading>))=>{
+    setMeterTab(previous=>({...previous,readings:
+      typeof change==='function'?change(previous.readings):change}));
+  };
+  const setIncluded=(change:Record<HandoverMeterKey,boolean>|
+    ((before:Record<HandoverMeterKey,boolean>)=>Record<HandoverMeterKey,boolean>))=>{
+    setMeterTab(previous=>({...previous,included:
+      typeof change==='function'?change(previous.included):change}));
+  };
   const [preview, setPreview] = useState<{
     source: string; text: string; format: 'txt' | 'json'
   } | null>(null);
@@ -5710,6 +5745,28 @@ function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void
     <p>Leg op de overdrachtsdag zelf de standen vast. Vul alleen meters in die echt bij de
       betreffende woning horen. Standen van twee verschillende woningen worden nooit van
       elkaar afgetrokken. Er is geen accountkoppeling of automatische leveranciersmelding.</p>
+    <details style={{marginBottom:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Meterstanden bij herladen behouden ({rememberMeters?'aan':'uit'})
+      </summary>
+      <p>Je eigen meterstanden zijn privé. Alleen met aparte toestemming
+        bewaren we de exact gecontroleerde oude/nieuwe standen en meterkeuzes
+        tijdelijk in <strong>niet-versleutelde sessie-opslag van dit tabblad</strong>.
+        Andere scripts op dezelfde website kunnen die informatie lezen. Gebruik
+        dit niet op gedeelde apparaten en vul geen adres- of accountgegevens in.
+        Sluiten van het tabblad verwijdert de opslag gewoonlijk. Download zelf
+        de JSON-back-up voor langdurig bewaren; er worden geen standen
+        automatisch naar verhuurder of energieleverancier verzonden.</p>
+      {rememberMeters?<button type="button" disabled={!metersReady}
+        onClick={disableMetersRestore} style={{minHeight:44}}>
+        Stop en wis opgeslagen meterstanden</button>:
+        <button type="button" disabled={!metersReady}
+          onClick={enableMetersRestore} style={{minHeight:44}}>
+          Ja, onthoud meterstanden bij herladen</button>}
+      <p role="status" aria-live="polite">
+        {metersStorageMessage|| (metersReady?'Geen sessieopslag actief.':'Opslag wordt gecontroleerd.')}
+      </p>
+    </details>
     <fieldset style={{ border: '1px solid #c4d6c9', borderRadius: 12, padding: 14 }}>
       <legend><strong>Welke meters wil je opnemen?</strong></legend>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -6027,12 +6084,24 @@ function PrivateUtilityDeadlineDesk({
  * or local storage. A calendar file may be shared by an external calendar app
  * only after an explicit full preview and a separate user consent checkbox.
  */
+
+const UTILITY_TAB_STORAGE_KEY='woonpoints:private-utility-transfer:tab-recovery:v1';
+function encodeUtilityTab(entries:Record<PrivateUtilityKey,PrivateUtilityStep>):string{
+  return privateUtilityBackup(entries);
+}
+function decodeUtilityTab(raw:string):Record<PrivateUtilityKey,PrivateUtilityStep>|null{
+  try{return privateUtilityRestore(raw);}catch{return null;}
+}
 function PrivateUtilityTransfer({
   onLogContact,onPulse
 }: { onLogContact?: (utility:PrivateUtilityKey)=>void;
      onPulse?: (pulse:PrivateMovePulse)=>void }={}) {
-  const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
-    PRIVATE_UTILITY_EMPTY);
+  const {value:entries,setValue:setEntries,enabled:rememberUtilities,
+    hydrated:utilitiesReady,storageMessage:utilitiesStorageMessage,
+    enable:enableUtilitiesRestore,disable:disableUtilitiesRestore}
+    =usePrivateTabRecovery<Record<PrivateUtilityKey,PrivateUtilityStep>>(
+      UTILITY_TAB_STORAGE_KEY,()=>PRIVATE_UTILITY_EMPTY,
+      encodeUtilityTab,decodeUtilityTab,4096);
   const [preview, setPreview] = useState<{
     source: string; text: string; kind: 'txt' | 'ics' | 'json'
   } | null>(null);
@@ -6150,6 +6219,27 @@ function PrivateUtilityTransfer({
     <p>Gebruik zes handmatige stappen om je verhuizing te organiseren. Je kiest je eigen
       controledatums en houdt apart bij wat nog openstaat, wat je zelf hebt aangevraagd
       en wat je zelf als afgerond hebt genoteerd. Een status is nooit officiële bevestiging.</p>
+    <details style={{marginBottom:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Mijn checklist bij herladen behouden ({rememberUtilities?'aan':'uit'})
+      </summary>
+      <p>Zonder toestemming blijven de zes eigen statussen en datums alleen in dit
+        tabbladgeheugen. Met jouw expliciete toestemming gebruiken we
+        <strong> niet-versleutelde sessie-opslag in dit tabblad</strong> voor het
+        exact gevalideerde bestand. Scripts op deze website kunnen dit lezen;
+        gebruik dit niet op een gedeeld apparaat en vul geen persoonsgegevens in.
+        Er gebeurt niets bij je leveranciers. Sluiten van het tabblad verwijdert
+        de sessie doorgaans; langdurig bewaren gaat via je eigen JSON-download.</p>
+      {rememberUtilities?<button type="button" disabled={!utilitiesReady}
+        onClick={disableUtilitiesRestore} style={{minHeight:44}}>
+        Stop en wis mijn tabbladchecklist</button>:
+        <button type="button" disabled={!utilitiesReady}
+          onClick={enableUtilitiesRestore} style={{minHeight:44}}>
+          Ja, onthoud mijn zes stappen bij herladen</button>}
+      <p role="status" aria-live="polite">
+        {utilitiesStorageMessage|| (utilitiesReady?'Geen sessieopslag actief.':'Opslag wordt gecontroleerd.')}
+      </p>
+    </details>
     <div style={{ display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 310px), 1fr))', gap: 12 }}>
       {PRIVATE_UTILITIES.map(item => <fieldset key={item.id} id={'utility-step-' + item.id} style={{

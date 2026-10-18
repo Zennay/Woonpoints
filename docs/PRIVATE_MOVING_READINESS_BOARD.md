@@ -26,10 +26,11 @@ organisaties, boekingen, accountdata of berichten naar derden.
 2. Onder **Nu zelf controleren** staan uitsluitend zelfgekozen verstreken
    controledatums en invoerwaarschuwingen.
 3. Volg **Open en werk bij** om het echte brononderdeel te openen. Na wijzigingen,
-   import of undo wordt het regiebord automatisch bijgewerkt. In de woonreis
-   en het plan B kan de gebruiker nu **expliciet** kiezen voor tijdelijk
-   tabbladherstel na herladen. Bij een geldige, opt-in sessiekopie verschijnt
-   automatisch de herstelde voortgang in de regiekaart.
+   import of undo wordt het regiebord automatisch bijgewerkt. Alle vier
+   gekoppelde onderdelen — woonreis, plan B, meterstanden en nutsvoorzieningen —
+   bieden nu **afzonderlijke opt-in** voor tijdelijk tabbladherstel na herladen.
+   Bij een geldige eigen sessiekopie verschijnt automatisch de herstelde
+   voortgang in de bijbehorende regiekaart.
 4. Het regiebord verzamelt de **open, zelfgekozen controledatums** uit de
    bestaande plan-B- en nutsvoorzieningsmodules, sorteert die op datum en
    toont verwijzingen naar de oorspronkelijke invoer. Afgeronde taken verdwijnen
@@ -47,10 +48,13 @@ organisaties, boekingen, accountdata of berichten naar derden.
 
 - Geen netwerkaanroep, API-, SQLite- of serverwijziging.
 - Geen localStorage of cookies; het regiebord slaat zelf niets op. Het leest
-  de bestaande tabbladstatus van broncomponenten. Alleen de woonreis en plan B
-  kunnen na afzonderlijke expliciete toestemming een niet-versleutelde,
+  de bestaande tabbladstatus van broncomponenten. Elk van de vier bronmodules
+  kan **na afzonderlijke expliciete toestemming** een niet-versleutelde,
   versiegebonden `sessionStorage`-kopie voor hetzelfde tabblad bewaren.
-  Dit verandert de bestaande privacygrenzen van de andere modules niet.
+  Meterstanden en contract-/statusdatums zijn privé-informatie: vermijd
+  gedeelde apparaten en maak desgewenst een eigen JSON-download.
+  Het stoppen van bewaren verwijdert de bijbehorende tabbladkopie zonder de
+  actieve invoer te wissen. Andere Woonpoints-modules blijven onaangetast.
 - Geen externe meldingen, agenda-import, betalingen of automatische acties.
 - Agenda-export voldoet aan RFC 5545-regelvouw en geeft zelfgekozen, niet
   officieel gevalideerde dagafspraken; daadwerkelijk importeren blijft een
