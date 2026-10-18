@@ -593,9 +593,13 @@ const MOVING_FALLBACK_LIMIT=8192;
  * Never syncs, writes by default, or uses localStorage. JSON schema is always revalidated. */
 const PRIVATE_TAB_RECOVERY_REVOKE_EVENT='woonpoints:private-tab-recovery-revoke:v1';
 const PRIVATE_TAB_RECOVERY_STATUS_EVENT='woonpoints:private-tab-recovery-status:v1';
+const PRIVATE_MOVING_BUNDLE_RESTORE_EVENT='woonpoints:private-moving-bundle-restore:v1';
+type PrivateMovingSnapshotChange=(change:(previous:Record<string,string>)=>Record<string,string>)=>void;
+type PrivateMovingRestoreMessage={key:string;raw:string};
 function usePrivateTabRecovery<T>(
   storageKey:string,initial:()=>T,encode:(data:T)=>string,
-  decode:(raw:string)=>T|null,maxBytes:number
+  decode:(raw:string)=>T|null,maxBytes:number,
+  onBundleSnapshot?:PrivateMovingSnapshotChange
 ){
   const [value,setValue]=useState<T>(initial);
   const [enabled,setEnabled]=useState(false);
@@ -622,6 +626,28 @@ function usePrivateTabRecovery<T>(
     }
     setHydrated(true);
   },[storageKey,flagKey,decode,maxBytes]);
+  useEffect(()=>{
+    function applyBundle(event:Event){
+      const detail=(event as CustomEvent<PrivateMovingRestoreMessage>).detail;
+      if(!hydrated||!detail||detail.key!==storageKey||
+        typeof detail.raw!=='string')return;
+      try{
+        if(new TextEncoder().encode(detail.raw).length>maxBytes)return;
+        const next=decode(detail.raw);
+        if(next===null)return;
+        setValue(next);
+        setStorageMessage('Gegevens bijgewerkt uit expliciet bevestigde gecombineerde privéback-up.');
+      }catch{/* Import must never bypass module validation or corrupt live input. */}
+    }
+    window.addEventListener(PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,applyBundle);
+    return ()=>window.removeEventListener(PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,applyBundle);
+  },[storageKey,decode,maxBytes,hydrated]);
+  useEffect(()=>{
+    if(!hydrated||!onBundleSnapshot)return;
+    const raw=encode(value);
+    onBundleSnapshot(previous=>previous[storageKey]===raw?previous:
+      {...previous,[storageKey]:raw});
+  },[storageKey,encode,value,hydrated,onBundleSnapshot]);
   useEffect(()=>{
     const revoke=()=>{
       setEnabled(false);
@@ -726,12 +752,15 @@ function movingFallbackDownload(name:string,body:string,mime:string){
     document.body.appendChild(link);link.click();link.remove();
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
-function PrivateMovingFallbackPlan({onPulse}:{onPulse?: (pulse:PrivateMovePulse)=>void}={}){
+function PrivateMovingFallbackPlan({onPulse,onBundleSnapshot}:{
+  onPulse?: (pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}){
   const {value:entries,setValue:setEntries,enabled:rememberTab,hydrated:tabReady,
     storageMessage:tabStorageMessage,enable:enableTabRestore,
     disable:disableTabRestore}=usePrivateTabRecovery<MovingFallbackEntry[]>(
       FALLBACK_TAB_STORAGE_KEY,defaultMovingFallbacks,
-      encodeFallbackTab,decodeFallbackTab,MOVING_FALLBACK_LIMIT);
+      encodeFallbackTab,decodeFallbackTab,MOVING_FALLBACK_LIMIT,onBundleSnapshot);
   const [preview,setPreview]=useState<'txt'|'json'|'ics'|null>(null);
   const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
   const [undo,setUndo]=useState<{before:MovingFallbackEntry[];after:string}|null>(null);
@@ -941,8 +970,10 @@ type PrivateMovePulse={done:number;total:number;attention:number;invalid:boolean
 type PrivateMovingReadinessRow={
   id:string;title:string;href:string;hint:string;pulse:PrivateMovePulse|null
 };
-function PrivateMovingReadinessBoard({rows}:{
-  rows:PrivateMovingReadinessRow[]
+
+function PrivateMovingReadinessBoard({rows,snapshots}:{
+  rows:PrivateMovingReadinessRow[];
+  snapshots:Record<string,string>
 }){
   const [confirmRevokeAll,setConfirmRevokeAll]=useState(false);
   const [revokeMessage,setRevokeMessage]=useState('');
@@ -979,6 +1010,98 @@ function PrivateMovingReadinessBoard({rows}:{
       'De browser heeft opslagverwijdering niet overal bevestigd. Wis zo nodig sitegegevens handmatig.':
       'Alle vier tijdelijke herstelkopieën ingetrokken en gewist. Open formulierinvoer blijft staan.');
   }
+  const [bundlePreview,setBundlePreview]=useState<{from:string;contents:string}|null>(null);
+  const [bundleDownloadApproved,setBundleDownloadApproved]=useState(false);
+  const [bundleIncoming,setBundleIncoming]=useState<{
+    from:string;contents:string;data:PrivateMovingBundleData
+  }|null>(null);
+  const [bundleRestoreApproved,setBundleRestoreApproved]=useState(false);
+  const [bundleSelected,setBundleSelected]=useState<string[]>(()=>PRIVATE_MOVING_BUNDLE_PARTS.map(part=>part.key));
+  const [bundleUndo,setBundleUndo]=useState<{
+    expected:string;previous:PrivateMovingBundleData
+  }|null>(null);
+  const [bundleMessage,setBundleMessage]=useState('');
+  const bundleReady=privateMovingBundleCurrent(snapshots);
+  const bundleSignature=privateMovingBundleSignature(snapshots);
+  const bundlePreviewFresh=bundlePreview!==null&&bundlePreview.from===bundleSignature&&bundleReady;
+  const bundleIncomingFresh=bundleIncoming!==null&&bundleIncoming.from===bundleSignature&&bundleReady;
+  const bundleUndoFresh=bundleUndo!==null&&bundleUndo.expected===bundleSignature&&bundleReady;
+  function previewBundle(){
+    setBundlePreview(null);setBundleDownloadApproved(false);setBundleMessage('');
+    try{
+      const contents=privateMovingBundleSerialize(snapshots);
+      setBundlePreview({from:bundleSignature,contents});
+    }catch{
+      setBundleMessage('Eén of meer onderdelen hebben ongeldige invoer. Herstel dit eerst bij de bron.');
+    }
+  }
+  function downloadBundle(){
+    if(!bundlePreviewFresh||!bundleDownloadApproved||!bundlePreview)return;
+    const url=URL.createObjectURL(new Blob([bundlePreview.contents],{
+      type:'application/json;charset=utf-8'
+    }));
+    try{
+      const link=document.createElement('a');link.href=url;
+      link.download='woonpoints-verhuisregie-prive-backup.json';
+      document.body.appendChild(link);link.click();link.remove();
+      setBundleMessage('Eigen privébestand aan je browser aangeboden; geen automatische cloudopslag.');
+    }finally{
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+      setBundlePreview(null);setBundleDownloadApproved(false);
+    }
+  }
+  async function importBundle(file:File|undefined){
+    setBundleIncoming(null);setBundleRestoreApproved(false);setBundleMessage('');
+    setBundleSelected(PRIVATE_MOVING_BUNDLE_PARTS.map(part=>part.key));
+    if(!file)return;
+    if(!bundleReady){
+      setBundleMessage('Niet alle bronschermen zijn geladen; herladen of herstellen niet mogelijk.');
+      return;
+    }
+    if(file.size>PRIVATE_MOVING_BUNDLE_LIMIT){
+      setBundleMessage('Gecombineerde back-up geweigerd: groter dan 32 KiB.');return;
+    }
+    try{
+      const contents=await file.text();
+      const data=privateMovingBundleParse(contents);
+      if(!data)throw Error('invalid');
+      setBundleIncoming({from:bundleSignature,contents,data});
+      setBundlePreview(null);setBundleDownloadApproved(false);
+    }catch{
+      setBundleMessage('Back-up geweigerd: geen exact geldig Woonpoints-combinatiebestand.');
+    }
+  }
+  function applyBundle(data:PrivateMovingBundleData,selected?:string[]){
+    for(const part of PRIVATE_MOVING_BUNDLE_PARTS){
+      if(selected&&!selected.includes(part.key))continue;
+      window.dispatchEvent(new CustomEvent<PrivateMovingRestoreMessage>(
+        PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,{
+          detail:{key:part.key,raw:data[part.key]}
+        }));
+    }
+  }
+  function restoreBundle(){
+    if(!bundleIncomingFresh||!bundleRestoreApproved||!bundleIncoming||
+      !bundleSelected.length)return;
+    const previous={...snapshots};
+    const next=bundleIncoming.data;
+    const combined={...previous};
+    for(const part of PRIVATE_MOVING_BUNDLE_PARTS){
+      if(bundleSelected.includes(part.key))combined[part.key]=next[part.key];
+    }
+    // Every subdocument validates before any selected source is changed.
+    applyBundle(next,bundleSelected);
+    setBundleUndo({expected:privateMovingBundleSignature(combined),previous});
+    setBundleIncoming(null);setBundleRestoreApproved(false);
+    setBundleMessage(bundleSelected.length+' gekozen bronscherm(en) teruggezet. Je vorige tabbladstatus is éénmalig herstelbaar.');
+  }
+  function undoBundle(){
+    if(!bundleUndoFresh||!bundleUndo)return;
+    applyBundle(bundleUndo.previous);
+    setBundleUndo(null);setBundleIncoming(null);setBundleRestoreApproved(false);
+    setBundleMessage('Vorige open tabbladstatus hersteld; de bronmodules bewaren alleen bij afzonderlijke opt-in.');
+  }
+
   const [preview,setPreview]=useState<{
     signature:string;contents:string;mode:'txt'|'ics'
   }|null>(null);
@@ -1066,6 +1189,89 @@ function PrivateMovingReadinessBoard({rows}:{
       uitsluitend hun huidige tabbladstatus, niet WoningNet, de overheid, de verhuurder
       of een leverancier. Een open stap is geen officiële achterstand; een afgevinkte
       stap is geen bevestiging van een organisatie.</p>
+    <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Mijn vier verhuisdelen samen back-uppen of herstellen
+      </summary>
+      <p>Hier kun je de volledige eigen tabbladinvoer van de
+        <strong> woonreis, plan B, meterstanden én nutsvoorzieningen</strong> in één
+        privé-JSON opslaan of terugzetten. Dit bestand bevat mogelijk ingevulde
+        actieomschrijvingen, contactrollen, meterstanden en eigen datums.
+        Bekijk de inhoud vóór downloaden en kies zelf een veilige bewaarlocatie;
+        die kan extern synchroniseren. Woonpoints verstuurt dit nergens heen.
+        Hiermee worden <strong>geen</strong> WoningNet-reacties, contracten,
+        leveranciers of afspraken officieel verwerkt.</p>
+      <button type="button" disabled={!bundleReady} onClick={previewBundle}
+        style={{minHeight:44}}>Bekijk exacte volledige privéback-up</button>
+      {bundlePreview&&<div>
+        {bundlePreviewFresh?<><p>Je eigen complete bestand (exacte inhoud):</p>
+          <pre style={{maxHeight:250,overflow:'auto',whiteSpace:'pre-wrap',
+            overflowWrap:'anywhere'}}>{bundlePreview.contents}</pre>
+          <label style={{display:'block',minHeight:44}}>
+            <input type="checkbox" checked={bundleDownloadApproved}
+              onChange={event=>setBundleDownloadApproved(event.target.checked)}/>
+            {' '}Ik heb dit privébestand bekeken en kies zelf waar het wordt opgeslagen.
+          </label>
+          <button type="button" disabled={!bundleDownloadApproved}
+            onClick={downloadBundle} style={{minHeight:44}}>
+            Download mijn volledige privé-back-up</button></>:
+          <p role="alert">Je invoer is inmiddels gewijzigd. Maak een nieuwe preview.</p>}
+        <button type="button" onClick={()=>{setBundlePreview(null);
+          setBundleDownloadApproved(false);}} style={{minHeight:44,marginLeft:8}}>
+          Annuleren</button>
+      </div>}
+      <label htmlFor="private-moving-bundle-import"
+        style={{display:'block',marginTop:16,fontWeight:700}}>
+        Herstel mijn complete eigen back-up (maximaal 32 KiB)
+      </label>
+      <input id="private-moving-bundle-import" type="file"
+        accept=".json,application/json" style={{maxWidth:'100%'}}
+        onChange={event=>{const file=event.target.files?.[0];
+          event.target.value='';void importBundle(file);}}/>
+      {bundleIncoming&&<div>
+        {bundleIncomingFresh?<><p>Geldig bestand: alle vier onderdelen bevatten
+          exact herkende Woonpoints-gegevens. <strong>Herstellen vervangt de
+          huidige invoer in de hieronder geselecteerde schermen</strong>; niets
+          wordt buiten dit tabblad verzonden. De afzonderlijke automatische opslaginstellingen
+          blijven zoals ze nu staan.</p>
+          <fieldset style={{border:'1px solid #d4dfd5',padding:14,borderRadius:10}}>
+            <legend><strong>Welke onderdelen wil je vervangen?</strong></legend>
+            {PRIVATE_MOVING_BUNDLE_PARTS.map(part=><label key={part.key}
+              style={{display:'block',minHeight:44}}>
+              <input type="checkbox" checked={bundleSelected.includes(part.key)}
+                onChange={event=>{
+                  setBundleRestoreApproved(false);
+                  setBundleSelected(previous=>event.target.checked?
+                    [...previous,part.key]:previous.filter(key=>key!==part.key));
+                }}/>
+              {' '}{part.title}
+            </label>)}
+            <p>Niet geselecteerde onderdelen blijven ongewijzigd.
+              Zonder selectie wordt niets vervangen.</p>
+          </fieldset>
+          <label style={{display:'block',minHeight:44}}>
+            <input type="checkbox" checked={bundleRestoreApproved}
+              onChange={event=>setBundleRestoreApproved(event.target.checked)}/>
+            {' '}Ik begrijp dat de geselecteerde huidige formulieren worden vervangen.
+          </label>
+          <button type="button" disabled={!bundleRestoreApproved||bundleSelected.length===0}
+            style={{minHeight:44}} onClick={restoreBundle}>
+            Bevestig herstel van {bundleSelected.length} gekozen onderdeel(en)</button></>:
+          <p role="alert">De huidige invoer is veranderd. Selecteer het bestand opnieuw.</p>}
+        <button type="button" style={{minHeight:44,marginLeft:8}}
+          onClick={()=>{setBundleIncoming(null);setBundleRestoreApproved(false);}}>
+          Herstel annuleren</button>
+      </div>}
+      {bundleUndo&&<div>
+        {bundleUndoFresh?<button type="button" onClick={undoBundle}
+          style={{minHeight:44}}>Maak laatste gecombineerde herstel ongedaan</button>:
+          <p role="status">De tabbladstatus is na het herstel aangepast.
+            Undo is uitgeschakeld zodat nieuwe invoer behouden blijft.</p>}
+      </div>}
+      {bundleMessage&&<p role="status" aria-live="polite">{bundleMessage}</p>}
+      {!bundleReady&&<p role="status">Brononderdelen laden nog; de back-up is
+        pas beschikbaar wanneer alle vier zijn geladen.</p>}
+    </details>
     <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
       <summary style={{cursor:'pointer',fontWeight:700}}>
         Privacy: tijdelijke tabbladherstelkopieën beheren
@@ -1166,6 +1372,7 @@ function PrivateMovingReadinessBoard({rows}:{
   </section>;
 }
 export default function HomePage() {
+  const [movingBundleSnapshots,setMovingBundleSnapshots]=useState<Record<string,string>>({});
   const [journeyPulse,setJourneyPulse]=useState<PrivateMovePulse|null>(null);
   const [fallbackPulse,setFallbackPulse]=useState<PrivateMovePulse|null>(null);
   const [metersPulse,setMetersPulse]=useState<PrivateMovePulse|null>(null);
@@ -1584,8 +1791,10 @@ export default function HomePage() {
           en verdwijnt bij herladen. Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
-      <PrivateMovingReadinessBoard rows={movingReadinessRows}/>
-      <PrivateHousingJourney onPulse={setJourneyPulse} />
+      <PrivateMovingReadinessBoard rows={movingReadinessRows}
+        snapshots={movingBundleSnapshots}/>
+      <PrivateHousingJourney onPulse={setJourneyPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
         <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
@@ -1624,13 +1833,15 @@ export default function HomePage() {
       <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
       <PrivateMovingPackingInventory />
-      <PrivateMovingFallbackPlan onPulse={setFallbackPulse} />
+      <PrivateMovingFallbackPlan onPulse={setFallbackPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
-      <PrivateMeterHandover onPulse={setMetersPulse} />
+      <PrivateMeterHandover onPulse={setMetersPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateUtilityTransfer onLogContact={startUtilityContact}
-        onPulse={setUtilitiesPulse} />
+        onPulse={setUtilitiesPulse} onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateUtilityContactLog intent={contactIntent} />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
@@ -5679,12 +5890,16 @@ function encodeMeterTab(value:PrivateMeterTabData):string{
 function decodeMeterTab(raw:string):PrivateMeterTabData|null{
   try{return handoverRestore(raw);}catch{return null;}
 }
-function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
+function PrivateMeterHandover({onPulse,onBundleSnapshot}:{
+  onPulse?:(pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}) {
   const {value:meterTab,setValue:setMeterTab,enabled:rememberMeters,
     hydrated:metersReady,storageMessage:metersStorageMessage,
     enable:enableMetersRestore,disable:disableMetersRestore}
     =usePrivateTabRecovery<PrivateMeterTabData>(
-      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096);
+      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096,
+      onBundleSnapshot);
   const {readings,included}=meterTab;
   const setReadings=(change:Record<HandoverHomeKey,HandoverReading>|
     ((before:Record<HandoverHomeKey,HandoverReading>)=>Record<HandoverHomeKey,HandoverReading>))=>{
@@ -6174,15 +6389,16 @@ function decodeUtilityTab(raw:string):Record<PrivateUtilityKey,PrivateUtilitySte
   try{return privateUtilityRestore(raw);}catch{return null;}
 }
 function PrivateUtilityTransfer({
-  onLogContact,onPulse
+  onLogContact,onPulse,onBundleSnapshot
 }: { onLogContact?: (utility:PrivateUtilityKey)=>void;
-     onPulse?: (pulse:PrivateMovePulse)=>void }={}) {
+     onPulse?: (pulse:PrivateMovePulse)=>void;
+     onBundleSnapshot?:PrivateMovingSnapshotChange }={}) {
   const {value:entries,setValue:setEntries,enabled:rememberUtilities,
     hydrated:utilitiesReady,storageMessage:utilitiesStorageMessage,
     enable:enableUtilitiesRestore,disable:disableUtilitiesRestore}
     =usePrivateTabRecovery<Record<PrivateUtilityKey,PrivateUtilityStep>>(
       UTILITY_TAB_STORAGE_KEY,()=>PRIVATE_UTILITY_EMPTY,
-      encodeUtilityTab,decodeUtilityTab,4096);
+      encodeUtilityTab,decodeUtilityTab,4096,onBundleSnapshot);
   const [preview, setPreview] = useState<{
     source: string; text: string; kind: 'txt' | 'ics' | 'json'
   } | null>(null);
@@ -6884,12 +7100,81 @@ function decodeJourneyTab(raw:string):string[]|null{
 }
 
 
-function PrivateHousingJourney({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
+type PrivateMovingBundleData=Record<string,string>;
+const PRIVATE_MOVING_BUNDLE_KIND='woonpoints-private-moving-bundle';
+const PRIVATE_MOVING_BUNDLE_LIMIT=32768;
+const PRIVATE_MOVING_BUNDLE_PARTS=[
+  {field:'journey',key:JOURNEY_TAB_STORAGE_KEY,title:'Mijn woonreis'},
+  {field:'fallback',key:FALLBACK_TAB_STORAGE_KEY,title:'Verhuisdag plan B'},
+  {field:'meters',key:METER_TAB_STORAGE_KEY,title:'Meterstanden'},
+  {field:'utilities',key:UTILITY_TAB_STORAGE_KEY,title:'Nutsvoorzieningen'}
+] as const;
+function privateMovingBundleCurrent(snapshots:PrivateMovingBundleData):boolean{
+  return PRIVATE_MOVING_BUNDLE_PARTS.every(part=>typeof snapshots[part.key]==='string');
+}
+function privateMovingBundleSignature(snapshots:PrivateMovingBundleData):string{
+  return JSON.stringify(PRIVATE_MOVING_BUNDLE_PARTS.map(part=>snapshots[part.key]??null));
+}
+function privateMovingBundleSerialize(snapshots:PrivateMovingBundleData):string{
+  if(!privateMovingBundleCurrent(snapshots))throw Error('Er ontbreken nog onderdelen.');
+  const journey=JSON.parse(snapshots[JOURNEY_TAB_STORAGE_KEY]);
+  const fallback=JSON.parse(snapshots[FALLBACK_TAB_STORAGE_KEY]);
+  const meters=JSON.parse(snapshots[METER_TAB_STORAGE_KEY]);
+  const utilities=JSON.parse(snapshots[UTILITY_TAB_STORAGE_KEY]);
+  const valid=decodeJourneyTab(snapshots[JOURNEY_TAB_STORAGE_KEY])!==null&&
+    decodeFallbackTab(snapshots[FALLBACK_TAB_STORAGE_KEY])!==null&&
+    decodeMeterTab(snapshots[METER_TAB_STORAGE_KEY])!==null&&
+    decodeUtilityTab(snapshots[UTILITY_TAB_STORAGE_KEY])!==null;
+  if(!valid)throw Error('Een brononderdeel bevat ongeldige invoer.');
+  const text=JSON.stringify({
+    kind:PRIVATE_MOVING_BUNDLE_KIND,version:1,
+    journey,fallback,meters,utilities
+  },null,2)+'\n';
+  if(new TextEncoder().encode(text).length>PRIVATE_MOVING_BUNDLE_LIMIT)
+    throw Error('Gecombineerd privébestand te groot.');
+  return text;
+}
+/** Strict, canonical and fail-closed. No partial application before all modules validate. */
+function privateMovingBundleParse(raw:string):PrivateMovingBundleData|null{
+  try{
+    if(new TextEncoder().encode(raw).length>PRIVATE_MOVING_BUNDLE_LIMIT)return null;
+    const data:unknown=JSON.parse(raw);
+    if(!data||typeof data!=='object'||Array.isArray(data))return null;
+    const obj=data as Record<string,unknown>;
+    if(Object.keys(obj).sort().join(',')!=='fallback,journey,kind,meters,utilities,version'||
+      obj.kind!==PRIVATE_MOVING_BUNDLE_KIND||obj.version!==1||
+      !obj.journey||typeof obj.journey!=='object'||Array.isArray(obj.journey)||
+      !obj.fallback||typeof obj.fallback!=='object'||Array.isArray(obj.fallback)||
+      !obj.meters||typeof obj.meters!=='object'||Array.isArray(obj.meters)||
+      !obj.utilities||typeof obj.utilities!=='object'||Array.isArray(obj.utilities))return null;
+    const journey=JSON.stringify(obj.journey);
+    const fallback=JSON.stringify(obj.fallback);
+    const meterData=obj.meters as Record<string,unknown>;
+    const utilityData=obj.utilities as Record<string,unknown>;
+    const meters=handoverBackup(meterData.readings as PrivateMeterTabData['readings'],
+      meterData.included as PrivateMeterTabData['included']);
+    const utilities=privateUtilityBackup(utilityData.entries as Record<PrivateUtilityKey,PrivateUtilityStep>);
+    const snapshots:PrivateMovingBundleData={
+      [JOURNEY_TAB_STORAGE_KEY]:journey,
+      [FALLBACK_TAB_STORAGE_KEY]:fallback,
+      [METER_TAB_STORAGE_KEY]:meters,
+      [UTILITY_TAB_STORAGE_KEY]:utilities
+    };
+    if(privateMovingBundleSerialize(snapshots)!==raw)return null;
+    return snapshots;
+  }catch{return null;}
+}
+
+
+function PrivateHousingJourney({onPulse,onBundleSnapshot}:{
+  onPulse?:(pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}) {
   const {value:checked,setValue:setChecked,enabled:rememberJourney,hydrated:journeyReady,
     storageMessage:journeyStorageMessage,enable:enableJourneyRestore,
     disable:disableJourneyRestore}=usePrivateTabRecovery<string[]>(
       JOURNEY_TAB_STORAGE_KEY,()=>[],encodeJourneyTab,decodeJourneyTab,
-      JOURNEY_BACKUP_LIMIT);
+      JOURNEY_BACKUP_LIMIT,onBundleSnapshot);
   const [selectedPhase,setSelectedPhase] = useState<JourneyPhase>('zoeken');
   const [onlyOpen,setOnlyOpen] = useState(false);
   const [pendingImport,setPendingImport] = useState<string[] | null>(null);
