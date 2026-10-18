@@ -374,3 +374,18 @@ reeds ingestelde labels. Het bestaande JSON-formaat bewaart bewust alleen
 A/B-scores, nooit woninglabels: bij latere import worden de labels expliciet
 teruggezet op **Woning A/B** om verkeerde herkomst te voorkomen. Alle gegevens
 blijven offline en ongeverifieerd.
+
+
+### Van een belangrijk bezichtigingspunt naar een eigen vervolgactie
+
+Een checklistregel die je zelf als **essentieel** én als twijfelachtig of
+ongunstig markeert, verschijnt als mogelijke vervolgactie onder de checklist.
+Kies daar bewust **één punt** (met het neutrale woninglabel) om aan de reeds
+bestaande privéplanner aan te bieden. De planner vraagt opnieuw bevestiging
+voordat hij het huidige invulformulier vervangt; bij bevestiging wordt alleen
+een kort neutraal label met het type *beslismoment* voorbereid. Zelf de datum
+en tijd invullen en daarna pas *Voeg eigen actie toe* kiezen blijft verplicht.
+
+De bezichtigingschecklist wordt niet aangepast. Er is geen automatische
+agenda-import, WoningNet-reactie, accounttoegang, opslag of netwerkactie.
+Ontbrekende en reeds positief beoordeelde punten zijn niet selecteerbaar.
