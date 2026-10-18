@@ -19,3 +19,11 @@ Dit is **geen juridische borgsomvordering**, geen bewijs van een werkelijk betaa
 ## Integratie
 
 De clientcomponent is in de bestaande Docker-allowlisted `src/app/page.tsx` geïntegreerd en onder `private-deposit-heading` toegevoegd aan QuickFind. Geen nieuwe Docker-COPY-bron of wildcard-toestemming nodig. De bestaande verhuismap, nazorg, inspectie, kostenboek, importcontracten en de `BOT_DRY_RUN`-grens zijn onveranderd. Bestaande verplichte CI en merge/release-autorisatie blijven vereist; de broncommit is geen bewijs van productie-deployment.
+
+## Mijn eigen geplande terugbetalingen in een agenda
+
+Bij één of meer regels van type **gepland** kan de bewoner met **Bekijk mijn geplande borgmomenten als ICS** een afzonderlijke, volledige kalenderinhoud voorvertonen. Het bestand bevat **uitsluitend** de zelf gekozen verwachte dag, het zelf ingevulde bedrag, een neutrale titel en een persoonlijke herinnering één dag eerder. De vrije omschrijving, namen/adressen en bankgegevens staan er bewust niet in. 
+
+De ICS gebruikt geldige all-day DTSTART/DTEND datums, een per regel stabiele privé-UID, geldige iCalendar-escaping en maximaal 70 UTF-8-byte-vouwregels. Het voorvertoningsvenster toont de exacte ruwe inhoud vóór export; de bevestigingscheckbox is apart. De voorvertoning is brongebonden en wordt ongeldig zodra oorspronkelijke borg, regels, datums of bedragen worden gewijzigd. Eén bewuste download trekt de exporttoestemming weer in.
+
+Het betreft uitsluitend **niet-geverifieerde eigen verwachtingen**, geen huurdersrecht, geverifieerde betalings- of ontvangstdatum of afspraak met een verhuurder. Woonpoints opent geen agenda-app of account, maakt geen externe sync aan en kan een eerder door de gebruiker geïmporteerde afspraak niet herroepen. Bevestig werkelijk ontvangen bedragen apart in het borgboek. De gebruiker kan het ICS-bestand bewust in een eigen kalender importeren en daar zelf bewaren/verwijderen.

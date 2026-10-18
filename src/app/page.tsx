@@ -197,6 +197,45 @@ function depositToday(): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
 }
+function depositCalendar(entries: DepositEvent[]): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const escape = (text: string) => text.replace(/\\/g, '\\\\')
+    .replace(/\r\n|\r|\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,');
+  const fold = (line: string): string => {
+    let length = 0;
+    let result = '';
+    const encoder = new TextEncoder();
+    for (const char of line) {
+      const lengthUtf8 = encoder.encode(char).length;
+      if (length + lengthUtf8 > 70) { result += '\r\n '; length = 1; }
+      result += char;
+      length += lengthUtf8;
+    }
+    return result;
+  };
+  const nextDay = (date: string): string => {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+  };
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH', 'PRODID:-//Woonpoints//Own Deposit Reminders//NL'];
+  for (const item of entries.filter(e => e.kind === 'gepland').sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+    lines.push('BEGIN:VEVENT',
+      'UID:deposit-' + item.id + '@woonpoints.local',
+      'DTSTAMP:' + stamp,
+      'DTSTART;VALUE=DATE:' + item.date.replace(/-/g, ''),
+      'DTEND;VALUE=DATE:' + nextDay(item.date).replace(/-/g, ''),
+      'SUMMARY:' + escape('Eigen borgterugbetaling controleren'),
+      'DESCRIPTION:' + escape('Eigen verwachting: ' + euro(item.amountCents) +
+        '. Geen geverifieerde toezegging, betaling of afspraak. Controleer de werkelijke status zelf.'),
+      'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY',
+      'DESCRIPTION:' + escape('Controleer eigen verwachte borgterugbetaling'),
+      'END:VALARM', 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
 
 function saveFile(name: string, contents: string, type: string) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
@@ -220,6 +259,8 @@ function PrivateDepositLedger() {
   const [pending, setPending] = useState<{data: DepositBackup; before: string} | null>(null);
   const [txtPreview, setTxtPreview] = useState<{source: string; text: string} | null>(null);
   const [txtConfirmed, setTxtConfirmed] = useState(false);
+  const [calendarPreview, setCalendarPreview] = useState<{source: string; contents: string; count: number} | null>(null);
+  const [calendarConfirmed, setCalendarConfirmed] = useState(false);
   const depositCents = parseEuro(deposit);
   const current: DepositBackup | null = depositCents === null ? null : {
     kind: KIND, schema: 2, depositCents, entries
@@ -309,6 +350,26 @@ function PrivateDepositLedger() {
     saveFile('woonpoints-prive-borgoverzicht.txt', txtPreview.text, 'text/plain;charset=utf-8');
     setTxtConfirmed(false);
     setNotice('Zelf beoordeelde TXT is gedownload; controleer bestemming en ontvanger.');
+  }
+  function previewCalendar() {
+    if (!current) { setNotice('Vul eerst een geldig oorspronkelijk borgbedrag in.'); return; }
+    const count = entries.filter(item => item.kind === 'gepland').length;
+    if (!count) { setNotice('Voeg eerst een nog niet ontvangen geplande terugbetaling toe.'); return; }
+    setCalendarPreview({ source: JSON.stringify(current),
+      contents: depositCalendar(entries), count });
+    setCalendarConfirmed(false);
+    setNotice('Controleer de exacte eigen agendagegevens. Niets is toegevoegd aan een kalender.');
+  }
+  function downloadCalendar() {
+    if (!current || !calendarPreview || !calendarConfirmed ||
+        calendarPreview.source !== JSON.stringify(current)) {
+      setNotice('De agendavoorvertoning is verlopen of niet goedgekeurd.');
+      return;
+    }
+    saveFile('woonpoints-eigen-borgherinneringen.ics', calendarPreview.contents,
+      'text/calendar;charset=utf-8');
+    setCalendarConfirmed(false);
+    setNotice('Agenda-importbestand gedownload. Je kalenderapp bepaalt of en hoe dit wordt geïmporteerd.');
   }
   async function chooseBackup(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -414,6 +475,34 @@ function PrivateDepositLedger() {
             </> :
             <p role="alert">Gegevens zijn gewijzigd sinds de voorvertoning. Maak een nieuwe voorvertoning.</p>}
         </div>}
+        <div>
+          <h3>Eigen verwachte borgmomenten in mijn agenda</h3>
+          <p>Bewaar alleen je <strong>zelf geplande</strong> data als een apart ICS-bestand.
+            Elk agenda-item is een niet-geverifieerde persoonlijke herinnering, geen bewijs van
+            betaling of afspraak met de verhuurder. Het bestand bevat datum en verwacht bedrag
+            maar geen eigen vrije omschrijvingen, namen, adressen of bankgegevens.
+            Er wordt niets automatisch toegevoegd of gesynchroniseerd.</p>
+          <button type="button" onClick={previewCalendar}
+            disabled={!current || !entries.some(item => item.kind === 'gepland')}>
+            Bekijk mijn geplande borgmomenten als ICS
+          </button>
+          {calendarPreview && <div role="group" aria-label="Controleer agenda-export borg">
+            <p>{calendarPreview.count} geplande persoonlijke agendaherinnering(en).
+              Een eerdere verwachte datum blijft alleen een eigen notitie.</p>
+            <label htmlFor="deposit-ics-preview">Exacte inhoud van het gekozen bestand</label>
+            <textarea id="deposit-ics-preview" value={calendarPreview.contents} rows={9} readOnly />
+            {current && calendarPreview.source === JSON.stringify(current) ?
+              <>
+                <label htmlFor="deposit-ics-approved">
+                  <input id="deposit-ics-approved" type="checkbox" checked={calendarConfirmed}
+                    onChange={e => setCalendarConfirmed(e.target.checked)} />
+                  Ik heb deze precieze eigen agenda-inhoud bekeken en wil zelf een ICS-bestand opslaan.
+                </label>
+                <button type="button" onClick={downloadCalendar}
+                  disabled={!calendarConfirmed}>Download beoordeeld ICS-bestand</button>
+              </> : <p role="alert">De borggegevens veranderden. Maak een nieuwe agenda-voorvertoning.</p>}
+          </div>}
+        </div>
         <label htmlFor="deposit-import">Herstel een eerder gedownload privé-borgboek (max. 12 KiB)</label>
         <input id="deposit-import" type="file" accept=".json,application/json" onChange={chooseBackup} />
         {pending && <div role="group" aria-label="Bevestig herstel borgboek">
