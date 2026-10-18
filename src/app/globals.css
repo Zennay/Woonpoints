@@ -130,3 +130,17 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) {
   .month-position-bars *, .month-position-history * { scroll-behavior: auto; animation: none; }
 }
+
+/* CSV portability is explicit and separate from ephemeral auto-calculation. */
+.month-history-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.month-history-actions button:nth-child(2) {
+  background: #fff; border: 2px solid #355e42; color: #355e42;
+}
+.month-csv-picker { margin: 12px 0 6px; }
+.month-position-history input[type="file"] {
+  display: block; width: 100%; max-width: 100%;
+  font: inherit; padding: 12px; border: 1px solid #dfe7e1;
+  border-radius: 10px; background: #edf2ee; color: #18231c;
+}
+.month-position-history input[type="file"]:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+.month-csv-confirm { background: #edf2ee; border: 2px solid #436b4e; border-radius: 12px; padding: 12px; margin: 14px 0; }
