@@ -1817,6 +1817,58 @@ export function PrivateMovingDayTimeline() {
     setNewTask('');
     edit();
   }
+  function acceptPackingBridge(replaceExisting:boolean) {
+    if(!pendingPackingBridge)return;
+    if(batchStamp!==pendingPackingBridge.destinationStamp){
+      setPendingPackingBridge(null);
+      setMessage('Studio-labels zijn ondertussen gewijzigd. Open de overdracht opnieuw vanuit de paklijst.');
+      return;
+    }
+    const groups=pendingPackingBridge.rows;
+    if(groups.length>MAX_BATCHES||(replaceExisting?groups.length:batches.length+groups.length)>MAX_BATCHES||
+      (replaceExisting?groups.length:labelCount+groups.length)>MAX_LABELS){
+      setMessage('De overdracht past niet binnen twintig reeksen en 48 etiketten. Maak eerst ruimte of kies bewust voor vervangen.');
+      return;
+    }
+    // A fresh synchronous snapshot ensures that a packing edit since preview
+    // cannot silently import an obsolete set of boxes. The source is never modified.
+    let current: PackingItem[]|null=null;
+    const receive=(event:Event)=>{
+      const value=(event as CustomEvent<unknown>).detail;
+      if(!value||typeof value!=='object'||Array.isArray(value))return;
+      const envelope=value as Record<string,unknown>;
+      const payload=envelope.data;
+      if(envelope.version!==1||envelope.section!=='packing'||!payload||
+        typeof payload!=='object'||Array.isArray(payload))return;
+      const pack=(payload as Record<string,unknown>).items;
+      if(Array.isArray(pack)&&pack.length<=80&&pack.every(validItem))current=pack as PackingItem[];
+    };
+    window.addEventListener('woonpoints:moving-workspace:snapshot',receive);
+    try {window.dispatchEvent(new Event('woonpoints:moving-workspace:request'));}
+    finally {window.removeEventListener('woonpoints:moving-workspace:snapshot',receive);}
+    const latest=current?packingBoxGroups(current).map(group=>({
+      room:group.room,code:group.box,
+      priority:group.items.some(item=>item.priority)?'direct':'eerst'
+    })):null;
+    if(!latest||JSON.stringify(latest)!==pendingPackingBridge.sourceStamp){
+      setPendingPackingBridge(null);
+      setMessage('De paklijst is veranderd of niet meer beschikbaar. Neem de huidige dozen opnieuw over.');
+      return;
+    }
+    const adopted=groups.map((row,index)=>({...row,id:nextId+index}));
+    const updated=replaceExisting?adopted:[...batches,...adopted];
+    setLastRestore({before:batches,afterStamp:JSON.stringify(updated)});
+    setBatches(updated);
+    setNextId(n=>n+adopted.length);
+    setEditing(null);
+    setDraft(initialDraft);
+    setPendingPackingBridge(null);
+    setApprovedBackup(null);
+    setPendingImport(null);
+    setClearRequested(false);
+    setMessage(adopted.length+' doosgroepen overgenomen in je eigen labelstudio. Pas etiketten aan of gebruik eenmalig Terugzetten; de oorspronkelijke paklijst is ongewijzigd.');
+  }
+
   function downloadBackup() {
     const payload = JSON.stringify({
       format: 'woonpoints-private-moving-plan', version: 1, moveDate, completed,
@@ -5414,6 +5466,9 @@ export function PrivateMovingBoxLabels() {
     batches: PortableBoxBatch[]; sourceStamp: string; preview: string;
   } | null>(null);
   const [lastRestore, setLastRestore] = useState<{before: Batch[]; afterStamp: string} | null>(null);
+  const [pendingPackingBridge,setPendingPackingBridge] = useState<{
+    rows:PortableBoxBatch[]; sourceStamp:string; destinationStamp:string
+  }|null>(null);
 
   const labelCount = useMemo(() => batches.reduce((total, b) => total + b.count, 0), [batches]);
   const labels = useMemo(() => batches.flatMap(b => Array.from({ length: b.count }, (_, n) => ({
@@ -5424,6 +5479,49 @@ export function PrivateMovingBoxLabels() {
   const pages = useMemo(() => Array.from({length: Math.ceil(labels.length / 6)}, (_, i) => labels.slice(i * 6, i * 6 + 6)), [labels]);
   const backupPreview = useMemo(() => writeBoxLabelBackup(batches), [batches]);
   const batchStamp = useMemo(() => JSON.stringify(batches), [batches]);
+  useEffect(()=>{
+    const accept=(event:Event)=>{
+      const candidate=(event as CustomEvent<unknown>).detail;
+      if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return;
+      const envelope=candidate as Record<string,unknown>;
+      if(envelope.version!==1||!Array.isArray(envelope.groups)||
+        envelope.groups.length<1||envelope.groups.length>MAX_BATCHES){
+        setPendingPackingBridge(null);
+        setMessage('Overdracht geweigerd: ongeldige of te grote paklijst-momentopname.');
+        return;
+      }
+      const rows:PortableBoxBatch[]=[];
+      const seen=new Set<string>();
+      for(const entry of envelope.groups){
+        if(!entry||typeof entry!=='object'||Array.isArray(entry)){
+          setPendingPackingBridge(null);setMessage('Ongeldige doosgroep.');return;
+        }
+        const group=entry as Record<string,unknown>;
+        if(typeof group.room!=='string'||!ROOMS.includes(group.room as Room)||
+          typeof group.code!=='string'||group.code.length<1||
+          group.code.length>30||group.code!==group.code.trim()||
+          cleaned(group.code,30)!==group.code||
+          (group.priority!=='direct'&&group.priority!=='eerst')){
+          setPendingPackingBridge(null);
+          setMessage('Overdracht geweigerd: een dooscode of kamer is ongeldig.');return;
+        }
+        const key=JSON.stringify([group.room,group.code]);
+        if(seen.has(key)){
+          setPendingPackingBridge(null);
+          setMessage('Overdracht geweigerd: dezelfde doos is dubbel aangeleverd.');return;
+        }
+        seen.add(key);
+        rows.push({room:group.room,contents:'Dooscode: '+group.code,
+          count:1,fragile:false,priority:group.priority});
+      }
+      setPendingPackingBridge({
+        rows,sourceStamp:JSON.stringify(envelope.groups),destinationStamp:batchStamp
+      });
+      setMessage('Paklijst alleen als voorbeeld ontvangen. Controleer de doosgroepen en bevestig afzonderlijk.');
+    };
+    window.addEventListener('woonpoints:box-studio:propose',accept);
+    return()=>window.removeEventListener('woonpoints:box-studio:propose',accept);
+  },[batchStamp]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5589,6 +5687,30 @@ export function PrivateMovingBoxLabels() {
       <h1>Verhuisdozenlabels</h1>
       <p>Maak duidelijke A4-etiketten per kamer, met doosnummer, breekbaar-markering en uitpakprioriteit. Alles blijft in het huidige tabblad. Er wordt niets naar een server verstuurd en niets in je browser opgeslagen.</p>
       <div className="boxPrivacy">Dit zijn je eigen labels, geen officieel bewijs. Print naar papier of kies in het afdrukvenster zelf voor opslaan als PDF. Terugkeren naar Woonpoints binnen dit tabblad bewaart je reeksen. Verversen of het tabblad sluiten wist gegevens die je niet zelf als back-up hebt gedownload.</div>
+      {pendingPackingBridge && <section className="boxPanel boxPackingBridge" aria-labelledby="box-packing-bridge-heading">
+        <h2 id="box-packing-bridge-heading">Van je paklijst naar afdruklabels</h2>
+        <p>Dit is een gecontroleerde momentopname van {pendingPackingBridge.rows.length}
+          bestaande doosgroepen. Alleen kamer, eigen dooscode en urgentie komen mee;
+          vrije paklijst-inhoud en persoonlijke adressen niet. Er wordt niets
+          automatisch aan je labels toegevoegd of op de server opgeslagen.</p>
+        <ol>{pendingPackingBridge.rows.map((row,index)=><li key={index}>
+          <strong>{row.room}</strong> · {row.contents} · {priorityText[row.priority]}
+        </li>)}</ol>
+        <p>In de studio staan momenteel {batches.length} reeksen ({labelCount} labels).
+          Toevoegen bewaart bestaande labels. Vervangen doet dat pas na jouw bewuste
+          keuze; éénmalig terugdraaien is daarna mogelijk zolang niets is gewijzigd.</p>
+        <div className="boxActions">
+          <button type="button" disabled={batchStamp!==pendingPackingBridge.destinationStamp||
+            batches.length+pendingPackingBridge.rows.length>MAX_BATCHES||
+            labelCount+pendingPackingBridge.rows.length>MAX_LABELS}
+            onClick={()=>acceptPackingBridge(false)}>Bevestig: voeg {pendingPackingBridge.rows.length} labels toe</button>
+          {batches.length>0&&<button type="button" className="boxDanger"
+            onClick={()=>acceptPackingBridge(true)}>Bevestig: vervang mijn huidige labels door deze doosgroepen</button>}
+          <button type="button" className="boxSecondary"
+            onClick={()=>{setPendingPackingBridge(null);setMessage('Overdracht geannuleerd; alle labels zijn ongewijzigd.');}}>
+            Annuleren</button>
+        </div>
+      </section>}
       <section className="boxPanel" aria-labelledby="label-entry-heading">
         <h2 id="label-entry-heading">{editing === null ? 'Nieuwe reeks' : 'Reeks aanpassen'}</h2>
         <form onSubmit={submit} className="boxForm">
