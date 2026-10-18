@@ -2282,7 +2282,7 @@ const emptyExpenseForm = () => ({
 });
 function expenseCents(value:string):number|null {
   const normalized=value.trim().replace(',','.');
-  if(!/^(?:0|[1-9]\\d{0,4})(?:\\.\\d{1,2})?$/.test(normalized))return null;
+  if(!/^(?:0|[1-9]\d{0,4})(?:\.\d{1,2})?$/.test(normalized))return null;
   const [whole,decimal='']=normalized.split('.');
   const cents=Number(whole)*100+Number(decimal.padEnd(2,'0'));
   return Number.isSafeInteger(cents)&&cents<=9999999?cents:null;
@@ -2300,7 +2300,7 @@ function validExpenseLine(raw:unknown):raw is MovingExpenseLine {
   return Object.keys(item).length===6 &&
     typeof item.id==='string' && /^move-exp-[0-9]+-[0-9]+$/.test(item.id) &&
     typeof item.label==='string' && item.label.length>0&&item.label.length<=70 &&
-    item.label.trim()===item.label&&!/[\\u0000-\\u001f\\u007f]/.test(item.label) &&
+    item.label.trim()===item.label&&!/[\u0000-\u001f\u007f]/.test(item.label) &&
     EXPENSE_CATEGORIES.includes(item.category as MovingExpenseCategory) &&
     typeof item.plannedCents==='number' && Number.isSafeInteger(item.plannedCents) &&
     item.plannedCents>=0&&item.plannedCents<=9999999 &&
@@ -2340,13 +2340,13 @@ export function PrivateMovingExpenseLedger(){
     `Afwijking voor posten met beide bedragen: ${expenseAmount(actualKnown-matchedPlanned)}`,
     `Door mij als betaald gemarkeerd: ${expenseAmount(paidKnown)}`,
     'Er worden geen facturen, transacties, betaalbewijzen of accountgegevens opgehaald.'
-  ].join('\\n')+'\\n';
+  ].join('\n')+'\n';
   function invalidate(){
     setPendingReport(null);setPendingRestore(null);setPendingDelete(null);
     setNotice('');setClearPending(false);
   }
   function submit(){
-    const name=form.label.trim().replace(/[\\u0000-\\u001f\\u007f]/g,' ');
+    const name=form.label.trim().replace(/[\u0000-\u001f\u007f]/g,' ');
     const plan=expenseCents(form.planned);
     const actual=form.actual.trim()?expenseCents(form.actual):null;
     if(!name||name.length>70||plan===null||(form.actual.trim()&&actual===null)||
