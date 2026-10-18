@@ -360,3 +360,17 @@ controleer en wijzig dat percentage daarna zelf. De ingevoerde duur blijft
 bij een overdracht behouden. Gewijzigde bedragen in het bronoverzicht veranderen
 het reeds overgenomen meerjarenmodel niet stilzwijgend. Deze overdracht schrijft
 geen bestanden, cookies of browseropslag en voert geen netwerkverzoeken uit.
+
+### Vanuit de shortlist naar de bezichtigingschecklist
+
+Selecteer in de eigen woninglijst twee woningen en kies **Bied deze twee woningen
+ aan voor bezichtigingschecklist**. Alleen hun door jou ingetikte, neutrale
+labels worden als momentopname aan de checklist aangeboden. **Overnemen vergt
+nog een aparte bevestiging** omdat de eerdere beoordelingen en essentiële
+punten dan volledig worden gewist: oude waarnemingen mogen nooit stilzwijgend
+onder nieuwe woningen verschijnen. Annuleren behoudt de huidige checklist.
+Na overname veranderen latere bewerkingen aan de woninglijst niets aan de
+reeds ingestelde labels. Het bestaande JSON-formaat bewaart bewust alleen
+A/B-scores, nooit woninglabels: bij latere import worden de labels expliciet
+teruggezet op **Woning A/B** om verkeerde herkomst te voorkomen. Alle gegevens
+blijven offline en ongeverifieerd.
