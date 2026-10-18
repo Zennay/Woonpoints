@@ -1,6 +1,5 @@
 import { PrivateReactionWorkflow } from './position-stats';
 import PositionStats from './position-stats';
-import { PrivateSearchPointsHistory } from './position-stats';
 import { ManualHousingDecisionWorkspace } from './position-stats';
 
 const cards = [
@@ -62,7 +61,6 @@ export default function HomePage() {
       </section>
 
       <PrivateReactionWorkflow>
-        <PrivateSearchPointsHistory />
         <PositionStats />
       </PrivateReactionWorkflow>
       <ManualHousingDecisionWorkspace />
