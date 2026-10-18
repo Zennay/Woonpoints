@@ -60,24 +60,79 @@ export function ManualPositionHistory({
   onJournalDecision?: () => void;
 } = {}) {
   const [input, setInput] = useState('');
-  const [pendingImport, setPendingImport] = useState<{ text: string; count: number } | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    text: string; count: number; originalSource: string
+  } | null>(null);
+  const [positionImportUndo, setPositionImportUndo] = useState<{
+    original: string; imported: string; mode: 'append'|'replace'
+  } | null>(null);
+  const positionImportSequence = useRef(0);
   const [fileMessage, setFileMessage] = useState('');
+  const importSourceCurrent = pendingImport !== null &&
+    pendingImport.originalSource === input;
+  const canUndoPositionImport = positionImportUndo !== null &&
+    positionImportUndo.imported === input;
+  const importedPositionLines = pendingImport?.text.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
+  const existingPositionLines = input.split('\n').map(v=>v.trim()).filter(Boolean);
+  const samePositionLines = importedPositionLines.filter(v=>existingPositionLines.includes(v)).length;
+  const combinedPositionText = [input.trim(),pendingImport?.text.trim()??'']
+    .filter(Boolean).join('\n');
+  const canAppendPositionImport = Boolean(pendingImport && importSourceCurrent &&
+    combinedPositionText.length <= 8192 && existingPositionLines.length+importedPositionLines.length <= 120);
+
   async function selectCsv(file: File | undefined) {
-    if (!file) return;
+    const seq=++positionImportSequence.current;
+    const previous=input;
     setPendingImport(null);
     setFileMessage('');
+    if (!file) return;
     if (file.size === 0 || file.size > 16384) {
       setFileMessage('Bestand geweigerd: selecteer een kleine geldige Woonpoints-CSV.');
       return;
     }
     try {
       const restored = importManualPositionHistoryCsv(await file.text());
+      if(seq!==positionImportSequence.current)return;
       const sample = summarizeManualPositionHistory(restored);
       if (!sample) throw new TypeError('empty');
-      setPendingImport({ text: restored, count: sample.sampleCount });
+      setPendingImport({ text: restored, count: sample.sampleCount, originalSource: previous });
+      setFileMessage('Geldige eigen CSV gelezen. Kies bewust tussen toevoegen of vervangen.');
     } catch {
+      if(seq!==positionImportSequence.current)return;
       setFileMessage('Bestand geweigerd: verkeerde indeling of ongeldige gegevens. Je huidige invoer is behouden.');
     }
+  }
+  function applyPositionImport(mode:'append'|'replace') {
+    if(!pendingImport||!importSourceCurrent) {
+      setFileMessage('Je eigen maandposities zijn sinds de selectie veranderd. Kies het bestand opnieuw.');
+      return;
+    }
+    if(mode==='append'&&!canAppendPositionImport){
+      setFileMessage('Toevoegen kan niet: je eigen tekst/rijlimiet is bereikt. De huidige invoer is behouden.');
+      return;
+    }
+    const candidate=mode==='append'?combinedPositionText:pendingImport.text;
+    try {
+      if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
+        throw new Error('Not a supported month position list');
+      setPositionImportUndo({original:input,imported:candidate,mode});
+      setInput(candidate);
+      setPendingImport(null);
+      setFileMessage(mode==='append'?'CSV-posities toegevoegd; vorige tekst tijdelijk herstelbaar.':
+        'Maandposities bewust vervangen; vorige tekst tijdelijk herstelbaar.');
+    }catch{
+      setFileMessage('De combinatie voldoet niet aan de grenzen voor geldige datums, posities, 120 regels of 24 maanden. Niets aangepast.');
+    }
+  }
+  function undoPositionImport() {
+    if(!positionImportUndo||!canUndoPositionImport||pendingImport){
+      setFileMessage('Maandposities zijn sinds de import veranderd; onveilig terugzetten is geblokkeerd.');
+      return;
+    }
+    setInput(positionImportUndo.original);
+    setPositionImportUndo(null);
+    setPendingImport(null);
+    setFileMessage('Vorige maandposities uit dit tabblad teruggezet; bestaande bestanden blijven onaangetast.');
   }
   function downloadCsv() {
     try {
@@ -188,22 +243,56 @@ export function ManualPositionHistory({
             void selectCsv(file);
           }} />
         {pendingImport && (
-          <div className="month-csv-confirm" role="group" aria-label="Bevestig CSV-import">
-            <p><strong>{pendingImport.count}</strong> geldige handmatige resultaten gevonden.
-              Importeren vervangt alle huidige invoer in dit tabblad. Er wordt niets naar WoningNet verzonden.</p>
+          <div className="month-csv-confirm" role="group" aria-label="Kies hoe eigen posities worden geïmporteerd">
+            <h3>Posities toevoegen of vervangen?</h3>
+            <p>De geselecteerde CSV bevat <strong>{pendingImport.count}</strong> zelf ingevulde
+              woningresultaten. In je huidige tabblad staan <strong>{existingPositionLines.length}</strong> regels.
+              Geen enkele positie is onafhankelijk door een woningplatform geverifieerd.</p>
+            {!importSourceCurrent && <p role="alert">Je huidige maandposities zijn sinds
+              het kiezen van de CSV gewijzigd. Kies het bestand opnieuw;
+              de oude importtoestemming is vervallen.</p>}
+            {samePositionLines>0 && <p role="status">{samePositionLines} geselecteerde regel
+              {samePositionLines===1?' lijkt':'s lijken'} qua datum/positie/totaal op je huidige invoer.
+              Dat betekent niet automatisch dezelfde woning. Niets wordt stilzwijgend verwijderd.</p>}
+            <p><strong>Toevoegen:</strong> bestaande regels behouden; na samenvoegen
+              { ' '+(existingPositionLines.length+importedPositionLines.length)} woningresultaten.
+              Er gelden maximaal 120 regels, 24 ingevulde kalendermaanden en 8192 tekens.
+              Na bevestigen kan je de oude tabbladtekst één keer terugzetten.</p>
             <div className="month-history-actions">
+              <button type="button" disabled={!canAppendPositionImport}
+                onClick={() => applyPositionImport('append')}>
+                Voeg eigen CSV-posities toe
+              </button>
+              <button type="button" disabled={!importSourceCurrent}
+                onClick={() => applyPositionImport('replace')}>
+                Vervang alle huidige posities bewust
+              </button>
               <button type="button" onClick={() => {
-                setInput(pendingImport.text);
                 setPendingImport(null);
-                setFileMessage('CSV lokaal ingelezen. Nog steeds ongeverifieerde handmatige gegevens.');
-              }}>Vervang huidige invoer</button>
-              <button type="button" onClick={() => {
-                setPendingImport(null);
-                setFileMessage('Import geannuleerd: huidige invoer behouden.');
-              }}>Annuleren</button>
+                setFileMessage('Import geannuleerd: huidige maandposities behouden.');
+              }}>Behoud alle huidige posities</button>
             </div>
+            <p>De huidige lijst wordt alleen vervangen met je afzonderlijke
+              keuze hierboven. Een ongeldige gecombineerde lijst wordt in zijn geheel geweigerd.</p>
           </div>
         )}
+        {positionImportUndo && <div className="month-csv-confirm" role="group"
+          aria-label="Vorige posities veilig terugzetten">
+          <h3>Laatste CSV-import terugdraaien</h3>
+          <p>Je laatste {positionImportUndo.mode==='append'?'aanvulling':'vervanging'}
+            bevat een tijdelijk herstelpunt met je vorige tabbladtekst.
+            Dit is alleen geldig zolang er nadien niets aan de posities is veranderd.</p>
+          {!canUndoPositionImport&&<p role="status">De positiegegevens zijn inmiddels veranderd.
+            Automatisch herstel is geblokkeerd om nieuwe invoer te behouden.</p>}
+          <button type="button" disabled={!canUndoPositionImport||Boolean(pendingImport)}
+            onClick={undoPositionImport}>Herstel vorige maandposities</button>
+          <button type="button" onClick={()=>{
+            setPositionImportUndo(null);
+            setFileMessage('Herstelpunt gewist; huidige maandposities blijven staan.');
+          }}>Verwerp herstelpunt</button>
+          <p>Het herstelpunt blijft alleen in dit open browsertabblad. Gedownloade
+            bestanden en je reactiedagboek worden nooit door deze terugzetactie gewijzigd.</p>
+        </div>}
         {fileMessage && <p role="status">{fileMessage}</p>}
         <p>CSV-export is uitsluitend op eigen verzoek. Een bestand op een
           cloudgesynchroniseerde locatie kan buiten Woonpoints terechtkomen.</p>
