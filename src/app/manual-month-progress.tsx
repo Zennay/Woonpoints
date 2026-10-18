@@ -1638,7 +1638,7 @@ export function PrivateMovingDayTimeline() {
   const snapshot = JSON.stringify({ moveDate, completed, extras });
   const ready = dateValid && openTasks.length > 0;
 
-  function edit() { setPending(null); setMessage(''); }
+  function edit() { setPending(null); setPendingRestore(null); setMessage(''); }
   function addTask() {
     const title = newTask.trim().replace(/[\u0000-\u001f\u007f]/g, ' ');
     const offset = Number(newOffset);
@@ -1699,10 +1699,12 @@ export function PrivateMovingDayTimeline() {
 
   function downloadCalendar() {
     if (!ready || pending !== snapshot) { setPending(null); setMessage('De planning is gewijzigd. Bekijk eerst opnieuw de agenda-export.'); return; }
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
     const entries = openTasks.map(task => {
       const end = dayAtOffset(moveDate, task.offset + 1);
       return [
         'BEGIN:VEVENT',
+        `DTSTAMP:${stamp}`,
         `UID:woonpoints-${task.id.replace(/[^a-zA-Z0-9-]/g, '')}-${icsDate(task.due)}@local`,
         `DTSTART;VALUE=DATE:${icsDate(task.due)}`,
         `DTEND;VALUE=DATE:${icsDate(end)}`,
@@ -1792,6 +1794,7 @@ export function PrivateMovingDayTimeline() {
       {ready && pending === snapshot && <div role="group" aria-label="Bevestig privé-agenda-export">
         <p><strong>{openTasks.length} open acties</strong> worden als dagvullende agendapunten
           geëxporteerd, inclusief je eigen tekst. Afgevinkte acties worden overgeslagen.</p>
+        <ul>{openTasks.map(task => <li key={task.id}>{task.due} · {task.title}</li>)}</ul>
         <button type="button" onClick={downloadCalendar}>Bevestig .ics-download</button>
         <button type="button" onClick={() => setPending(null)}>Annuleren</button>
       </div>}
