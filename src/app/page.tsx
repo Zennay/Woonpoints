@@ -279,12 +279,24 @@ const readBackup = (text: string): AftercareBackup => {
 // Combine only independently validated local backups. Identical IDs with
 // changed content are conflicts, never silently edited or renamed. Reuse the
 // exact 16KiB v2 import contract before exposing any merged state.
+type PrivateConflictChoice = 'keep' | 'incoming';
+type PrivateAftercareConflict = {
+  key: string; kind: 'punt' | 'contactmoment'; label: string;
+  existingDetails: string; incomingDetails: string; choice: PrivateConflictChoice | null;
+};
+
+// Reconcile only validated operator-controlled private backup records. Every
+// colliding changed ID must receive its own choice; there is deliberately NO
+// default that discards or overwrites hidden notes or locally marked statuses.
 function planPrivateAftercareMerge(
-  current: AftercareBackup, additional: AftercareBackup
+  current: AftercareBackup, additional: AftercareBackup,
+  choices: Record<string, PrivateConflictChoice> = {}
 ): {
   ready: boolean; reason: string; items: Item[]; history: FollowUp[];
   newPoints: number; newContacts: number; skippedPoints: number;
   skippedContacts: number; conflictingPoints: number; conflictingContacts: number;
+  updatedPoints: number; updatedContacts: number; unresolved: number;
+  conflicts: PrivateAftercareConflict[];
 } {
   const existingPoints = new Map(current.items.map(item => [item.id, item]));
   const existingContacts = new Map(current.history.map(event => [event.id, event]));
@@ -298,36 +310,62 @@ function planPrivateAftercareMerge(
   let skippedContacts = 0;
   let conflictingPoints = 0;
   let conflictingContacts = 0;
-  const newPoints: Item[] = [];
-  const newContacts: FollowUp[] = [];
+  let updatedPoints = 0;
+  let updatedContacts = 0;
+  let unresolved = 0;
+  const conflicts: PrivateAftercareConflict[] = [];
+  const additions: Item[] = [];
+  const moreContacts: FollowUp[] = [];
+  const pointUpdates = new Map<string, Item>();
+  const contactUpdates = new Map<string, FollowUp>();
   for (const row of additional.items) {
     const existing = existingPoints.get(row.id);
-    if (!existing) newPoints.push({ ...row });
-    else if (pointFields(existing) === pointFields(row)) skippedPoints++;
-    else conflictingPoints++;
+    if (!existing) { additions.push({ ...row }); continue; }
+    if (pointFields(existing) === pointFields(row)) { skippedPoints++; continue; }
+    conflictingPoints++;
+    const key = 'point:' + row.id;
+    const choice = choices[key] === 'keep' || choices[key] === 'incoming' ? choices[key] : null;
+    conflicts.push({
+      key, kind: 'punt',
+      label: reportLine(existing.room + ' — ' + existing.title),
+      existingDetails: JSON.stringify(existing, null, 2),
+      incomingDetails: JSON.stringify(row, null, 2), choice
+    });
+    if (choice === 'incoming') { pointUpdates.set(row.id, { ...row }); updatedPoints++; }
+    else if (choice !== 'keep') unresolved++;
   }
   for (const row of additional.history) {
     const existing = existingContacts.get(row.id);
-    if (!existing) newContacts.push({ ...row });
-    else if (contactFields(existing) === contactFields(row)) skippedContacts++;
-    else conflictingContacts++;
+    if (!existing) { moreContacts.push({ ...row }); continue; }
+    if (contactFields(existing) === contactFields(row)) { skippedContacts++; continue; }
+    conflictingContacts++;
+    const key = 'contact:' + row.id;
+    const choice = choices[key] === 'keep' || choices[key] === 'incoming' ? choices[key] : null;
+    const point = existingPoints.get(existing.issueId);
+    conflicts.push({
+      key, kind: 'contactmoment',
+      label: reportLine(existing.day + ' · ' + existing.kind + ' · ' + (point?.title || 'Eigen nazorgpunt')),
+      existingDetails: JSON.stringify(existing, null, 2),
+      incomingDetails: JSON.stringify(row, null, 2), choice
+    });
+    if (choice === 'incoming') { contactUpdates.set(row.id, { ...row }); updatedContacts++; }
+    else if (choice !== 'keep') unresolved++;
   }
   const merged = {
-    items: [...current.items.map(row => ({ ...row })), ...newPoints],
-    history: [...current.history.map(row => ({ ...row })), ...newContacts]
+    items: [...current.items.map(row => ({...(pointUpdates.get(row.id) || row)})), ...additions],
+    history: [...current.history.map(row => ({...(contactUpdates.get(row.id) || row)})), ...moreContacts]
   };
   const base = {
-    ...merged,
-    newPoints: newPoints.length,
-    newContacts: newContacts.length,
-    skippedPoints, skippedContacts, conflictingPoints, conflictingContacts
+    ...merged, newPoints: additions.length, newContacts: moreContacts.length,
+    skippedPoints, skippedContacts, conflictingPoints, conflictingContacts,
+    updatedPoints, updatedContacts, unresolved, conflicts
   };
-  const fail = (reason: string) => ({ ...base, ready: false, reason });
-  if (conflictingPoints || conflictingContacts) {
-    return fail('Overeenkomstige record-ID’s hebben afwijkende gegevens. Samenvoegen is geblokkeerd: kies zelf welk volledig dossier je wilt herstellen; er wordt niets overschreven.');
+  const fail = (reason: string) => ({...base, ready: false, reason});
+  if (unresolved > 0) {
+    return fail('Kies bij elk afwijkend ID bewust behouden of vervangen. Zonder volledige menselijke keuze gebeurt niets.');
   }
-  if (!newPoints.length && !newContacts.length) {
-    return fail('Alle aangeleverde punten en contactmomenten staan al ongewijzigd in dit tabblad.');
+  if (!additions.length && !moreContacts.length && !updatedPoints && !updatedContacts) {
+    return fail('Er zijn geen nieuwe of gekozen gewijzigde records om toe te voegen.');
   }
   if (merged.items.length > LIMIT || merged.history.length > 160) {
     return fail('Te veel gezamenlijke punten of contactmomenten voor het bestaande privé-dossier.');
@@ -336,8 +374,8 @@ function planPrivateAftercareMerge(
   if (new TextEncoder().encode(payload).length > MAX_BYTES) {
     return fail('Samenvoegen zou de bestaande veilige 16 KiB JSON-back-uplimiet overschrijden.');
   }
-  // Uses the unchanged authoritative import validator to enforce referential
-  // integrity, eight notes per issue and exact recognised schema fields.
+  // The original unchanged v2 parser re-checks exact schema and keys,
+  // unique IDs, contact->issue references and max 8 per issue.
   try { readBackup(payload); }
   catch { return fail('Samenvoegen zou ongeldige of te veel contactnotities opleveren.'); }
   return {...base, ready: true, reason: ''};
@@ -1135,6 +1173,8 @@ function PrivateMoveAftercare() {
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
   const [incomingMode, setIncomingMode] = useState<'replace' | 'merge'>('replace');
+  const [mergeConflictChoices, setMergeConflictChoices] =
+    useState<Record<string, PrivateConflictChoice>>({});
   const [incomingSource, setIncomingSource] = useState('');
   const [incomingRiskApproved, setIncomingRiskApproved] = useState(false);
   const [aftercareImportUndo, setAftercareImportUndo] = useState<{
@@ -1297,7 +1337,7 @@ function PrivateMoveAftercare() {
   const aftercareImportSignature = JSON.stringify({ items, history });
   const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
   const incomingMerge = incoming === null ? null :
-    planPrivateAftercareMerge({items, history}, incoming);
+    planPrivateAftercareMerge({items, history}, incoming, mergeConflictChoices);
   const aftercareUndoCurrent = aftercareImportUndo !== null &&
     aftercareImportUndo.importedSignature === aftercareImportSignature;
   const removalUndoCurrent = removalUndo !== null &&
@@ -2006,6 +2046,7 @@ function PrivateMoveAftercare() {
     event.target.value = '';
     setIncoming(null);
     setIncomingMode('replace');
+    setMergeConflictChoices({});
     setIncomingSource('');
     setIncomingRiskApproved(false);
     if (!file) return;
@@ -2056,7 +2097,7 @@ function PrivateMoveAftercare() {
       return;
     }
     const merged = incomingMode === 'merge'
-      ? planPrivateAftercareMerge({items, history}, incoming) : null;
+      ? planPrivateAftercareMerge({items, history}, incoming, mergeConflictChoices) : null;
     if (merged && !merged.ready) {
       setIncomingRiskApproved(false);
       setMessage('Samenvoegen geweigerd: ' + merged.reason);
@@ -2079,6 +2120,7 @@ function PrivateMoveAftercare() {
     setClearUndo(null);
     setIncoming(null);
     setIncomingMode('replace');
+    setMergeConflictChoices({});
     setIncomingSource('');
     setIncomingRiskApproved(false);
     setDraft(EMPTY);
