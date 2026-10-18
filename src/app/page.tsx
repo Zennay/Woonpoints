@@ -1149,6 +1149,13 @@ function PrivateMoveAftercare() {
   const [history, setHistory] = useState<FollowUp[]>([]);
   const [contactTimelineKind, setContactTimelineKind] = useState<ContactKind | 'alle'>('alle');
   const [contactTimelineSearch, setContactTimelineSearch] = useState('');
+  const [timelineExportFormat, setTimelineExportFormat] = useState<'txt' | 'csv'>('txt');
+  const [includeTimelinePrivateNotes, setIncludeTimelinePrivateNotes] = useState(false);
+  const [timelineExportPreview, setTimelineExportPreview] = useState<{
+    signature: string; content: string; count: number; format: 'txt' | 'csv'
+  } | null>(null);
+  const [timelineExportApproved, setTimelineExportApproved] = useState(false);
+  const [timelineExportFeedback, setTimelineExportFeedback] = useState('');
   const [expandContactTimeline, setExpandContactTimeline] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [historyKind, setHistoryKind] = useState<ContactKind>('eigen-notitie');
@@ -1316,6 +1323,18 @@ function PrivateMoveAftercare() {
       a.item.title.localeCompare(b.item.title, 'nl-NL') ||
       a.event.id.localeCompare(b.event.id));
   }, [items, history, contactTimelineKind, contactTimelineQuery]);
+
+  // Export is deliberately bound to the whole original dossier, current
+  // search/type filters and privacy choice, not to a stale visible slice.
+  const timelineExportSignature = JSON.stringify({
+    items, history, contactTimelineKind, contactTimelineSearch,
+    timelineExportFormat, includeTimelinePrivateNotes, contactTimeline
+  });
+  const timelineExportIsCurrent = timelineExportPreview !== null &&
+    timelineExportPreview.signature === timelineExportSignature &&
+    timelineExportPreview.count === contactTimeline.length &&
+    timelineExportPreview.format === timelineExportFormat;
+
 
   const issueRooms = useMemo(() => Array.from(new Set(items.map(item => item.room)))
     .sort((a, b) => a.localeCompare(b, 'nl-NL')), [items]);
@@ -1901,6 +1920,70 @@ function PrivateMoveAftercare() {
       ' punten gedownload, zonder externe verzending.');
   }
 
+  function prepareTimelineExport() {
+    if (!contactTimeline.length) {
+      setTimelineExportPreview(null);
+      setTimelineExportApproved(false);
+      setTimelineExportFeedback('Er zijn geen zelf genoteerde contactmomenten binnen de huidige filters.');
+      return;
+    }
+    const rows = contactTimeline.map(({event, item}) => ({
+      date: event.day,
+      kind: CONTACT_TYPES.find(type => type.id === event.kind)?.title || 'Eigen notitie',
+      room: reportLine(item.room),
+      title: reportLine(item.title),
+      status: item.status,
+      // Free contact details are private; opt-in is reset per export approval.
+      detail: includeTimelinePrivateNotes ? reportLine(event.detail) : ''
+    }));
+    const content = timelineExportFormat === 'csv'
+      ? [
+          ['datum', 'eigen_contactsoort', 'ruimte', 'nazorgpunt', 'eigen_status', 'prive_contactnotitie'],
+          ...rows.map(row => [row.date, row.kind, row.room, row.title, row.status, row.detail])
+        ].map(columns => columns.map(csvCell).join(',')).join('\r\n') + '\r\n'
+      : [
+          'WOONPOINTS · EIGEN CONTACTTIJDLIJN',
+          'Uitsluitend zelf ingevoerde notities; geen bewijs van officiële verzending, reactie of afspraak.',
+          'Huidige selectie: ' + contactTimeline.length + ' van ' + history.length + ' eigen contactmomenten.',
+          'Vrije privé-contactnotities: ' + (includeTimelinePrivateNotes ? 'bewust opgenomen' : 'weggelaten'),
+          '',
+          ...rows.flatMap((row, index) => [
+            (index + 1) + '. ' + row.date + ' · ' + row.kind,
+            '   ' + row.room + ': ' + row.title + ' · Eigen status: ' + row.status,
+            ...(includeTimelinePrivateNotes ? ['   Mijn eigen contacttekst: ' + row.detail] : []),
+            ''
+          ]),
+          'Controleer originele correspondentie voordat je deze zelf opgestelde tijdlijn deelt.'
+        ].join('\n') + '\n';
+    const bytes = new TextEncoder().encode(content).length;
+    if (bytes > 95 * 1024) {
+      setTimelineExportPreview(null);
+      setTimelineExportApproved(false);
+      setTimelineExportFeedback('Deze export zou te groot worden; beperk de huidige filters.');
+      return;
+    }
+    setTimelineExportPreview({
+      signature: timelineExportSignature, count: rows.length, format: timelineExportFormat, content
+    });
+    setTimelineExportApproved(false);
+    setTimelineExportFeedback('Bekijk de volledige actuele inhoud en geef daarna apart toestemming voor de download.');
+  }
+  function confirmTimelineExport() {
+    if (!timelineExportIsCurrent || !timelineExportApproved || !timelineExportPreview ||
+        contactTimeline.length === 0) {
+      setTimelineExportPreview(null);
+      setTimelineExportApproved(false);
+      setTimelineExportFeedback('Export geweigerd: de bron, filters of privacykeuze zijn veranderd.');
+      return;
+    }
+    download('woonpoints-eigen-contacttijdlijn.' + timelineExportPreview.format,
+      timelineExportPreview.content,
+      timelineExportPreview.format === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8');
+    setTimelineExportPreview(null);
+    setTimelineExportApproved(false);
+    setTimelineExportFeedback('Je gecontroleerde privé-contacttijdlijn is lokaal gedownload. Er is niets verstuurd.');
+  }
+
   function exportCalendar() {
     if (dueActive.length === 0) { setMessage('Voeg eerst een open punt met eigen streefdatum toe.'); return; }
     download('woonpoints-eigen-nazorgdeadlines.ics', calendarFor(dueActive), 'text/calendar;charset=utf-8');
@@ -2368,8 +2451,68 @@ function PrivateMoveAftercare() {
             {expandContactTimeline ? 'Toon eerste 20 momenten' :
               'Toon alle ' + contactTimeline.length + ' momenten'}
           </button>}
-          <p>Vrije contacttekst blijft hier ingeklapt totdat je zelf opent. Er is
-            geen automatische export, synchronisatie of contact met derden.</p>
+          <div className="aftercare-confirm" role="group" aria-labelledby="nazorg-timeline-export-title">
+            <h3 id="nazorg-timeline-export-title">Mijn eigen contacttijdlijn exporteren</h3>
+            <p>Maak een chronologisch overzicht van de <strong>{contactTimeline.length}</strong> momenteel
+              gefilterde zelf genoteerde contactmomenten. Een contactnotitie is geen verzendbewijs
+              of geverifieerde verhuurderreactie. Er wordt niets automatisch verzonden.</p>
+            <label htmlFor="nazorg-timeline-export-format">Bestandsformaat</label>
+            <select id="nazorg-timeline-export-format" value={timelineExportFormat}
+              onChange={e => {
+                setTimelineExportFormat(e.target.value === 'csv' ? 'csv' : 'txt');
+                setTimelineExportPreview(null); setTimelineExportApproved(false);
+              }}>
+              <option value="txt">Leesbare tekst (.txt)</option>
+              <option value="csv">Spreadsheet met vaste kolommen (.csv)</option>
+            </select>
+            <label className="aftercare-check" htmlFor="nazorg-timeline-export-notes">
+              <input id="nazorg-timeline-export-notes" type="checkbox"
+                checked={includeTimelinePrivateNotes}
+                onChange={e => {
+                  setIncludeTimelinePrivateNotes(e.target.checked);
+                  setTimelineExportPreview(null); setTimelineExportApproved(false);
+                }} />
+              Neem mijn vrije privécontactnotities bewust op in deze export
+            </label>
+            <p>Vrije contacttekst is standaard uitgesloten. Filters, het dossier en je privacykeuze
+              bepalen precies wat dit bestand bevat; het vervangt je volledige herstel-JSON niet.</p>
+            <button type="button" disabled={!contactTimeline.length} onClick={prepareTimelineExport}>
+              Bekijk volledige gefilterde export vóór downloaden
+            </button>
+            {timelineExportPreview && <div className="aftercare-confirm"
+              role="group" aria-label="Contacttijdlijnbestand controleren">
+              <p><strong>{timelineExportPreview.count}</strong> contactmomenten ·
+                {' '}{timelineExportPreview.format.toUpperCase()} ·
+                eigen privétekst {includeTimelinePrivateNotes ? 'ingeschakeld' : 'uitgeschakeld'}.</p>
+              {!timelineExportIsCurrent && <p className="aftercare-warning" role="status">
+                Gegevens, filters of privacykeuze zijn gewijzigd. Maak een nieuwe voorvertoning.
+              </p>}
+              <details className="aftercare-history" open={timelineExportIsCurrent}>
+                <summary>Bekijk mijn volledige daadwerkelijke exportinhoud</summary>
+                <pre className="aftercare-note" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                  {timelineExportPreview.content}
+                </pre>
+              </details>
+              <label className="aftercare-check" htmlFor="nazorg-timeline-export-approve">
+                <input type="checkbox" id="nazorg-timeline-export-approve"
+                  disabled={!timelineExportIsCurrent}
+                  checked={timelineExportApproved && timelineExportIsCurrent}
+                  onChange={e => setTimelineExportApproved(e.target.checked)} />
+                Ik heb de volledige actuele export bekeken en kies zelf waar ik dit privébestand bewaar.
+              </label>
+              <div className="aftercare-actions">
+                <button type="button" disabled={!timelineExportIsCurrent || !timelineExportApproved}
+                  onClick={confirmTimelineExport}>Download precies mijn gecontroleerde bestand</button>
+                <button type="button" className="secondary"
+                  onClick={() => { setTimelineExportPreview(null); setTimelineExportApproved(false); }}>
+                  Niet downloaden
+                </button>
+              </div>
+            </div>}
+            <p role="status" aria-live="polite">{timelineExportFeedback}</p>
+          </div>
+          <p>Vrije contacttekst blijft in de tijdlijn zelf ingeklapt totdat je deze opent.
+            Een eventuele eigen download kan buiten Woonpoints worden bewaard of gesynchroniseerd.</p>
         </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-calendar-title">
