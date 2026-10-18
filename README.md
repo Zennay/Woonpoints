@@ -1135,3 +1135,33 @@ Niets in deze transportweergave is een echte vervoerdersscan,
 afleverbewijs, WoningNet-bevestiging of verzekeringsinventaris.
 Alles blijft uitsluitend in tijdelijk browsergeheugen totdat je
 zelf bewust een bestand downloadt; geen netwerk of automatische opslag.
+
+## Privé-verhuishulp plannen zonder iemand automatisch te benaderen
+
+Het dashboard heeft nu **Wie helpt wanneer?** met maximaal twaalf zelf
+ingevoerde helpers/afspraken. Gebruik een roepnaam, kies een taak
+(inpakken, laden, vervoer, uitpakken of overig), eventueel een echte
+datum plus begin- en eindtijd, een eigen korte taaknotitie en de
+persoonlijk ingevulde status nog vragen / bevestigd / afgerond.
+
+- Bewerk, filter, verander de eigen status en verwijder afspraken.
+  Een datum met tijdvak is nodig voor het afronden van een afspraak.
+  Er worden geen uitnodigingen of berichten verstuurd.
+- **Bewaar privé-JSON…** toont eerst de volledige broninhoud. Import
+  weigert vreemde sleutels, ongeldige kalenderdagen/tijden, dubbele ID's
+  en meer dan twaalf afspraken. Een bestaande lijst wordt uitsluitend
+  na expliciete, afzonderlijke bevestiging vervangen.
+- **Mijn agenda (.ics)…** selecteert alleen bewust als bevestigd
+  gemarkeerde afspraken met een ingevuld tijdvak; het afzonderlijke
+  voorvertoningsscherm toont de te exporteren roepnamen, eigen notities
+  en tijdvakken. De .ics bevat lokale zwevende kloktijden, geen
+  automatische uitnodiging, e-mail, notificatie of API-aanroep.
+- Alles blijft in de huidige browsertabsessie tenzij je zelf
+  een bestand bewaart. Externe bestands-/agendaproviders kunnen door
+  jou gekozen bestanden synchroniseren.
+
+Dit zijn uitsluitend persoonlijke notities en geen officiële
+toewijzingen, geverifieerde afspraken, werkgeversroosters of
+WoningNet-acties. Vermijd telefoonnummers, adressen en gevoelige
+persoonsgegevens in roepnaam of notitie. De bestaande dry-run-,
+toestemmings- en productievoorwaarden blijven intact.
