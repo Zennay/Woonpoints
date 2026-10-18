@@ -3772,6 +3772,47 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
       setMessage('Bestand geweigerd: verkeerde versie, dubbele maanden of ongeldige punten. Bestaande notities behouden.');
     }
   }
+  function downloadPreviewedPoints(){
+    if(!pendingExport||!exportStillCurrent||!exportApproved){
+      setPendingExport(null);setExportApproved(false);
+      setMessage('De eigen punten of toestemming zijn gewijzigd. Bekijk opnieuw.');
+      return;
+    }
+    if(pendingExport.kind==='json')downloadPrivatePointsArchive(sorted);
+    else downloadPrivatePointsCsv(sorted);
+    setPendingExport(null);setExportApproved(false);
+    setMessage('Exact gecontroleerd privébestand aangeboden. Je opslaglocatie kan synchroniseren.');
+  }
+  function applyPointsImport(){
+    if(!pendingImport||!importStillCurrent){
+      setPendingImport(null);setPendingImportSource(null);
+      setMessage('Je eigen punten zijn sinds de bestandskeuze gewijzigd. Niets vervangen.');
+      return;
+    }
+    setRestoreUndo({
+      previous:rows.map(row=>({...row})),
+      importedSignature:JSON.stringify(pendingImport)
+    });
+    setRows(pendingImport.map(row=>({...row})));
+    setPendingImport(null);setPendingImportSource(null);
+    setPendingDelete(null);setConfirmClear(false);
+    setPendingExport(null);setExportApproved(false);
+    setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+    setMessage('Eigen puntenhistorie hersteld. Eenmalig ongedaan maken kan zolang niets wijzigt.');
+  }
+  function undoPointsImport(){
+    if(!restoreUndo||!canUndoRestore){
+      setRestoreUndo(null);
+      setMessage('Terugdraaien geweigerd: eigen punten zijn na import gewijzigd.');
+      return;
+    }
+    setRows(restoreUndo.previous.map(row=>({...row})));
+    setRestoreUndo(null);setPendingImport(null);setPendingImportSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingDelete(null);setConfirmClear(false);
+    setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+    setMessage('Vorige eigen puntenhistorie teruggezet; externe bestanden ongewijzigd.');
+  }
   return <section className="panel private-points" aria-labelledby="private-points-heading">
     <div>
       <p className="eyebrow">PRIVÉ ZOEKPUNTEN · ALLEEN EIGEN WAARNEMINGEN</p>
