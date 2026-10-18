@@ -13,7 +13,10 @@ afwezige verhuishulp.
    controledatums. Er komen geen automatische meldingen of externe acties.
 3. Via **Privéoverzicht downloaden of herstellen** kun je het afdrukbare
    TXT-overzicht of een volledige JSON-back-up eerst exact controleren en
-   daarna zelf downloaden.
+   daarna zelf downloaden. Als een open scenario een controledatum heeft, kun je
+   optioneel ook een kalenderbestand (.ics) controleren en downloaden. Dit bevat
+   uitsluitend de vaste vier scenariotitels en zelfgekozen datums, nooit eigen
+   actieomschrijvingen of roepnamen; agenda-import gebeurt altijd handmatig.
 4. Een eigen JSON-herstelbestand wordt begrensd tot 8 KiB en strikt
    gevalideerd op exacte vier scenario's, velden, datums en omvang.
    Bij import blijft je huidige plan behouden totdat je de vervanging zelf
@@ -29,7 +32,7 @@ afwezige verhuishulp.
 - De vier scenario's blijven **alleen in het huidige browsertabblad** en
   verdwijnen bij herladen; er is geen automatische server-, cookie- of
   localStorage-opslag.
-- TXT/JSON-export is altijd een bewuste actie. Afhankelijk van de
+- TXT/JSON/ICS-export is altijd een bewuste actie. Afhankelijk van de
   gekozen downloadmap kan je eigen bestand extern worden gesynchroniseerd.
 - Noteer geen telefoonnummers, adressen, bankgegevens, toegangs- of
   accountgegevens. Gebruik rollen of roepnamen.
