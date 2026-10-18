@@ -10,6 +10,17 @@ Sinds 18 oktober 2026 is via de dashboardlink **Nazorg & gebreken** het in het b
 4. Maak bewust een JSON-back-up van het complete werkoverzicht (`kind=woonpoints-private-nazorg`, `schema=1`), CSV voor eigen verwerking of een leesbaar TXT-overzicht. De CSV neutraliseert begintekens die bij openen in een spreadsheet als formule kunnen worden uitgevoerd.
 5. Importeer uitsluitend lokaal gekozen JSON van maximaal 16 KiB. De import weigert onbekende velden/versies, ongeldige waarden en datums, te veel of dubbele items, en laat bestaande informatie ongewijzigd totdat **Vervang huidige punten** wordt bevestigd. Ook een lege back-up kan expliciet worden hersteld.
 
+## Eigen deadlinekalender en opt-in agenda-export
+
+De nazorgsectie toont sinds deze uitbreiding een afzonderlijk **Deadline-overzicht**: open of zelf-gemelde punten met een eigen datum, binnen de komende 31 kalenderdagen (vandaag t/m vandaag +30). Afgeronde punten worden niet meegenomen; verstreken datums blijven zichtbaar in de bestaande statuskaart.
+
+Met **Download ICS voor mijn agenda** exporteert de gebruiker uitsluitend niet-afgeronde punten waarvoor een eigen datum is ingevuld:
+- Ieder punt krijgt een all-day agenda-item op de zelf ingevulde datum, met een herinnering 1 dag eerder voor zover de gekozen kalenderapp die ondersteunt.
+- Een vaste stabiele UID uit de privé-item-ID, correcte datum-exclusieve DTEND en RFC5545-veilige tekstvelden. Regels worden veilig gevouwen op maximaal 70 UTF-8 bytes.
+- Er wordt **geen** agenda, server, verhuurder of account bezocht; een agenda-import of synchronisatie gebeurt uitsluitend na een aparte actie in de kalenderapp.
+- Niet invullen van een datum genereert geen afspraak. "Gemeld" is alleen een eigen handmatige status en is geen verhuurderbevestiging.
+- Bij ieder expliciet nieuw ICS-bestand kan de agenda-app bestaande importregels verwerken volgens eigen gedrag; Woonpoints beheert, annuleert of synchroniseert daar geen afspraak.
+
 ## Privacy, veiligheid en grenzen
 
 - Maximaal 80 aandachtspunten; tabbladgeheugen, geen automatische opslag, cookies, localStorage, API-aanroep of sync.
