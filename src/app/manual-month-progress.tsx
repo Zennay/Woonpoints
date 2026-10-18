@@ -3899,6 +3899,58 @@ function packingReport(items:PackingItem[]):string{
   return lines.join('\n')+'\n';
 }
 
+
+type PackingBoxGroup={room:Room;box:string;items:PackingItem[]};
+function packingBoxGroups(items:PackingItem[]):PackingBoxGroup[]{
+  const groups:PackingBoxGroup[]=[];
+  for(const item of items){
+    // Unpacked entries no longer belong on a current box label.
+    if(!item.box||item.status==='Uitgepakt')continue;
+    let group=groups.find(g=>g.room===item.room&&g.box===item.box);
+    if(!group){group={room:item.room,box:item.box,items:[]};groups.push(group);}
+    group.items.push(item);
+  }
+  return groups.sort((a,b)=>a.room.localeCompare(b.room,'nl-NL')||
+    a.box.localeCompare(b.box,'nl-NL'));
+}
+function packingHtmlText(value:string):string{
+  return value.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function packingPrintLabels(groups:PackingBoxGroup[],showContents:boolean):string{
+  const cards=groups.map(group=>{
+    const total=group.items.reduce((n,item)=>n+item.quantity,0);
+    const priority=group.items.some(item=>item.priority);
+    const content=showContents?
+      '<ul>'+group.items.map(item=>'<li>'+packingHtmlText(String(item.quantity)+' × '+item.label)+
+        (item.priority?' <strong>· eerst nodig</strong>':'')+'</li>').join('')+'</ul>':'';
+    return '<article class="label"><p class="eyebrow">EIGEN VERHUISDOOS</p>'+
+      '<h2>'+packingHtmlText(group.box)+'</h2>'+
+      '<p class="room">'+packingHtmlText(group.room)+'</p>'+
+      '<p>'+group.items.length+' eigen regels · '+total+' stuks</p>'+
+      (priority?'<p class="priority">EERST NODIG</p>':'')+
+      content+'</article>';
+  }).join('\n');
+  return '<!doctype html>\n<html lang="nl"><head><meta charset="utf-8">'+
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;">'+
+    '<title>Eigen Woonpoints-dozenlabels</title>'+
+    '<style>@page{size:A4;margin:12mm}*{box-sizing:border-box}'+
+    'body{font-family:Arial,sans-serif;margin:0;color:#111}header{padding:10mm 0 5mm}'+
+    '.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6mm}'+
+    '.label{border:2px solid #222;border-radius:3mm;padding:6mm;min-height:68mm;'+
+    'break-inside:avoid;overflow-wrap:anywhere}'+
+    '.eyebrow{font-size:10pt;letter-spacing:.08em}h1{font-size:16pt}'+
+    'h2{font-size:22pt;margin:4mm 0}p{margin:2mm 0}'+
+    '.room{font-size:16pt;font-weight:bold}.priority{font-weight:bold;border:2px solid #111;'+
+    'padding:2mm;display:inline-block}ul{padding-left:5mm;font-size:10pt}li{margin:1mm 0}'+
+    'footer{padding:6mm 0;font-size:9pt}@media print{header{display:none}}'+
+    '</style></head><body><header><h1>Eigen dozenlabels · printvoorbeeld</h1>'+
+    '<p>Privé samengesteld; kies in je browser Afdrukken. Geen adres, opslag of synchronisatie.</p></header>'+
+    '<main class="grid">'+cards+'</main>'+
+    '<footer>Zelfgetypte gegevens; controleer dozen en inhoud vóór gebruik.</footer></body></html>\n';
+}
+
 /** Entirely ephemeral room-by-room packing board. No account, worker or API calls. */
 export function PrivateMovingPackingInventory(){
   const [items,setItems]=useState<PackingItem[]>([]);
@@ -3910,6 +3962,8 @@ export function PrivateMovingPackingInventory(){
   const [confirmClear,setConfirmClear]=useState(false);
   const [pendingExport,setPendingExport]=useState<{kind:'json'|'txt';signature:string}|null>(null);
   const [pendingRestore,setPendingRestore]=useState<PackingArchive|null>(null);
+  const [showLabelContents,setShowLabelContents]=useState(false);
+  const [pendingLabels,setPendingLabels]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   const sequence=useRef(0);
   const signature=JSON.stringify(items);
@@ -3924,8 +3978,24 @@ export function PrivateMovingPackingInventory(){
     a.room.localeCompare(b.room,'nl-NL')||a.label.localeCompare(b.label,'nl-NL')),
   [items,roomFilter,stateFilter]);
   const report=packingReport(items);
+  const boxGroups=packingBoxGroups(items);
+  const labelSignature=JSON.stringify({signature,showLabelContents});
+  const unlabelled=items.filter(item=>item.status!=='Uitgepakt'&&!item.box).length;
+  const duplicateCodes=[...new Set(boxGroups.map(group=>group.box))]
+    .filter(box=>new Set(boxGroups.filter(group=>group.box===box).map(group=>group.room)).size>1);
+  function savePrivateLabels(){
+    if(!boxGroups.length||pendingLabels!==labelSignature){
+      setPendingLabels(null);
+      setNotice('De dozen of labelkeuze zijn gewijzigd. Controleer het labelvoorbeeld opnieuw.');
+      return;
+    }
+    downloadPrivateFile('woonpoints-prive-dozenlabels.html',
+      packingPrintLabels(boxGroups,showLabelContents),'text/html;charset=utf-8');
+    setPendingLabels(null);
+    setNotice('Lokaal printbaar HTML-bestand aangeboden. Open het zelf om af te drukken.');
+  }
   const resetPending=()=>{
-    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);
+    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);setPendingLabels(null);
     setConfirmClear(false);setNotice('');
   };
   function saveItem(){
@@ -4075,6 +4145,46 @@ export function PrivateMovingPackingInventory(){
       </div>}
     </li>)}</ol>
     {visible.length===0&&items.length>0&&<p>Geen regels binnen je filters.</p>}
+
+    <section aria-labelledby="private-box-labels-heading">
+      <h3 id="private-box-labels-heading">Printbare eigen dozenlabels</h3>
+      <p>Maak voor elke unieke combinatie van kamer en dooslabel een offline A4-vel
+        met grote dooscode en kamernaam. Alleen nog niet uitgepakte regels met
+        een eigen doosnummer komen mee; er wordt geen adres toegevoegd.</p>
+      <p>{boxGroups.length} dozen met inhoudsregels · {unlabelled} nog niet uitgepakte
+        regel(s) zonder doosnummer niet opgenomen.</p>
+      {duplicateCodes.length>0&&<p role="status">
+        Let op: de dooscode(s) {duplicateCodes.join(', ')} komen in meerdere
+        kamers voor. Controleer de kamernaam op ieder geprint etiket.</p>}
+      <label htmlFor="private-box-label-contents">
+        <input id="private-box-label-contents" type="checkbox"
+          checked={showLabelContents} onChange={event=>{
+            setShowLabelContents(event.target.checked);setPendingLabels(null);setNotice('');
+          }} />
+        Toon ook de zelf ingevulde inhoud op het etiket (privacygevoelig)
+      </label>
+      <button type="button" disabled={!boxGroups.length} onClick={()=>{
+        setPendingLabels(labelSignature);setNotice('');
+      }}>Bekijk afdrukbare dozenlabels…</button>
+      {pendingLabels===labelSignature&&boxGroups.length>0&&
+        <div role="group" aria-label="Bevestig privé-dozenlabels">
+          <p>Controleer de {boxGroups.length} onderstaande labels voordat je
+            een offline HTML-bestand bewaart. Open dat bestand zelf in een browser
+            en gebruik Afdrukken wanneer je dat wilt.</p>
+          <ol>{boxGroups.map(group=><li key={group.room+'|'+group.box}>
+            <strong>{group.room} · doos {group.box}</strong>
+            {' · '}{group.items.reduce((n,item)=>n+item.quantity,0)} stuks
+            {group.items.some(item=>item.priority)?' · EERST NODIG':''}
+            {showLabelContents&&<ul>{group.items.map(item=><li key={item.id}>
+              {item.quantity} × {item.label}{item.priority?' · eerst nodig':''}
+            </li>)}</ul>}
+          </li>)}</ol>
+          <button type="button" onClick={savePrivateLabels}>
+            Bevestig offline HTML-download ({boxGroups.length} labels)
+          </button>
+          <button type="button" onClick={()=>setPendingLabels(null)}>Annuleren</button>
+        </div>}
+    </section>
     <h3>Zelf privé bewaren of overdragen</h3>
     <p>Back-up en paklijst bevatten eigen kamerlabels, omschrijvingen en doosnummers.
       Bekijk eerst de exacte gegevens. Niets wordt zonder bevestiging gedownload.</p>
