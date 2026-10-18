@@ -1331,6 +1331,7 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
   const [fromShortlist, setFromShortlist] = useState(false);
+  const [movePlan, setMovePlan] = useState({months: '6', reserveMonths: '3'});
   const [budgetDraft, setBudgetDraft] = useState<BudgetDraft>({
     income: '', essentials: '0', savings: '0', dip: '15', rise: '10'
   });
@@ -1357,6 +1358,18 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const budgetInputs = readBudgetInputs(budgetDraft);
   const forecastA = left && budgetInputs ? calculateBudgetForecast(left, budgetInputs) : null;
   const forecastB = right && budgetInputs ? calculateBudgetForecast(right, budgetInputs) : null;
+  const moveMonths = /^(?:[1-9]|[12]\\d|3[0-6])$/.test(movePlan.months)
+    ? Number(movePlan.months) : null;
+  const reserveMonths = /^(?:[0-9]|1[0-2])$/.test(movePlan.reserveMonths)
+    ? Number(movePlan.reserveMonths) : null;
+  const savingsGoal = (cost: CostResult) => {
+    if (!budgetInputs || moveMonths === null || reserveMonths === null) return null;
+    const target = cost.start + reserveMonths * (cost.monthly + budgetInputs.essentials);
+    const missing = Math.max(0, target - budgetInputs.savings);
+    return {target, missing, monthlySavings: Math.ceil(missing / moveMonths)};
+  };
+  const savingA = left ? savingsGoal(left) : null;
+  const savingB = right ? savingsGoal(right) : null;
   const forecastRows: [string, number, number][] = forecastA && forecastB ? [
     ['Eigen spaargeld na verhuiskosten', forecastA.availableAfterMove, forecastB.availableAfterMove],
     ['Maandruimte met huidig inkomen', forecastA.baselineMonthly, forecastB.baselineMonthly],
@@ -1388,6 +1401,18 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
       'Inkomensdaling in tegenslag: ' + budgetInputs.dip + '%',
       'Stijging gezamenlijke woonlasten in tegenslag: ' + budgetInputs.rise + '%',
       '', ...formatScenario(left, forecastA), '', ...formatScenario(right, forecastB),
+      ...(savingA && savingB && moveMonths !== null && reserveMonths !== null
+        ? ['', 'VERHUISS PAARDOEL - ZELF GEKOZEN PLANNING',
+           'Maanden tot verhuizing: ' + moveMonths,
+           'Maanden gewenste vaste-lastenbuffer: ' + reserveMonths,
+           left.label + ' doel: ' + currencyCost(savingA.target) +
+             ', tekort: ' + currencyCost(savingA.missing) +
+             ', maandelijks bijsparen: ' + currencyCost(savingA.monthlySavings),
+           right.label + ' doel: ' + currencyCost(savingB.target) +
+             ', tekort: ' + currencyCost(savingB.missing) +
+             ', maandelijks bijsparen: ' + currencyCost(savingB.monthlySavings)]
+        : []),
+
       '', 'Rekenmodel: buffer = spaargeld - verhuiskosten + 12 x maandruimte.',
       'Tegenslag is een zelfgekozen scenario, geen voorspelling. Geen toeslagen, schulden,',
       'onverwachte uitgaven, wettelijke huur-/inkomenstoets of inflatiepad inbegrepen.',
@@ -1619,6 +1644,52 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
                     <td>{currencyCost(amountA)}</td><td>{currencyCost(amountB)}</td></tr>
                 )}</tbody>
               </table>
+            </div>
+
+            <div className="private-budget-provenance">
+              <h4>Mijn verhuis-spaarplan</h4>
+              <p>Plan zelf hoeveel je vóór de verhuizing wilt reserveren: de
+                eenmalige startkosten plus een aantal maanden aan verwachte
+                woon- en overige vaste lasten. De berekening trekt alleen je
+                hier ingevoerde spaargeld af en deelt het resterende bedrag
+                door het aantal maanden tot je geplande verhuizing.</p>
+              <div className="private-budget-grid">
+                <fieldset>
+                  <legend>Zelf gekozen spaartermijn</legend>
+                  <label htmlFor="saving-horizon">Maanden tot verhuizing (1–36)</label>
+                  <input id="saving-horizon" type="number" inputMode="numeric" min="1" max="36"
+                    step="1" value={movePlan.months}
+                    onChange={event => setMovePlan(current => ({...current, months:event.target.value}))} />
+                </fieldset>
+                <fieldset>
+                  <legend>Zelf gekozen noodbuffer</legend>
+                  <label htmlFor="saving-reserve">Maanden vaste lasten als buffer (0–12)</label>
+                  <input id="saving-reserve" type="number" inputMode="numeric" min="0" max="12"
+                    step="1" value={movePlan.reserveMonths}
+                    onChange={event => setMovePlan(current => ({...current, reserveMonths:event.target.value}))} />
+                </fieldset>
+              </div>
+              {savingA && savingB ? <div className="private-budget-table-wrap">
+                <table>
+                  <caption>Zelfgekozen spaardoelen vóór verhuizing; geen actuele spaarcapaciteit bekend</caption>
+                  <thead><tr><th scope="col">Spaarplan</th><th scope="col">{left.label}</th>
+                    <th scope="col">{right.label}</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Doel inclusief startkosten en buffer</th>
+                      <td>{currencyCost(savingA.target)}</td><td>{currencyCost(savingB.target)}</td></tr>
+                    <tr><th scope="row">Nog nodig na huidig spaargeld</th>
+                      <td>{currencyCost(savingA.missing)}</td><td>{currencyCost(savingB.missing)}</td></tr>
+                    <tr><th scope="row">Zelf bij te sparen per maand</th>
+                      <td><strong>{currencyCost(savingA.monthlySavings)}</strong></td>
+                      <td><strong>{currencyCost(savingB.monthlySavings)}</strong></td></tr>
+                  </tbody>
+                </table>
+              </div> : <p role="alert">Gebruik hele maanden: 1–36 tot verhuizing
+                en 0–12 maanden gewenste buffer.</p>}
+              <p>De maandelijkse spaaropgave zegt niet of je nu voldoende
+                kunt sparen: je huidige woonlasten, lopende verplichtingen
+                en onverwachte kosten zijn niet bekend. Een hoger doel is geen
+                financiële verplichting en er wordt niets automatisch ingepland.</p>
             </div>
             <p><strong>Hoe lang houdt het spaargeld stand bij ongewijzigde tegenslag?</strong>
               {' '}{left.label}: {forecastA.stressedRunwayMonths === null ?
