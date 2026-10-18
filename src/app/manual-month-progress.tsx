@@ -31,6 +31,8 @@ export default function ManualMonthProgress() {
   const [reminderDates, setReminderDates] = useState<string[]>(['', '', '', '']);
   const [reminderMessage, setReminderMessage] = useState('');
   const [suggestedDates, setSuggestedDates] = useState<string[] | null>(null);
+  const [reminderTimes, setReminderTimes] = useState(['09:00','09:00','09:00','09:00']);
+  const [reminderDuration, setReminderDuration] = useState<15 | 30 | 60>(15);
   const reminderMonth = useRef<string | null>(null);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
@@ -48,6 +50,8 @@ export default function ManualMonthProgress() {
       if (reminderMonth.current !== current) {
         reminderMonth.current = current;
         setReminderDates(['', '', '', '']);
+        setReminderTimes(['09:00','09:00','09:00','09:00']);
+        setReminderDuration(15);
         setSuggestedDates(null);
         setReminderMessage('');
       }
@@ -253,6 +257,11 @@ export default function ManualMonthProgress() {
     [date.getFullYear(), String(date.getMonth()+1).padStart(2,'0'),
       String(date.getDate()).padStart(2,'0')].join('-');
   const todayLocal = dateString(new Date());
+  function validLocalReminderTime(time: string) {
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return false;
+    const [hour,minute] = time.split(':').map(Number);
+    return hour*60 + minute + reminderDuration <= 1440;
+  }
   function validLocalReminderDay(day: string, expectedMonth: string): boolean {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !day.startsWith(expectedMonth+'-')
         || day < dateString(new Date())) return false;
@@ -314,9 +323,13 @@ export default function ManualMonthProgress() {
       return;
     }
     const selected = reminderDates.slice(0, remainingPersonalPlans);
+    const selectedTimes = reminderTimes.slice(0, remainingPersonalPlans);
     if (selected.some(day => !validLocalReminderDay(day, currentMonth)) ||
-        new Set(selected).size !== selected.length) {
-      setReminderMessage('Kies voor elk open moment een unieke, nog komende kalenderdag binnen deze maand.');
+        new Set(selected).size !== selected.length ||
+        selectedTimes.some(time => !validLocalReminderTime(time)) ||
+        selected.some((day,index) => day === dateString(new Date()) &&
+          new Date(day+'T'+selectedTimes[index]+':00').getTime() <= Date.now())) {
+      setReminderMessage('Kies unieke, nog komende datums en geldige lokale tijden. Een tijdstip vandaag moet in de toekomst liggen en de afspraak moet vóór middernacht eindigen.');
       return;
     }
     const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
@@ -324,9 +337,15 @@ export default function ManualMonthProgress() {
       'PRODID:-//Woonpoints//Prive maandplanning//NL','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
     selected.forEach((day, index) => {
       const compact = day.replace(/-/g,'');
+      const start = selectedTimes[index].replace(':','');
+      const [hour,minute] = selectedTimes[index].split(':').map(Number);
+      const endMins = hour*60+minute+reminderDuration;
+      const end = String(Math.floor(endMins/60)).padStart(2,'0')+
+        String(endMins%60).padStart(2,'0');
       lines.push('BEGIN:VEVENT',
         'UID:woonpoints-eigen-planning-'+currentMonth.replace('-','')+'-'+(index+1)+'@local.woonpoints.invalid',
-        'DTSTAMP:'+stamp,'DTSTART:'+compact+'T090000','DTEND:'+compact+'T091500',
+        'DTSTAMP:'+stamp,'DTSTART:'+compact+'T'+start+'00',
+        'DTEND:'+compact+'T'+end+'00',
         'SUMMARY:Woonpoints eigen reactiemoment',
         'DESCRIPTION:Persoonlijke planning. Geen automatisch WoningNet-reactie of officieel puntenbewijs.',
         'STATUS:CONFIRMED','END:VEVENT');
@@ -342,7 +361,7 @@ export default function ManualMonthProgress() {
     anchor.click();
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-    setReminderMessage('ICS-download aangeboden. Je agenda importeert alleen als jij dat bevestigt; pas de lokale tijd van 09:00 eventueel zelf aan.');
+    setReminderMessage('ICS-download aangeboden met jouw gekozen lokale tijdstippen en lengte. Er zijn geen automatische herinneringen of WoningNet-reacties gemaakt.');
   }
 
   return (
@@ -389,19 +408,42 @@ export default function ManualMonthProgress() {
             {remainingPersonalPlans > 0 ? (
               <>
                 {reminderDates.slice(0, remainingPersonalPlans).map((date, index) =>
-                  <label key={index} style={{display:'block',marginBottom:10}}>
-                    Eigen reactiemoment {index+1}
-                    <input type="date" min={todayLocal}
-                      value={date} style={{display:'block',minHeight:44,width:'100%',padding:8}}
-                      onChange={e => {
-                        const next = [...reminderDates];
-                        next[index] = e.target.value;
-                        setReminderDates(next);
-                        setSuggestedDates(null);
-                        setReminderMessage('');
-                      }} />
-                  </label>
+                  <fieldset key={index} className="manual-reminder-slot">
+                    <legend>Eigen reactiemoment {index+1}</legend>
+                    <label>
+                      Datum
+                      <input type="date" min={todayLocal} max={month+'-31'}
+                        value={date} style={{display:'block',minHeight:44,width:'100%',padding:8}}
+                        onChange={e => {
+                          const next = [...reminderDates];
+                          next[index] = e.target.value;
+                          setReminderDates(next);
+                          setSuggestedDates(null);
+                          setReminderMessage('');
+                        }} />
+                    </label>
+                    <label>
+                      Eigen lokale begintijd
+                      <input type="time" step="300"
+                        value={reminderTimes[index]} onChange={e=>{
+                          setReminderTimes(current=>current.map((v,i)=>i===index?e.target.value:v));
+                          setReminderMessage('');
+                        }} />
+                    </label>
+                  </fieldset>
                 )}
+                <label className="manual-reminder-duration">
+                  Lengte van iedere persoonlijke agenda-afspraak
+                  <select value={String(reminderDuration)} onChange={event=>{
+                    const value=Number(event.target.value);
+                    if (value===15 || value===30 || value===60) setReminderDuration(value);
+                    setReminderMessage('');
+                  }}>
+                    <option value="15">15 minuten</option>
+                    <option value="30">30 minuten</option>
+                    <option value="60">60 minuten</option>
+                  </select>
+                </label>
                 <div className="manual-reminder-suggest">
                   <p><strong>Handige verdeling:</strong> maak een voorstel om
                     alle nog open persoonlijke momenten gelijkmatig over de
@@ -434,9 +476,11 @@ export default function ManualMonthProgress() {
               </>
             ) : <p>Je eigen maandnotitie is op doel. Er zijn geen nieuwe
               kalenderherinneringen nodig.</p>}
-            <p>ICS-afspraken zijn bewust handmatig, standaard 09:00–09:15
-              lokale agendatijd en kunnen op je eigen apparaat of cloudagenda
-              worden bewaard. Geen automatische melding vanuit Woonpoints,
+            <p>ICS-afspraken zijn bewust handmatig, starten standaard
+              om 09:00 lokale agendatijd maar hebben nu per datum een eigen
+              begintijd en gezamenlijk een instelbare lengte. Ze kunnen
+              op je eigen apparaat of cloudagenda worden bewaard.
+              Geen automatische melding vanuit Woonpoints,
               geen accounttoegang en geen geplaatste reactie.</p>
             {reminderMessage && <p role="status">{reminderMessage}</p>}
           </div>
