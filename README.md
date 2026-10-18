@@ -747,3 +747,29 @@ zijn/haar daadwerkelijke reactie en de actuele regels controleren.
 Bestaande `BOT_DRY_RUN=true`, producttoestemming en releasegates blijven
 ongewijzigd. Dit paneel is technisch en qua bronpaden onafhankelijk van
 de afzonderlijke handmatige maandhistorie.
+
+
+### Een persoonlijk maandplan bewust bewaren en veilig herstellen
+
+Bij **Maandplan** kun je een compleet, nog toekomstig eigen voorstel als
+`woonpoints-eigen-maandplan.json` downloaden. Het bestand bevat uitsluitend
+de gekozen kalendermaand, eigen teller (0–4), al elders geplande
+aandachtspunten (0–4), werkdagfilter en zelf gekozen voorlopige datums.
+Er is geen account, adres, officiële registratie of afspraakbewijs in.
+
+De gebruiker kan datzelfde ongewijzigde Woonpoints-formaat later via
+**Kies eerder bewaard maandplan** terugzetten. De lokaal gekozen JSON mag
+hoogstens 2 KiB zijn en moet exact het versie-1-formaat van deze
+export volgen; extra velden, ongeldige aantallen, dubbele of verstreken
+datums, weekeind-datums bij de werkdagfilter, gewijzigde vormgeving en
+onbekende bestanden worden geweigerd. De bestaande maand en gekozen
+datums blijven ongewijzigd tot een **tweede expliciete bevestiging**.
+Een tussentijdse wijziging van de huidige invoer maakt de bevestiging
+ongeldig. Herstel wijzigt geen andere Woonpoints-sectie of externe agenda.
+
+De functie is bewust **tabbladgeheugen-only**: geen automatische
+browseropslag, geen API-verzoek, geen WoningNet-actie en geen
+achtergrondherinneringen. Een zelfgekozen bestandsprovider kan
+gedownloade bestanden buiten Woonpoints synchroniseren. Maak zelf
+een back-up voordat je het tabblad sluit; verlopen kijkmomenten
+kunnen niet als toekomstig plan worden hersteld.

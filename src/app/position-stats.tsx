@@ -4001,6 +4001,18 @@ export function PrivateReactionPacing() {
   const [workdaysOnly, setWorkdaysOnly] = useState(true);
   const [message, setMessage] = useState('');
   const [dateChoices, setDateChoices] = useState<Record<number, string>>({});
+  type PrivatePacingArchive = {
+    format: 'woonpoints-private-monthplan-v1';
+    month: string;
+    selfCount: string;
+    alreadyPlanned: string;
+    workdaysOnly: boolean;
+    dates: string[];
+  };
+  const [pendingBackup, setPendingBackup] = useState<{
+    data: PrivatePacingArchive;
+    currentSignature: string;
+  } | null>(null);
   useEffect(() => {
     const now = new Date();
     setMonth(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
@@ -4036,6 +4048,9 @@ export function PrivateReactionPacing() {
   const selected = proposed.map((day, i) => dateChoices[i] ?? day);
   const selectionValid = selected.every(day => openDates.includes(day)) &&
     new Set(selected).size === selected.length;
+  const currentSignature = JSON.stringify({
+    month, selfCount, alreadyPlanned, workdaysOnly, dates: selected
+  });
   const fmt = (date: string) => {
     const [y,m,d] = date.split('-').map(Number);
     return new Intl.DateTimeFormat('nl-NL', {
@@ -4082,6 +4097,106 @@ export function PrivateReactionPacing() {
     link.remove();
     window.setTimeout(()=>URL.revokeObjectURL(uri),2000);
     setMessage('Eigen voorlopige agendadagen aangeboden. Je agenda-app kan dit bestand zelf opslaan of synchroniseren.');
+  }
+
+  function savePrivateBackup() {
+    if (!validMonth || !countsOk || insufficient || !selectionValid ||
+        selected.length !== missing) {
+      setMessage('Bewaren kan alleen als je eigen maandplan geldig en compleet is.');
+      return;
+    }
+    const data: PrivatePacingArchive = {
+      format: 'woonpoints-private-monthplan-v1',
+      month, selfCount, alreadyPlanned, workdaysOnly,
+      dates: selected
+    };
+    // Exact own-export formatting is also the strict restore contract.
+    const source = JSON.stringify(data, null, 2) + '\n';
+    const url = URL.createObjectURL(new Blob([source], {
+      type: 'application/json;charset=utf-8'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-eigen-maandplan.json';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setMessage('Privé-maandplan aangeboden om zelf te bewaren. Bestandslocaties kunnen synchroniseren.');
+  }
+  async function choosePrivateBackup(file: File | undefined) {
+    setPendingBackup(null);
+    if (!file) return;
+    if (file.size < 1 || file.size > 2048) {
+      setMessage('Bestand geweigerd. Kies een klein Woonpoints-maandplan van maximaal 2 KiB.');
+      return;
+    }
+    try {
+      const source = await file.text();
+      if (new TextEncoder().encode(source).length > 2048) throw new Error('size');
+      const raw: unknown = JSON.parse(source);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+          Object.getPrototypeOf(raw) !== Object.prototype) throw new Error('type');
+      const candidate = raw as Partial<PrivatePacingArchive>;
+      if (Object.keys(candidate).join(',') !==
+          'format,month,selfCount,alreadyPlanned,workdaysOnly,dates' ||
+          candidate.format !== 'woonpoints-private-monthplan-v1' ||
+          typeof candidate.month !== 'string' ||
+          !/^(20\d{2})-(0[1-9]|1[0-2])$/.test(candidate.month) ||
+          typeof candidate.selfCount !== 'string' ||
+          typeof candidate.alreadyPlanned !== 'string' ||
+          !/^[0-4]$/.test(candidate.selfCount) ||
+          !/^[0-4]$/.test(candidate.alreadyPlanned) ||
+          Number(candidate.selfCount) + Number(candidate.alreadyPlanned) > 4 ||
+          typeof candidate.workdaysOnly !== 'boolean' ||
+          !Array.isArray(candidate.dates)) throw new Error('schema');
+      const dates = candidate.dates;
+      const expected = 4 - Number(candidate.selfCount) - Number(candidate.alreadyPlanned);
+      if (dates.length !== expected ||
+          dates.some(date => typeof date !== 'string' ||
+            !/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date) ||
+            !date.startsWith(candidate.month + '-') || date < todayKey) ||
+          new Set(dates).size !== dates.length) throw new Error('dates');
+      const year = Number(candidate.month.slice(0,4));
+      const monthIndex = Number(candidate.month.slice(5,7));
+      const lastDay = new Date(year, monthIndex, 0).getDate();
+      const validDates = dates.every(date => {
+        const day = Number(date.slice(8,10));
+        if (day > lastDay) return false;
+        const weekday = new Date(year, monthIndex-1, day, 12).getDay();
+        return !candidate.workdaysOnly || (weekday !== 0 && weekday !== 6);
+      });
+      if (!validDates) throw new Error('weekday');
+      const data: PrivatePacingArchive = {
+        format: 'woonpoints-private-monthplan-v1',
+        month: candidate.month,
+        selfCount: candidate.selfCount,
+        alreadyPlanned: candidate.alreadyPlanned,
+        workdaysOnly: candidate.workdaysOnly,
+        dates
+      };
+      if (JSON.stringify(data, null, 2) + '\n' !== source) throw new Error('canonical');
+      setPendingBackup({ data, currentSignature });
+      setMessage('Geldig eigen maandplan gelezen. Bevestig apart voordat huidige invoer wordt vervangen.');
+    } catch {
+      setMessage('Bestand geweigerd: alleen een volledig, ongewijzigd en nog toekomstig Woonpoints-maandplan. Je invoer is behouden.');
+    }
+  }
+  function restorePrivateBackup() {
+    if (!pendingBackup || pendingBackup.currentSignature !== currentSignature) {
+      setPendingBackup(null);
+      setMessage('Je huidige plan is gewijzigd. Kies het herstelbestand opnieuw.');
+      return;
+    }
+    const data = pendingBackup.data;
+    setMonth(data.month);
+    setSelfCount(data.selfCount);
+    setAlreadyPlanned(data.alreadyPlanned);
+    setWorkdaysOnly(data.workdaysOnly);
+    setDateChoices(Object.fromEntries(data.dates.map((day,i)=>[i,day])));
+    setPendingBackup(null);
+    setMessage('Privé-maandplan bewust hersteld in dit tabblad. Niets is naar WoningNet verstuurd.');
   }
   return <section className="panel" aria-labelledby="private-reaction-pacing-heading">
     <div>
@@ -4153,6 +4268,46 @@ export function PrivateReactionPacing() {
       <button type="button" className="secondary" onClick={()=>{
         setSelfCount('0');setAlreadyPlanned('0');setDateChoices({});setMessage('');
       }}>Wis mijn aantallen</button>
+      <div className="month-csv-confirm">
+        <h3>Bewaar of herstel mijn maandplan</h3>
+        <p>De huidige maand, je eigen aantallen en gekozen dagen kunnen alleen
+          op jouw verzoek als privé-JSON worden bewaard. Geen automatische
+          opslag in de browser of op een server.</p>
+        <button type="button" onClick={savePrivateBackup}
+          disabled={!validMonth || !countsOk || insufficient ||
+            !selectionValid || selected.length!==missing}>
+          Bewaar eigen maandplan als privé-JSON…
+        </button>
+        <label htmlFor="pacing-restore">Kies eerder bewaard maandplan (maximaal 2 KiB)</label>
+        <input id="pacing-restore" type="file" accept=".json,application/json"
+          onChange={event=>{
+            const file=event.currentTarget.files?.[0];
+            event.currentTarget.value='';
+            void choosePrivateBackup(file);
+          }}/>
+        {pendingBackup && <div role="group" aria-label="Bevestig herstel maandplan">
+          <p>Geselecteerd: <strong>{pendingBackup.data.month}</strong>,
+            {' '}{pendingBackup.data.selfCount} eigen kijkmomenten,
+            {' '}{pendingBackup.data.alreadyPlanned} elders gepland,
+            {' '}{pendingBackup.data.dates.length} voorgestelde dagen.</p>
+          {pendingBackup.currentSignature!==currentSignature && <p role="alert">
+            Dit herstel is verouderd doordat je huidige invoer is gewijzigd.
+            Kies het bestand opnieuw.</p>}
+          <p><strong>Vervangen?</strong> De huidige maand, aantallen en
+            voorgestelde dagen verdwijnen uit het tabblad. Andere Woonpoints-
+            onderdelen en je reeds gedownloade bestanden veranderen niet.</p>
+          <button type="button" onClick={restorePrivateBackup}
+            disabled={pendingBackup.currentSignature!==currentSignature}>
+            Ja, vervang alleen dit maandplan
+          </button>
+          <button type="button" className="secondary"
+            onClick={()=>{setPendingBackup(null);setMessage('Herstel geannuleerd. Huidige invoer behouden.');}}>
+            Nee, behoud huidig maandplan
+          </button>
+        </div>}
+        <p>Oude of handmatig gewijzigde bestanden worden geweigerd. Kies je
+          voor cloudopslag, dan kan dat platform jouw privéplan synchroniseren.</p>
+      </div>
       <p aria-live="polite">{message}</p>
       <p>Een ICS-download gebeurt alleen na jouw klik. Je kalenderprovider kan
         de gekozen dagen synchroniseren; Woonpoints verstuurt nooit
