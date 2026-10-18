@@ -456,6 +456,11 @@ export function ManualReactionJournal({
   const [rankInput, setRankInput] = useState('');
   const [totalInput, setTotalInput] = useState('');
   const [monthFilter, setMonthFilter] = useState('all');
+  const [journalCalendarMonth, setJournalCalendarMonth] = useState('');
+  const [journalCalendarDay, setJournalCalendarDay] = useState<string | null>(null);
+  const [calendarPreview, setCalendarPreview] = useState<{signature:string;text:string}|null>(null);
+  const [calendarApproved, setCalendarApproved] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState('');
   const [message, setMessage] = useState('');
   const [pendingImport, setPendingImport] = useState<JournalItem[] | null>(null);
   const [pendingImportSource, setPendingImportSource] = useState<string | null>(null);
@@ -473,7 +478,8 @@ export function ManualReactionJournal({
 
   const journal = summarizeManualReactionJournal(entries);
   const visible = [...entries]
-    .filter(row => monthFilter === 'all' || row.date.slice(0, 7) === monthFilter)
+    .filter(row => (monthFilter === 'all' || row.date.slice(0, 7) === monthFilter) &&
+      (journalCalendarDay === null || row.date === journalCalendarDay))
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const rowCount = journal.total;
   const currentJournalSignature = JSON.stringify(entries);
@@ -500,6 +506,79 @@ export function ManualReactionJournal({
   // Only the literal manually chosen "Zelf gereageerd" status counts. Invited,
   // closed, future, withdrawn and planned are never guessed as registrations.
   const journalReactedCount = currentJournalEntries.filter(item => item.status==='reacted').length;
+  // Daily view comes only from the same own, non-verified notebook. It never
+  // infers an official reaction, confirmed invitation or registration date.
+  const calendarMonth = journalCalendarMonth || currentJournalMonth;
+  const calendarYear = Number(calendarMonth.slice(0,4));
+  const calendarNumber = Number(calendarMonth.slice(5,7));
+  const calendarValid = /^20\\d{2}-(?:0[1-9]|1[0-2])$/.test(calendarMonth) &&
+    calendarYear >= 2000 && calendarYear <= 2099;
+  const calendarDaysInMonth = calendarValid ?
+    new Date(Date.UTC(calendarYear,calendarNumber,0)).getUTCDate() : 0;
+  const calendarDays = Array.from({length:calendarDaysInMonth},(_,index)=>{
+    const day = calendarMonth+'-'+String(index+1).padStart(2,'0');
+    const notes = entries.filter(row=>row.date===day);
+    const observed = day<=todayJournalDate;
+    return {
+      day,observed,
+      total:notes.length,
+      reacted:observed?notes.filter(row=>row.status==='reacted').length:0,
+      futureReacted:!observed?notes.filter(row=>row.status==='reacted').length:0,
+      planned:notes.filter(row=>row.status==='planned').length,
+      invited:notes.filter(row=>row.status==='invited').length,
+      closed:notes.filter(row=>row.status==='closed').length,
+      withdrawn:notes.filter(row=>row.status==='withdrawn').length
+    };
+  });
+  const calendarMonthReacted = calendarDays.reduce((sum,d)=>sum+d.reacted,0);
+  const calendarMonthNotes = calendarDays.reduce((sum,d)=>sum+d.total,0);
+  const calendarUnverifiedDays = calendarDays.filter(d=>d.futureReacted>0).length;
+  const calendarMonthChoices = Array.from(new Set([currentJournalMonth,...journal.months.map(row=>row.month)]))
+    .sort((a,b)=>b.localeCompare(a));
+  const calendarSignature = JSON.stringify({calendarMonth,calendarDays,source:entries});
+  const calendarPreviewCurrent = calendarPreview!==null &&
+    calendarPreview.signature===calendarSignature;
+  function showJournalDay(day:string){
+    setJournalCalendarDay(day);
+    setMonthFilter(calendarMonth);
+    setMessage('Eigen notities van '+day+' geselecteerd. Dit is geen officiële registratiecontrole.');
+  }
+  function prepareCalendarDaySummary(){
+    if(calendarMonthNotes===0){
+      setCalendarMessage('Voeg eerst eigen notities in deze maand toe. Er is niets om samen te vatten.');
+      return;
+    }
+    const rows=[
+      'WOONPOINTS · DAGOVERZICHT EIGEN REACTIEDAGBOEK · '+calendarMonth,
+      'Uitsluitend eigen handmatige invoer, NIET officieel gecontroleerd',
+      'Gedownload op verzoek; geen account-, adres- of ruwe notitiegegevens',
+      'Datum;Notities;Zelf gereageerd t/m vandaag;Toekomstige eigen gereageerd-markering;Van plan;Uitgenodigd;Afgesloten;Ingetrokken',
+      ...calendarDays.map(d=>[
+        d.day,d.total,d.reacted,d.futureReacted,d.planned,d.invited,d.closed,d.withdrawn
+      ].join(';')),
+      'Totaal;'+calendarMonthNotes+';'+calendarMonthReacted+';'+
+        calendarDays.reduce((sum,d)=>sum+d.futureReacted,0)+';'+
+        calendarDays.reduce((sum,d)=>sum+d.planned,0)+';'+
+        calendarDays.reduce((sum,d)=>sum+d.invited,0)+';'+
+        calendarDays.reduce((sum,d)=>sum+d.closed,0)+';'+
+        calendarDays.reduce((sum,d)=>sum+d.withdrawn,0),
+      'Geen WoningNet-geldigheid, geen officiële punten en geen woningkans bewezen.'
+    ];
+    setCalendarPreview({signature:calendarSignature,text:rows.join('\n')+'\n'});
+    setCalendarApproved(false);
+    setCalendarMessage('Bekijk het exacte eigen dagoverzicht en bevestig pas daarna je export.');
+  }
+  function downloadCalendarDaySummary(){
+    if(!calendarPreviewCurrent || !calendarApproved || !calendarPreview)return;
+    const url=URL.createObjectURL(new Blob([calendarPreview.text],
+      {type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-prive-dagoverzicht-'+calendarMonth+'.txt';
+    link.rel='noopener';document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setCalendarMessage('Eigen dagoverzicht aangeboden. De gekozen opslagprovider kan elders synchroniseren.');
+  }
+
   useEffect(() => {
     // A pending cross-panel proposal cannot survive a modification, restore
     // request or deletion in its original source journal.
