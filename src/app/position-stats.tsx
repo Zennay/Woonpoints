@@ -7,9 +7,65 @@ import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, ran
   exportManualHousingDecisionNote } from '../lib/position-statistics.mjs';
 import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, summarizeManualReactionJournal, exportManualReactionJournalCsv, importManualReactionJournalCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
+/** Voluntary browser-tab handoff: only user-entered rank/total pairs, no personal rows. */
+const PRIVATE_JOURNAL_QUICK_STATS_EVENT='woonpoints:private-journal-quick-stats:v1';
+type PrivateJournalQuickStatsOffer={pairs:string;count:number};
 /** Ephemeral local arithmetic only: not a WoningNet account connection. */
 export default function PositionStats() {
   const [input, setInput] = useState('');
+  const [journalOffer,setJournalOffer]=useState<{
+    sourceInput:string;pairs:string;count:number
+  }|null>(null);
+  const [offerMode,setOfferMode]=useState<'replace'|'append'>('replace');
+  const [offerApproved,setOfferApproved]=useState(false);
+  const [undoJournalOffer,setUndoJournalOffer]=useState<{
+    previous:string;after:string
+  }|null>(null);
+  const [offerMessage,setOfferMessage]=useState('');
+  useEffect(()=>{
+    function acceptOffer(event:Event){
+      const offer=(event as CustomEvent<PrivateJournalQuickStatsOffer>).detail;
+      if(!offer||typeof offer.pairs!=='string'||!Number.isInteger(offer.count)||
+        offer.count<1||offer.count>50||offer.pairs.length>4096)return;
+      try{
+        const parsed=summarizePositionPairs(offer.pairs);
+        if(!parsed||parsed.sampleCount!==offer.count)return;
+        setJournalOffer({sourceInput:input,pairs:offer.pairs,count:offer.count});
+        setOfferApproved(false);setOfferMode('replace');setOfferMessage('');
+        document.getElementById('position-stats-heading')?.
+          scrollIntoView({behavior:'smooth',block:'start'});
+      }catch{/* Fail closed on invalid handoff input. */}
+    }
+    window.addEventListener(PRIVATE_JOURNAL_QUICK_STATS_EVENT,acceptOffer);
+    return ()=>window.removeEventListener(PRIVATE_JOURNAL_QUICK_STATS_EVENT,acceptOffer);
+  },[input]);
+  const offerFresh=journalOffer!==null&&journalOffer.sourceInput===input;
+  const proposedPositions=journalOffer!==null?
+    (offerMode==='append'&&input.trim()?
+      input.trim()+'\n'+journalOffer.pairs:journalOffer.pairs):'';
+  let proposedSummary:ReturnType<typeof summarizePositionPairs>=null;
+  if(offerFresh){
+    try{
+      if(proposedPositions.length<=4096)
+        proposedSummary=summarizePositionPairs(proposedPositions);
+    }catch{/* Invalid appended text stays unchanged until user edits it. */}
+  }
+  const offerCanApply=offerFresh&&proposedSummary!==null;
+  const fmtJournalOffer=(num:number)=>
+    new Intl.NumberFormat('nl-NL',{maximumFractionDigits:1}).format(num);
+  function acceptJournalOffer(){
+    if(!offerCanApply||!offerApproved||!journalOffer)return;
+    setUndoJournalOffer({previous:input,after:proposedPositions});
+    setInput(proposedPositions);
+    setJournalOffer(null);setOfferApproved(false);
+    setOfferMessage(journalOffer.count+
+      ' zelf genoteerde posities bewust in de snelle statistiek overgenomen. Geen bronverificatie.');
+  }
+  function undoJournalQuickStats(){
+    if(!undoJournalOffer||input!==undoJournalOffer.after)return;
+    setInput(undoJournalOffer.previous);setUndoJournalOffer(null);
+    setOfferMessage('Eerdere tekst van deze statistiek in dit tabblad teruggezet.');
+  }
   let summary: ReturnType<typeof summarizePositionPairs> = null;
   let invalid = false;
   try { summary = summarizePositionPairs(input); }
@@ -27,9 +83,49 @@ export default function PositionStats() {
         <label htmlFor="position-pairs">Eén positie/totaal per regel (maximaal 50)</label>
         <textarea id="position-pairs" value={input} maxLength={4096} rows={5}
           placeholder={'12/150\n3/60'} autoComplete="off" spellCheck={false}
-          onChange={event => setInput(event.target.value)} />
+          onChange={event => {setInput(event.target.value);setOfferApproved(false);}} />
         <p>Niet opgeslagen. Geen adressen, namen, accountgegevens of wachtwoorden invoeren.</p>
-        <button type="button" onClick={() => setInput('')} disabled={input.length === 0}>Wis invoer</button>
+        <button type="button" onClick={() => {setInput('');setOfferApproved(false);}}
+          disabled={input.length === 0}>Wis invoer</button>
+        {journalOffer&&<section aria-label="Dagboekoverdracht naar snelle posities"
+          style={{border:'1px solid #ccd8cd',borderRadius:10,padding:12,marginTop:12}}>
+          <h3>Eigen dagboekposities overnemen?</h3>
+          <p>{journalOffer.count} uitsluitend handmatig genoteerde
+            <code> positie/totaal</code>-paren aangeboden; geen datums,
+            woningen, persoonlijke IDs of WoningNet-gegevens.
+            De huidige statistiekinvoer verandert pas na jouw bevestiging.</p>
+          <label htmlFor="quick-stats-import-mode">Wat moet met de huidige invoer gebeuren?</label>
+          <select id="quick-stats-import-mode" value={offerMode}
+            onChange={event=>{setOfferMode(event.target.value as 'replace'|'append');
+              setOfferApproved(false);}} style={{minHeight:44,display:'block'}}>
+            <option value="replace">Vervangen door dagboekselectie</option>
+            <option value="append">Aanvullen met dagboekselectie (max. 50 totaal)</option>
+          </select>
+          {offerCanApply?<p>Nieuwe snelle analyse: <strong>{proposedSummary!.sampleCount}</strong>
+            {' '}handmatige posities, gemiddelde <strong>{
+              fmtJournalOffer(proposedSummary!.averagePosition)}</strong>,
+            mediaan <strong>{fmtJournalOffer(proposedSummary!.medianPosition)}</strong>,
+            positiepercentiel <strong>{
+              formatPositionPercentile(proposedSummary!.averagePercentile)}</strong>.
+          </p>:<p role="alert">De bron- of doeltekst is gewijzigd of de selectie
+            past niet binnen maximaal 50 geldige paren en 4096 tekens.
+            Huidige invoer is niet aangepast.</p>}
+          <label style={{display:'block',minHeight:44}}>
+            <input type="checkbox" checked={offerApproved}
+              onChange={event=>setOfferApproved(event.target.checked)}/>
+            {' '}Ik wil mijn niet-geverifieerde dagboekposities overnemen.
+          </label>
+          <button type="button" disabled={!offerCanApply||!offerApproved}
+            onClick={acceptJournalOffer} style={{minHeight:44}}>
+            Bevestig overname naar snelle statistiek</button>
+          <button type="button" style={{minHeight:44,marginLeft:8}}
+            onClick={()=>{setJournalOffer(null);setOfferApproved(false);}}>
+            Annuleer</button>
+        </section>}
+        {undoJournalOffer&&input===undoJournalOffer.after&&
+          <button type="button" onClick={undoJournalQuickStats}
+            style={{minHeight:44}}>Maak laatste dagboekovername ongedaan</button>}
+        {offerMessage&&<p role="status" aria-live="polite">{offerMessage}</p>
         {invalid && <p role="alert">Ongeldige positiegegevens. Gebruik maximaal 50 regels positie/totaal, met een positie tussen 1 en het totaal.</p>}
         <div aria-live="polite" aria-atomic="true">
           {!invalid && summary === null && <p>Geen posities ingevuld — uitkomst onbekend.</p>}
