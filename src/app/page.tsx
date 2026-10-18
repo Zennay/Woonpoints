@@ -36,6 +36,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
   {id:'position-stats-heading',title:'Posities',category:'inzichten'},
   {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
+  {id:'nazorg-contactlijn',title:'Contacttijdlijn',category:'verhuizen'},
   {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
 ];
 const homeCategoryOptions=[
@@ -1035,6 +1036,9 @@ function PrivateMoveAftercare() {
   const [completeSummaryApproved, setCompleteSummaryApproved] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [history, setHistory] = useState<FollowUp[]>([]);
+  const [contactTimelineKind, setContactTimelineKind] = useState<ContactKind | 'alle'>('alle');
+  const [contactTimelineSearch, setContactTimelineSearch] = useState('');
+  const [expandContactTimeline, setExpandContactTimeline] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [historyKind, setHistoryKind] = useState<ContactKind>('eigen-notitie');
   const [historyDay, setHistoryDay] = useState(today());
@@ -1161,6 +1165,20 @@ function PrivateMoveAftercare() {
       return item ? [{ event, item }] : [];
     }).sort((a, b) => a.event.day.localeCompare(b.event.day) ||
       a.item.title.localeCompare(b.item.title));
+
+  const contactTimelineQuery = contactTimelineSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const contactTimeline = useMemo(() => {
+    const byId = new Map(items.map(item => [item.id, item]));
+    return history.flatMap(event => {
+      const item = byId.get(event.issueId);
+      if (!item || (contactTimelineKind !== 'alle' && event.kind !== contactTimelineKind)) return [];
+      if (contactTimelineQuery && ![item.title, item.room, event.detail, event.day].some(value =>
+        value.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(contactTimelineQuery))) return [];
+      return [{event, item}];
+    }).sort((a, b) => b.event.day.localeCompare(a.event.day) ||
+      a.item.title.localeCompare(b.item.title, 'nl-NL') ||
+      a.event.id.localeCompare(b.event.id));
+  }, [items, history, contactTimelineKind, contactTimelineQuery]);
 
   const issueRooms = useMemo(() => Array.from(new Set(items.map(item => item.room)))
     .sort((a, b) => a.localeCompare(b, 'nl-NL')), [items]);
