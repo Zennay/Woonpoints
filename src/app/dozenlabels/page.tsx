@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import './labels.css';
+import { readBoxLabelBackup, writeBoxLabelBackup, type PortableBoxBatch } from './backup';
 
 type Priority = 'direct' | 'eerst' | 'later';
 type Batch = {
@@ -40,6 +41,11 @@ export default function MovingBoxLabelsPage() {
   const [message, setMessage] = useState('');
   const [showContentsInCsv, setShowContentsInCsv] = useState(false);
   const [clearRequested, setClearRequested] = useState(false);
+  const [approvedBackup, setApprovedBackup] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    batches: PortableBoxBatch[]; sourceStamp: string; preview: string;
+  } | null>(null);
+  const [lastRestore, setLastRestore] = useState<{before: Batch[]; afterStamp: string} | null>(null);
 
   const labelCount = useMemo(() => batches.reduce((total, b) => total + b.count, 0), [batches]);
   const labels = useMemo(() => batches.flatMap(b => Array.from({ length: b.count }, (_, n) => ({
@@ -48,6 +54,8 @@ export default function MovingBoxLabelsPage() {
     ...b
   }))), [batches]);
   const pages = useMemo(() => Array.from({length: Math.ceil(labels.length / 6)}, (_, i) => labels.slice(i * 6, i * 6 + 6)), [labels]);
+  const backupPreview = useMemo(() => writeBoxLabelBackup(batches), [batches]);
+  const batchStamp = useMemo(() => JSON.stringify(batches), [batches]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -132,6 +140,80 @@ export default function MovingBoxLabelsPage() {
     }
   }
 
+  function downloadBackup() {
+    if (!batches.length || approvedBackup !== backupPreview) {
+      setMessage('Bekijk en bevestig eerst de actuele volledige back-upinhoud.');
+      return;
+    }
+    const blob = new Blob([backupPreview], {type: 'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'mijn-verhuisdozenlabels-backup.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setMessage('Eigen volledige JSON-back-up gedownload. Bewaar dit bestand zelf veilig.');
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+
+  async function chooseBackup(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    setPendingImport(null);
+    if (!file) return;
+    if (file.size > 16 * 1024 || file.size === 0) {
+      setMessage('Back-up geweigerd: het bestand moet tussen 1 byte en 16 KiB groot zijn.');
+      return;
+    }
+    try {
+      const raw = await file.text();
+      const accepted = readBoxLabelBackup(raw);
+      setPendingImport({
+        batches: accepted, sourceStamp: batchStamp, preview: raw
+      });
+      setMessage('Bestand alleen gelezen, nog niets vervangen. Controleer de volledige voorbeeldinhoud.');
+    } catch {
+      setMessage('Geen geldig, volledig Woonpoints-dozenlabelsback-upbestand. Bestaande reeksen zijn intact.');
+    }
+  }
+
+  function applyBackup() {
+    if (!pendingImport) return;
+    if (batchStamp !== pendingImport.sourceStamp) {
+      setPendingImport(null);
+      setMessage('Je reeksen zijn na het openen van de back-up veranderd. Selecteer het bestand opnieuw.');
+      return;
+    }
+    const restored = pendingImport.batches.map((b, i) => ({...b, id: nextId + i}));
+    setLastRestore({before: batches, afterStamp: JSON.stringify(restored)});
+    setBatches(restored);
+    setNextId(id => id + restored.length);
+    setDraft(initialDraft);
+    setEditing(null);
+    setClearRequested(false);
+    setApprovedBackup(null);
+    setPendingImport(null);
+    setMessage('Back-up hersteld in dit tabblad. De vorige inhoud kun je één keer terugzetten zolang je niets wijzigt.');
+  }
+
+  function undoRestore() {
+    if (!lastRestore) return;
+    if (batchStamp !== lastRestore.afterStamp) {
+      setLastRestore(null);
+      setMessage('Herstel ongedaan maken kan niet meer: de reeksen zijn inmiddels gewijzigd.');
+      return;
+    }
+    setBatches(lastRestore.before);
+    setLastRestore(null);
+    setApprovedBackup(null);
+    setMessage('Vorige reeksen eenmalig teruggezet in dit tabblad.');
+  }
+
   return <main className="boxStudio">
     <div className="boxStudioControls">
       <a className="boxBack" href="/">← Woonpoints</a>
@@ -184,6 +266,34 @@ export default function MovingBoxLabelsPage() {
         </div>
         <label className="boxCheckbox"><input type="checkbox" checked={showContentsInCsv} onChange={e => setShowContentsInCsv(e.target.checked)}/> Neem mijn vrije inhoudnotities ook op in de CSV (standaard uit)</label>
         <p className="boxStatus" role="status" aria-live="polite">{message}</p>
+      </section>
+      <section className="boxPanel boxBackup" aria-labelledby="box-backup-heading">
+        <h2 id="box-backup-heading">Privé back-up &amp; herstellen</h2>
+        <p>Omdat we niets opslaan, kun je je eigen reeksen als volledig JSON-bestand bewaren. Bekijk eerst precies wat je meeneemt: kamer, inhoud, aantallen en markeringen. Er wordt niets geüpload.</p>
+        {batches.length > 0 && <>
+          <details><summary>Bekijk alle gegevens in mijn back-up</summary><pre>{backupPreview}</pre></details>
+          <div className="boxActions">
+            <button className="boxSecondary" type="button" onClick={() => {setApprovedBackup(backupPreview); setMessage('Deze exacte back-upinhoud is goedgekeurd voor een eigen download.');}}>
+              Ik heb de volledige inhoud bekeken en keur de download goed
+            </button>
+            <button type="button" disabled={approvedBackup !== backupPreview} onClick={downloadBackup}>
+              Download mijn volledige JSON-back-up
+            </button>
+          </div>
+        </>}
+        <label className="boxFileLabel">Open een eigen dozenlabelsback-up (max. 16 KiB)
+          <input type="file" accept=".json,application/json" onChange={chooseBackup} />
+        </label>
+        {pendingImport && <>
+          <p className="boxStatus">Voorbeeld: {pendingImport.batches.length} reeksen en {pendingImport.batches.reduce((n,b) => n + b.count,0)} labels. Je huidige {labelCount} labels worden pas na je bevestiging vervangen.</p>
+          <details open><summary>Volledige te herstellen bestandsinhoud</summary><pre>{pendingImport.preview}</pre></details>
+          <button type="button" className="boxDanger" onClick={applyBackup}>Bevestig: vervang mijn huidige reeksen</button>
+          <button type="button" className="boxSecondary" onClick={() => {setPendingImport(null); setMessage('Herstellen geannuleerd: bestaande reeksen blijven intact.');}}>Annuleren</button>
+        </>}
+        {lastRestore && <div className="boxActions">
+          <button type="button" className="boxSecondary" disabled={batchStamp !== lastRestore.afterStamp} onClick={undoRestore}>Eenmalig vorige reeksen terugzetten</button>
+          {batchStamp !== lastRestore.afterStamp && <small>Terugzetten vervallen na een nieuwe wijziging.</small>}
+        </div>}
       </section>
     </div>
     <div className="boxPrintable" aria-label="Voorbeeld van de etiketten">
