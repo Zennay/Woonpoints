@@ -4352,9 +4352,16 @@ export function PrivateMovingWorkspace() {
         en de eigen kamer-/doospaklijst, hulpafspraken en adreswijzigingen.
         Niets wordt op de achtergrond opgeslagen.
         Sla alleen bewust op en controleer of je opslaglocatie synchroniseert.</p>
-      <button type="button" disabled={!complete} onClick={()=>{
-        setPendingExport(signature);setNotice('');
-      }}>Bekijk gecombineerde privé-JSON-export…</button>
+      {complete&&<p>Exacte back-upgrootte: <strong>{archiveBytes.toLocaleString('nl-NL')} bytes</strong>
+        {' '}van maximaal 65.536 bytes voor een later herstelbare JSON.</p>}
+      {complete&&!archiveExportable&&<p role="alert">
+        Je gecombineerde werkmap is groter dan het bestaande 64 KiB-importmaximum.
+        Verklein eigen notities/lijsten voordat je een herstelbestand opslaat;
+        er wordt nooit stilzwijgend een onbruikbare back-up aangeboden.
+      </p>}
+      <button type="button" disabled={!archiveExportable} onClick={()=>{
+        setPendingExport(signature);setExportApproved(false);setNotice('');
+      }}>Bekijk volledige herstelbare privé-JSON…</button>
       {archive&&pendingExport===signature&&<div role="group" aria-label="Bevestig gecombineerde werkmap-export">
         <p>Versie 6 bevat <strong>{quoteCount} offerte(s)</strong>,
           <strong> {expenseCount} kostenpost(en)</strong>,
@@ -4368,8 +4375,22 @@ export function PrivateMovingWorkspace() {
           <strong> {addressTotal} eigen meldpunten</strong>.
           Ook persoonlijke roepnamen, controledatums, notities, meterstanden en dooslabels
           worden mee geëxporteerd.</p>
-        <button type="button" onClick={exportWorkspace}>Bevestig volledige JSON-download</button>
-        <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
+        <p>Controleer nu de <strong>volledige exacte JSON</strong> in plaats van
+          alleen de aantallen. Dit bestand kan gevoelige eigen gegevens bevatten.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+          maxHeight:'25rem',overflowY:'auto'}}>{archiveJson}</pre>
+        <label htmlFor="private-workspace-export-approval"
+          style={{display:'flex',gap:10,alignItems:'center'}}>
+          <input id="private-workspace-export-approval" type="checkbox"
+            checked={exportApproved} onChange={event=>setExportApproved(event.target.checked)}/>
+          Ik heb de volledige actuele inhoud gecontroleerd en wil dit eigen bestand opslaan
+        </label>
+        <button type="button" disabled={!exportApproved} onClick={exportWorkspace}>
+          Download exact deze gecontroleerde JSON
+        </button>
+        <button type="button" onClick={()=>{
+          setPendingExport(null);setExportApproved(false);
+        }}>Annuleren</button>
       </div>}
       <label htmlFor="private-moving-workspace-upload">Herstel eigen werkmap v1, v2, v3, v4, v5 of v6 (JSON, maximaal 64 KiB)</label>
       <input id="private-moving-workspace-upload" type="file" accept=".json,application/json"
@@ -4379,6 +4400,10 @@ export function PrivateMovingWorkspace() {
           void prepareRestore(file);
         }} />
       {pendingRestore&&<div role="group" aria-label="Bevestig volledige privé-werkmap herstellen">
+        {!canApplyWorkspaceRestore&&<p role="alert">
+          De huidige gegevens zijn sinds het lezen veranderd of nog niet volledig geladen.
+          Herstellen is geblokkeerd. Kies opnieuw zonder gegevens te overschrijven.
+        </p>}
         <p>Werkmap <strong>versie {pendingRestore.version}</strong> bevat
           <strong> {pendingRestore.quotes.quotes.length} offerte(s)</strong>,
           <strong> {pendingRestore.expenses.lines.length} kostenpost(en)</strong> en
@@ -4402,10 +4427,41 @@ export function PrivateMovingWorkspace() {
             ' Deze oudere v2-werkmap vervangt zes onderdelen inclusief onbewaarde invoer. De huidige paklijst en transportstatus blijven behouden.':
             ' Deze oudere v1-werkmap vervangt alleen drie onderdelen; planning, overdracht, documenten, paklijst en transportstatus blijven behouden.'}
           Een eerder opgeslagen bestand blijft ongewijzigd.</p>
-        <button type="button" onClick={restoreWorkspace}>Bevestig complete werkmap vervangen</button>
+        <p><strong>Herstelimpact:</strong> je huidige {quoteCount} offertes,
+          {expenseCount} kostenposten en {split?.members.length??0} deelnemers
+          worden vervangen door {pendingRestore.quotes.quotes.length} offertes,
+          {pendingRestore.expenses.lines.length} kostenposten en
+          {pendingRestore.split.members.length} deelnemers.</p>
+        <ul>
+          <li>Verhuisplanning, documentchecklist en overdracht: {
+            pendingRestore.version===1?'behouden': 'vervangen'}.</li>
+          <li>Paklijst en transport: {pendingRestore.version===1||pendingRestore.version===2?
+            'behouden':pendingRestore.version===3?
+            'paklijst vervangen; oude transportmarkeringen gewist':'beide vervangen'}.</li>
+          <li>Verhuishulp: {pendingRestore.version===5||pendingRestore.version===6?
+            'vervangen':'behouden'}.</li>
+          <li>Eigen adreswijzigingen: {pendingRestore.version===6?'vervangen':'behouden'}.</li>
+        </ul>
+        <p>Het vorige volledige dossier wordt tijdelijk uitsluitend in dit
+          browsertabblad bewaard voor één veilige terugdraai-actie.
+          Iedere tussentijdse wijziging aan je gegevens blokkeert die actie.</p>
+        <button type="button" disabled={!canApplyWorkspaceRestore}
+          onClick={restoreWorkspace}>Bevestig geselecteerde vervanging</button>
         <button type="button" onClick={()=>{
-          setPendingRestore(null);setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
+          setPendingRestore(null);setPendingRestoreSource(null);
+          setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
         }}>Annuleren</button>
+      </div>}
+      {restoreUndo&&<div role="group" aria-label="Vorige privé-werkmap terugdraaien">
+        {canUndoWorkspaceRestore?<p>
+          Je kunt deze laatste import éénmalig terugdraaien.
+          Alle negen onderdelen keren dan terug naar de staat van vóór de import.
+          Er worden geen externe accounts of bestanden gewijzigd.</p>:
+          <p role="status">Je werkmap is na de import gewijzigd, of niet alle
+            onderdelen zijn geladen. Terugdraaien is daarom niet toegestaan.</p>}
+        <button type="button" disabled={!canUndoWorkspaceRestore}
+          onClick={undoWorkspaceRestore}>Herstel éénmalig mijn vorige volledige werkmap</button>
+        <button type="button" onClick={()=>setRestoreUndo(null)}>Verwerp tijdelijk herstelpunt</button>
       </div>}
       {notice&&<p role="status">{notice}</p>}
       <p>De werkmap bevestigt geen echte betaling, contract, WoningNet-registratie
