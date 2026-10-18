@@ -5560,11 +5560,11 @@ export function PrivateMovingBoxLabels() {
 
   return <main className="boxStudio">
     <div className="boxStudioControls">
-      <a className="boxBack" href="/">← Woonpoints</a>
+      <a className="boxBack" href="/#home">← Terug naar Woonpoints · labels blijven bewaard in dit tabblad</a>
       <p className="boxEyebrow">Privé verhuisgereedschap</p>
       <h1>Verhuisdozenlabels</h1>
       <p>Maak duidelijke A4-etiketten per kamer, met doosnummer, breekbaar-markering en uitpakprioriteit. Alles blijft in het huidige tabblad. Er wordt niets naar een server verstuurd en niets in je browser opgeslagen.</p>
-      <div className="boxPrivacy">Dit zijn je eigen labels, geen officieel bewijs. Print naar papier of kies in het afdrukvenster zelf voor opslaan als PDF. Sluit je dit tabblad, dan ben je niet-opgeslagen reeksen kwijt.</div>
+      <div className="boxPrivacy">Dit zijn je eigen labels, geen officieel bewijs. Print naar papier of kies in het afdrukvenster zelf voor opslaan als PDF. Terugkeren naar Woonpoints binnen dit tabblad bewaart je reeksen. Verversen of het tabblad sluiten wist gegevens die je niet zelf als back-up hebt gedownload.</div>
       <section className="boxPanel" aria-labelledby="label-entry-heading">
         <h2 id="label-entry-heading">{editing === null ? 'Nieuwe reeks' : 'Reeks aanpassen'}</h2>
         <form onSubmit={submit} className="boxForm">
