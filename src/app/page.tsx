@@ -2723,12 +2723,66 @@ function PrivateMoveAftercare() {
           </div>}
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
-          {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
-            <p>{incoming.items.length} geldige punten en {incoming.history.length} contactmomenten gevonden. Je huidige {items.length} punten en {history.length} contactmomenten worden pas na bevestiging vervangen.</p>
+          {incoming !== null && incomingImpact !== null &&
+            <div className="aftercare-confirm" role="group" aria-label="Gevolgen nazorgimport beoordelen">
+              <h3>Bekijk welke eigen gegevens worden vervangen</h3>
+              <p>Gecontroleerd bestand: {incoming.items.length} punten en {incoming.history.length}
+                {' '}contactmomenten. Huidige tab: {items.length} punten en {history.length}
+                {' '}contactmomenten. Niets wordt gewijzigd vóór je aparte bevestiging.</p>
+              <p>Dit overzicht toont namen, eigen statuswijzigingen en aantallen. Vrije
+                privénotities worden niet weergegeven, maar hun wijzigingen tellen wel mee.</p>
+              {([
+                {title:'Nazorgpunten', impact:incomingImpact.points},
+                {title:'Zelf genoteerde contactmomenten', impact:incomingImpact.contacts}
+              ]).map(group => <details key={group.title} className="aftercare-history">
+                <summary>{group.title}: {group.impact.added} erbij · {group.impact.removed}
+                  {' '}verdwijnen · {group.impact.changed} wijzigen</summary>
+                {group.impact.details.length === 0 ? <p>Geen inhoudelijke wijzigingen.</p> :
+                  <ul>{group.impact.details.map((entry, index) =>
+                    <li key={index}><strong>{entry.action}</strong> — {entry.label}
+                      {entry.action === 'gewijzigd' ?
+                        ' (eigenschappen, eigen status of verborgen privétekst)' : ''}
+                    </li>)}</ul>}
+              </details>)}
+              {!incomingCurrent && <div className="aftercare-warning" role="status">
+                <p>Je huidige gegevens zijn na het kiezen van het bestand veranderd.
+                  Eerder gegeven toestemming is ongeldig. Bekijk de actuele gevolgen opnieuw.</p>
+                <button type="button" className="secondary" onClick={() => {
+                  setIncomingSource(aftercareImportSignature); setIncomingRiskApproved(false);
+                  setMessage('Gevolgen vernieuwd. Lees de wijzigingen opnieuw vóór bevestiging.');
+                }}>Bekijk de nieuwe importgevolgen</button>
+              </div>}
+              <label className="aftercare-check" htmlFor="nazorg-import-impact-ack">
+                <input type="checkbox" id="nazorg-import-impact-ack"
+                  checked={incomingCurrent && incomingRiskApproved}
+                  disabled={!incomingCurrent}
+                  onChange={event => setIncomingRiskApproved(event.target.checked)}/>
+                Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen,
+                inclusief mogelijk verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.
+              </label>
+              <div className="aftercare-actions">
+                <button type="button" disabled={!incomingCurrent || !incomingRiskApproved}
+                  onClick={confirmAftercareImport}>Ja, vervang mijn hele nazorgdossier</button>
+                <button type="button" className="secondary" onClick={() => {
+                  setIncoming(null); setIncomingSource(''); setIncomingRiskApproved(false);
+                  setMessage('Import geannuleerd; bestaande nazorgpunten en contactmomenten behouden.');
+                }}>Annuleer import</button>
+              </div>
+            </div>}
+          {aftercareImportUndo !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Vorige nazorgimport terugdraaien">
+            <h3>Laatste losse import terugdraaien</h3>
+            {aftercareUndoCurrent ? <p>De vorige {aftercareImportUndo.previous.items.length}
+              {' '}eigen punten en {aftercareImportUndo.previous.history.length}
+              {' '}contactmomenten staan alleen in dit tabblad. Terugdraaien is mogelijk zolang
+              na de import niets in het dossier is gewijzigd.</p> :
+              <p className="aftercare-warning" role="status">Je hebt het dossier gewijzigd.
+                Een oude status terugzetten zou nieuwe gegevens overschrijven en is geblokkeerd.</p>}
             <div className="aftercare-actions">
-              <button onClick={() => { setItems(incoming.items); setHistory(incoming.history); setHistoryTarget(null); setHistoryDeletePending(null); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setIssueSearch(''); setIssuePriority('alle'); setIssueRoom('alle');
-                setFilter('alles'); setMessage('Import bevestigd. Alle herstelde punten zijn zichtbaar.'); }}>Vervang huidige punten</button>
-              <button className="secondary" onClick={() => { setIncoming(null); setMessage('Import geannuleerd; bestaande punten behouden.'); }}>Annuleer import</button>
+              <button type="button" className="secondary" disabled={!aftercareUndoCurrent}
+                onClick={undoAftercareImport}>Herstel vorige tabbladstatus</button>
+              <button type="button" className="secondary"
+                onClick={() => setAftercareImportUndo(null)}>Verwijder tijdelijk herstelpunt</button>
             </div>
           </div>}
           <div className="aftercare-actions"><button className="secondary" disabled={!items.length} onClick={() => setClearPending(true)}>Wis alle tabbladpunten…</button></div>
