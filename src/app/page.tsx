@@ -315,6 +315,56 @@ const INSPECTION_CHECKS: InspectionCheck[] = [
 ];
 const INSPECTION_ROOMS = ['Entree', 'Woonkamer', 'Keuken', 'Badkamer', 'Slaapkamer', 'Installaties'] as const;
 
+
+type InspectionBackup = {
+  grades: Record<string, InspectionGrade | undefined>;
+  notes: Record<string, string>;
+  count: number;
+};
+const INSPECTION_BACKUP_KIND = 'woonpoints-private-startinspectie';
+const INSPECTION_BACKUP_BYTES = 16 * 1024;
+
+function inspectionBackupContents(
+  grades: Record<string, InspectionGrade | undefined>,
+  notes: Record<string, string>
+): string {
+  const records = INSPECTION_CHECKS.flatMap(check => {
+    const grade = grades[check.id];
+    if (grade !== 'goed' && grade !== 'aandacht') return [];
+    return [{ id: check.id, grade, note: grade === 'aandacht' ? (notes[check.id] || '').trim() : '' }];
+  });
+  return JSON.stringify({ kind: INSPECTION_BACKUP_KIND, schema: 1, records }, null, 2);
+}
+
+/** Import only the exact locally exported file format; reject unknown or duplicate IDs. */
+function parseInspectionBackup(source: string): InspectionBackup {
+  if (new TextEncoder().encode(source).length > INSPECTION_BACKUP_BYTES)
+    throw Error('Inspectiebestand is groter dan 16 KiB.');
+  const data: unknown = JSON.parse(source);
+  if (!isRecord(data) || !exactKeys(data, ['kind', 'schema', 'records']) ||
+      data.kind !== INSPECTION_BACKUP_KIND || data.schema !== 1 ||
+      !Array.isArray(data.records) || data.records.length > INSPECTION_CHECKS.length) {
+    throw Error('Ongeldig of niet ondersteund startinspectie-JSON-bestand.');
+  }
+  const known = new Set(INSPECTION_CHECKS.map(check => check.id));
+  const used = new Set<string>();
+  const grades: Record<string, InspectionGrade | undefined> = {};
+  const notes: Record<string, string> = {};
+  for (const record of data.records) {
+    if (!isRecord(record) || !exactKeys(record, ['id', 'grade', 'note']) ||
+        typeof record.id !== 'string' || !known.has(record.id) || used.has(record.id) ||
+        (record.grade !== 'goed' && record.grade !== 'aandacht') ||
+        !validText(record.note, 0, 300) ||
+        (record.grade === 'goed' && record.note !== '')) {
+      throw Error('Onbekend, ongeldig of dubbel inspectiepunt; er is niets vervangen.');
+    }
+    used.add(record.id);
+    grades[record.id] = record.grade;
+    if (record.grade === 'aandacht') notes[record.id] = (record.note as string).trim();
+  }
+  return { grades, notes, count: used.size };
+}
+
 function PrivateArrivalInspection({
   items, onTransfer
 }: {
@@ -325,6 +375,8 @@ function PrivateArrivalInspection({
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [pendingRestore, setPendingRestore] = useState<InspectionBackup | null>(null);
+  const [resetConfirm, setResetConfirm] = useState(false);
   const checked = INSPECTION_CHECKS.filter(row => grades[row.id] !== undefined);
   const flagged = INSPECTION_CHECKS.filter(row => grades[row.id] === 'aandacht');
   const alreadyIncluded = (row: InspectionCheck) => items.some(item =>
@@ -333,6 +385,29 @@ function PrivateArrivalInspection({
     item.status !== 'afgerond'
   );
   const newFlagged = flagged.filter(row => !alreadyIncluded(row));
+  const saveInspectionBackup = () => {
+    const source = inspectionBackupContents(grades, notes);
+    if (new TextEncoder().encode(source).length > INSPECTION_BACKUP_BYTES) {
+      setFeedback('Inspectie-JSON overschrijdt 16 KiB. Verkort eigen toelichtingen.'); return;
+    }
+    download('woonpoints-eigen-startinspectie.json', source, 'application/json;charset=utf-8');
+    setFeedback('Eigen inspectie-JSON gedownload. Een bestandsprovider kan deze privégegevens buiten de app bewaren.');
+  };
+  const importInspection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    setPendingRestore(null);
+    setResetConfirm(false);
+    if (!file) return;
+    if (file.size > INSPECTION_BACKUP_BYTES) { setFeedback('Import geweigerd: maximaal 16 KiB.'); return; }
+    try {
+      const parsed = parseInspectionBackup(await file.text());
+      setPendingRestore(parsed);
+      setFeedback('Bestand gecontroleerd: ' + parsed.count + ' eigen beoordelingen. Bevestig vóór vervanging.');
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Inspectiebestand kan niet worden geopend.');
+    }
+  };
   const exportInspection = () => {
     if (!checked.length) { setFeedback('Markeer eerst minstens één eigen controle.'); return; }
     const lines = [
@@ -344,7 +419,7 @@ function PrivateArrivalInspection({
       for (const row of INSPECTION_CHECKS.filter(item => item.room === room)) {
         lines.push('- [' + (grades[row.id] === 'goed' ? 'NAAR EIGEN CONTROLE IN ORDE' :
           grades[row.id] === 'aandacht' ? 'AANDACHTSPUNT' : 'NIET GECONTROLEERD') + '] ' + row.title);
-        if (notes[row.id]?.trim()) lines.push('  Mijn toelichting: ' + notes[row.id].trim());
+        if (grades[row.id] === 'aandacht' && notes[row.id]?.trim()) lines.push('  Mijn toelichting: ' + notes[row.id].trim());
       }
     }
     download('woonpoints-eigen-startinspectie.txt', lines.join('\n') + '\n', 'text/plain;charset=utf-8');
@@ -418,6 +493,50 @@ function PrivateArrivalInspection({
             </details>
           );
         })}
+        <div className="aftercare-actions">
+          <button type="button" className="secondary" onClick={saveInspectionBackup} disabled={checked.length === 0}>
+            Bewaar mijn inspectievoortgang (JSON)
+          </button>
+          <button type="button" className="secondary" disabled={checked.length === 0} onClick={() => setResetConfirm(true)}>
+            Begin opnieuw…
+          </button>
+        </div>
+        <label htmlFor="private-inspection-backup">Hervat met mijn eigen inspectie-JSON (max. 16 KiB)</label>
+        <input id="private-inspection-backup" type="file" accept="application/json,.json"
+          onChange={importInspection} />
+        <p>Er wordt niet automatisch opgeslagen. Een gekozen bestandsprovider kan jouw bestand buiten Woonpoints bewaren.</p>
+        {pendingRestore !== null && (
+          <div className="aftercare-confirm" role="group" aria-label="Inspectie-import bevestigen">
+            <p><strong>{pendingRestore.count}</strong> beoordelingen gevonden. Bestaande inspectieantwoorden
+              en tijdelijke toelichtingen worden uitsluitend na bevestiging vervangen.
+              Reeds eerder aan nazorg overgedragen gebreken blijven bestaan.</p>
+            <div className="aftercare-actions">
+              <button type="button" onClick={() => {
+                setGrades(pendingRestore.grades);
+                setNotes(pendingRestore.notes);
+                setPendingRestore(null);
+                setConfirmTransfer(false);
+                setFeedback('Inspectie hervat: alleen de tijdelijke controleantwoorden zijn vervangen.');
+              }}>Vervang mijn inspectieantwoorden</button>
+              <button type="button" className="secondary" onClick={() => {
+                setPendingRestore(null); setFeedback('Import geannuleerd: eigen antwoorden behouden.');
+              }}>Annuleer</button>
+            </div>
+          </div>
+        )}
+        {resetConfirm && (
+          <div className="aftercare-confirm" role="group" aria-label="Inspectie opnieuw starten">
+            <p>Alle tijdelijke inspectieantwoorden en toelichtingen wissen? Bestaande nazorgpunten en
+              eerder gedownloade inspectieback-ups blijven bestaan.</p>
+            <div className="aftercare-actions">
+              <button type="button" onClick={() => {
+                setGrades({}); setNotes({}); setResetConfirm(false); setPendingRestore(null);
+                setConfirmTransfer(false); setFeedback('Tijdelijke inspectie is leeg; nazorg blijft behouden.');
+              }}>Ja, begin opnieuw</button>
+              <button type="button" className="secondary" onClick={() => setResetConfirm(false)}>Behoud inspectie</button>
+            </div>
+          </div>
+        )}
         <div className="aftercare-actions">
           <button className="secondary" type="button" disabled={checked.length === 0} onClick={exportInspection}>
             Download mijn eigen inspectieoverzicht (TXT)
