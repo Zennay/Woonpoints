@@ -4468,7 +4468,7 @@ export function PrivateMovingPackingInventory(){
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
       setPendingRestore(null);setPendingLabels(null);
-      setTransport(imported.version>=4?
+      setTransport(imported.version===4||imported.version===5||imported.version===6?
         packingRestoreTransport(imported.packing.items,imported.packing.transport):{});
       setPendingManifest(null);
       setNotice(imported.version>=4?
