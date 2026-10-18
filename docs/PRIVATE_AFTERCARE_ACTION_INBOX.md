@@ -134,6 +134,8 @@ Contactsoorten `zelf-verstuurd`, `reactie-genoteerd` en `afspraak` zijn **uitslu
 
 ## Eigen contactmoment corrigeren met bewuste controle (18 oktober)
 
+Je kunt daarnaast vanuit de doorzoekbare **Mijn eigen contacttijdlijn** via **Corrigeer deze eigen tijdlijnnotitie** direct de juiste dossierregel en de opengeklapte eigen contacteditor bereiken, ook als dossierfilters eerst verborgen waren.
+
 In **Je punten → Mijn contacthistorie** heeft elk eigen contactmoment nu **Corrigeer dit eigen moment…** naast de bestaande verwijderknop. Je kunt zelf een fout in datum, contactsoort of privétekst corrigeren, zonder het record te verwijderen of de koppeling naar het nazorgpunt te verliezen. Er komt **geen nieuwe ID** bij; de bestaande datumvolgorde en zoekbare centrale contacttijdlijn werken daarna met het gecorrigeerde eigen record.
 
 De app toont eerst een **vergelijking tussen de oorspronkelijke en nieuwe notitie**, waarna een afzonderlijke bevestiging vereist is. Nieuwe eigen invoer doorstaat dezelfde geldige datum-/lengte-/contactsoortcontroles en de volledige bestaande **16 KiB JSON-herstelgrens**. Toekomstige datums zijn alleen bij zelf genoteerde afspraaknotities toegestaan. Als de oorspronkelijke gegevens tussentijds zijn gewijzigd, vervalt de voorgestelde correctie en moet het record opnieuw worden geopend. De brongebonden downloadpreviews uit de tijdlijn worden ongeldig bij een wijziging.
