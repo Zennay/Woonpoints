@@ -3371,7 +3371,7 @@ export function PrivateMovingWorkspace() {
   const [today,setToday]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
   useEffect(()=>{
-    let timer:ReturnType<typeof setTimeout>|undefined;
+    let timer:number|undefined;
     function refresh(){
       const now=new Date();
       setToday(movingLocalDate(now));
