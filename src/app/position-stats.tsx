@@ -48,7 +48,12 @@ export default function PositionStats() {
 
 
 /** Browser-memory-only M1 monthly trend; never reads or writes an account. */
-export function ManualPositionHistory() {
+export function ManualPositionHistory({
+  journalOffer, onJournalDecision
+}: {
+  journalOffer?: { data: string; count: number } | null;
+  onJournalDecision?: () => void;
+} = {}) {
   const [input, setInput] = useState('');
   const [pendingImport, setPendingImport] = useState<{ text: string; count: number } | null>(null);
   const [fileMessage, setFileMessage] = useState('');
@@ -141,6 +146,23 @@ export function ManualPositionHistory() {
         />
         <p>Niet opgeslagen, niet verzonden. Vul geen adressen, namen,
           inloggegevens of andere persoonlijke informatie in.</p>
+        {journalOffer && (
+          <div className="month-csv-confirm" role="group" aria-label="Bevestig overdracht van reactiedagboek">
+            <p>Je reactiedagboek biedt <strong>{journalOffer.count}</strong> zelf ingevoerde
+              eindposities aan. Deze gegevens zijn niet officieel gecontroleerd.
+              Overnemen vervangt de huidige maandgrafiek-invoer, maar wist het
+              reactiedagboek niet.</p>
+            <div className="month-history-actions">
+              <button type="button" onClick={() => {
+                setInput(journalOffer.data);
+                setPendingImport(null);
+                setFileMessage('Posities uit je eigen reactiedagboek overgenomen. Geen WoningNet-broncontrole.');
+                onJournalDecision?.();
+              }}>Gebruik in maandgrafiek</button>
+              <button type="button" onClick={() => onJournalDecision?.()}>Behoud huidige grafiek</button>
+            </div>
+          </div>
+        )}
         <div className="month-history-actions">
           <button type="button" onClick={() => {
             setInput('');
@@ -254,7 +276,9 @@ const statusNames: Record<JournalStatus, string> = {
   closed: 'Afgesloten', invited: 'Uitgenodigd', withdrawn: 'Ingetrokken'
 };
 
-export function ManualReactionJournal() {
+export function ManualReactionJournal({
+  onTransfer
+}: { onTransfer?: (data: string, count: number) => void } = {}) {
   const [entries, setEntries] = useState<JournalItem[]>([]);
   const [nextId, setNextId] = useState(1);
   const [date, setDate] = useState('');
@@ -301,6 +325,21 @@ export function ManualReactionJournal() {
     if (!Object.hasOwn(statusNames, state)) return;
     setEntries(old => old.map(row => row.id === id ? { ...row, status: state } : row));
     setMessage('Eigen status aangepast; dit is geen officiële registratiestatus.');
+  }
+
+  function proposePositions() {
+    if (!onTransfer) return;
+    const rows = entries.filter(entry => entry.rank !== null).map(
+      entry => entry.date + ',' + entry.rank + '/' + entry.total
+    );
+    try {
+      const data = rows.join('\n');
+      if (!summarizeManualPositionHistory(data)) throw new TypeError('empty');
+      onTransfer(data, rows.length);
+      setMessage('Geldige eigen eindposities aangeboden aan de maandgrafiek; bevestig daar het vervangen.');
+    } catch {
+      setMessage('Niet alle handmatige eindposities zijn geldig; de grafiek is niet gewijzigd.');
+    }
   }
 
   function download() {
@@ -411,6 +450,11 @@ export function ManualReactionJournal() {
         {message && <p role="status">{message}</p>}
         <p><strong>{rowCount}</strong> eigen notities · <strong>{journal.recordedPositions}</strong> met
           zelf ingevoerde eindpositie. Nul officiële reacties geverifieerd.</p>
+        {onTransfer && journal.recordedPositions > 0 && (
+          <button type="button" onClick={proposePositions}>
+            Toon genoteerde eindposities in maandgrafiek
+          </button>
+        )}
         {!!journal.months.length && (
           <div className="journal-monthly">
             <h3>Overzicht per ingevulde maand</h3>
@@ -469,5 +513,17 @@ export function ManualReactionJournal() {
         )}
       </div>
     </section>
+  );
+}
+
+
+/** Shared browser-memory-only handoff. No hidden cross-tab persistence/API. */
+export function ManualPositionsWorkspace() {
+  const [offer, setOffer] = useState<{ data: string; count: number } | null>(null);
+  return (
+    <>
+      <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })} />
+      <ManualPositionHistory journalOffer={offer} onJournalDecision={() => setOffer(null)} />
+    </>
   );
 }
