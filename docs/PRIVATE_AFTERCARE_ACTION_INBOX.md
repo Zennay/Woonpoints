@@ -31,3 +31,11 @@ Het volledige privé-nazorgdossier ondersteunt nu lokale bulkacties op maximaal 
 Voor de tweede bevestiging is de exacte huidige combinatie van statusfilter, zoekterm, ruimte, prioriteit, geselecteerde zichtbare IDs en de gehele originele itemset vastgelegd. Bij verandering vervalt de eerdere bevestiging. Wijzigingen blijven onder de bestaande 16-KiB privé-JSON-exportgrens, passen **geen** contacthistorie of notities aan, en wissen de tijdelijke selectie na succes. De status `gemeld` kan bewust niet als bulkactie worden gezet: een officiële kennisgeving of feitelijke verzending kan nooit collectief worden aangenomen.
 
 Dit wijzigt geen WoningNet-account, reactiestatus, verhuurderbericht, gebruikersrechten, serverdatabase, worker of live feature gate. Alle bulkwijzigingen zijn uitsluitend zelf ingetikte tabbladstatus, geen bewijs van afronding.
+
+## Volledige batch-preview en eenmalig herstel
+
+Na het selecteren van een bulkactie toont **Bekijk eerst alle eigen statuswijzigingen** alle geselecteerde punten met ruimte/titel en eigen oude → nieuwe status, zonder vrije privénotities. De bestaande tweede bevestiging blijft vereist.
+
+Na de bevestigde wijziging wordt precies één tijdelijk herstelpunt bewaard in het geheugen van hetzelfde browsertabblad. Via **Herstel de vorige eigen statussen** kun je de vorige volledige itemstatus terugzetten, maar uitsluitend als het huidige dossier en de contacthistorie sinds de bulkactie **exact ongewijzigd** zijn. Een nieuwe actie vervangt het vorige herstelpunt; je kunt het ook bewust vernietigen. Bij later bewerken, importeren, verwijderen of contactnotities wijzigen wordt het oude herstel ongeldig en blijft de nieuwe invoer behouden. Tabblad sluiten vernietigt ook dit herstelpunt; automatische netwerk-/bestandsback-up bestaat niet.
+
+Bulk-preview, bevestiging en undo kunnen geen echte verhuurdermelding, WoningNet-reactie of feitelijke contactactie terugdraaien of bewijzen. Er verandert alleen handmatig ingevoerde lokale status.

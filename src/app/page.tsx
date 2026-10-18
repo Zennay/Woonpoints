@@ -1051,6 +1051,9 @@ function PrivateMoveAftercare() {
   const [pendingBulk, setPendingBulk] = useState<{
     status: 'open' | 'afgerond'; signature: string; count: number
   } | null>(null);
+  const [bulkUndo, setBulkUndo] = useState<{
+    before: Item[]; appliedSignature: string; changedCount: number
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
@@ -1178,6 +1181,8 @@ function PrivateMoveAftercare() {
   });
   const bulkIsCurrent = pendingBulk !== null && pendingBulk.signature === bulkSignature &&
     pendingBulk.count === bulkVisible.length;
+  const bulkUndoCurrent = bulkUndo !== null &&
+    bulkUndo.appliedSignature === JSON.stringify({ items, history });
 
   function proposeBulkStatus(status: 'open' | 'afgerond') {
     if (bulkVisible.length === 0) { setMessage('Selecteer eerst zichtbare eigen dossierpunten.'); return; }
@@ -1201,11 +1206,29 @@ function PrivateMoveAftercare() {
       return;
     }
     const count = selected.size;
+    setBulkUndo({
+      before: items.map(item => ({ ...item })),
+      appliedSignature: JSON.stringify({ items: next, history }),
+      changedCount: count
+    });
     setItems(next);
     setPendingBulk(null);
     setBulkSelectedIds([]);
     setMessage(count + ' eigen punten als ' + pendingBulk.status +
       ' gemarkeerd. Geen officiële actie of verhuurderbericht uitgevoerd.');
+  }
+
+  function undoLastBulkStatus() {
+    if (bulkUndo === null || !bulkUndoCurrent) {
+      setBulkUndo(null);
+      setMessage('Terugdraaien geweigerd: na de bulkactie zijn eigen gegevens gewijzigd.');
+      return;
+    }
+    setItems(bulkUndo.before.map(item => ({ ...item })));
+    setBulkUndo(null);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setMessage('Vorige eigen statussen uit dit tabblad teruggezet. Er is niets extern veranderd.');
   }
 
   function openIssueFromInbox(id: string) {
@@ -1925,12 +1948,35 @@ function PrivateMoveAftercare() {
                 contacthistorie en privé-back-ups blijven ongewijzigd. Er wordt niets extern bevestigd.</p>
                 : <p role="status">Het dossier of de selectie is intussen veranderd.
                   Deze oude bevestiging is ongeldig; stel de bulkactie opnieuw samen.</p>}
+              {bulkIsCurrent && <details className="aftercare-history">
+                <summary>Bekijk eerst alle {bulkVisible.length} eigen statuswijzigingen</summary>
+                <ol>{bulkVisible.map(item => <li key={item.id}>
+                  {item.room}: {item.title} — {item.status} → {pendingBulk.status}
+                </li>)}</ol>
+                <p>Deze preview bevat geen privénotities. Bekijk je eigen complete dossier
+                  en eventuele afspraken apart vóór je statussen afsluit.</p>
+              </details>}
               <div className="aftercare-actions">
                 <button type="button" disabled={!bulkIsCurrent}
                   onClick={confirmBulkStatus}>Ja, wijzig {pendingBulk.count} eigen punten</button>
                 <button type="button" className="secondary" onClick={() => setPendingBulk(null)}>
                   Annuleer bulkactie
                 </button>
+              </div>
+            </div>}
+            {bulkUndo !== null && <div className="aftercare-confirm" role="group"
+              aria-label="Laatste bulkstatuswijziging terugdraaien">
+              <h4>Laatste eigen bulkactie terugzetten</h4>
+              {bulkUndoCurrent ? <p>De vorige status van {bulkUndo.changedCount} eigen punten
+                staat nog alleen in dit tabblad. Er is sinds die actie niets aan
+                de nazorggegevens veranderd. Terugdraaien verandert geen externe berichten.</p>
+                : <p role="status">Sinds die actie zijn eigen punten of contactnotities gewijzigd.
+                  Het vorige herstelpunt kan niet veilig worden teruggezet.</p>}
+              <div className="aftercare-actions">
+                <button type="button" className="secondary" disabled={!bulkUndoCurrent}
+                  onClick={undoLastBulkStatus}>Herstel de vorige eigen statussen</button>
+                <button type="button" className="secondary"
+                  onClick={() => setBulkUndo(null)}>Verwijder dit herstelpunt</button>
               </div>
             </div>}
           </div>
