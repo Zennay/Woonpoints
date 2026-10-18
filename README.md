@@ -1289,3 +1289,42 @@ Dit is uitdrukkelijk geen volledige lijst met wettelijke verplichtingen.
 
 Controleer adresverplichtingen en deadlines bij de betreffende
 instanties. De live account- en productieautorisatie blijven ongewijzigd.
+
+
+## Samengevoegde privé-verhuiswerkmap v6 met adreswijzigingen
+
+De bestaande gecombineerde **Je verhuisoverzicht in één werkmap**
+heeft nu een optionele **negende lokale module**, de eigen
+adreswijzigingen- en contractchecklist. De complete v6-JSON bevat de
+vorige acht onderdelen plus de tien voorbeeldcategorieën en maximaal
+twaalf eigen extra meldpunten, inclusief handmatig gekozen status,
+controledatum en eventuele privénotitie.
+
+- De dashboardwerkmap laat direct zien hoeveel van de eigen
+  adrespunten nog open zijn. Open punten verschijnen in de bestaande
+  prioriteitsinbox en, indien zelf gedateerd, in de bewust te
+  downloaden agenda met privé-acties. Ieder punt linkt naar
+  **Adreswijzigingen** voor bijwerken.
+- Het privé-TXT-verhuisdossier kan adreswijzigingen als apart
+  **standaard niet geselecteerd** onderdeel opnemen. Kies het bewust:
+  je eigen taaknotities en datums kunnen gevoelig zijn.
+- Compleet v6-JSON wordt alleen na preview en bevestiging aangeboden;
+  herstel van een valide v6-JSON vervangt na een afzonderlijke
+  bevestiging alle negen modules. Een v1-, v2-, v3-, v4- of
+  v5-import **laat de nieuwere adreswijzigingen ongewijzigd**.
+  De oudere importversies herstellen uitsluitend hun eigen
+  historische modules. Het totale JSON-bestand is begrensd op
+  64 KiB met strikte gesloten velden, echte datums, unieke taken en
+  een limiet van twaalf extra eigen meldpunten.
+- De afzonderlijke adreschecklist-v1-back-up blijft bruikbaar.
+  Bij v6-herstel wordt de bestaande adresmodule alleen binnen het
+  huidige tabblad bijgewerkt; er volgt geen externe melding, app-,
+  bank-, BRP-, WoningNet-, verzekerings- of contractactie.
+- Ook **v5-paklijstherstel** ondersteunt weer het werkelijk bewaren
+  en terugzetten van eigen transportmarkeringen (bronfix #138).
+  De gecombineerde v6 bewaart die dezelfde informatie.
+
+Alle gegevens blijven in tabbladgeheugen tot een expliciete eigen
+bestandsdownload. Een lokale/cloudmap die je zelf kiest kan buiten
+de applicatie synchroniseren. Geen afvinkstatus geldt als officieel
+bewijs van registratie, toestemming of afgesloten contract.
