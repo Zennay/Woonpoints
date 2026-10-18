@@ -5414,6 +5414,7 @@ export function PrivateMovingBoxLabels() {
   const [nextId, setNextId] = useState(1);
   const [message, setMessage] = useState('');
   const [showContentsInCsv, setShowContentsInCsv] = useState(false);
+  const [previewedCsv,setPreviewedCsv] = useState<string|null>(null);
   const [printRoom,setPrintRoom] = useState('alle');
   const [printPriority,setPrintPriority] = useState<'alle'|Priority>('alle');
   const [clearRequested, setClearRequested] = useState(false);
@@ -5545,17 +5546,27 @@ export function PrivateMovingBoxLabels() {
     setMessage('Alle reeksen uit dit tabblad gewist.');
   }
 
-  function saveCsv() {
-    if (!labels.length) return;
-    const rows = [['Kamer', 'Reeksnummer', 'Doosnummer', 'Prioriteit', 'Breekbaar', 'Inhoud']];
-    for (const item of labels) {
+  // Preserve the actual own packing-box code even when optional free-form
+  // contents are private. Always export the full current data, not print filters.
+  const csvPayload = useMemo(()=>{
+    const rows=[['Kamer','Reeksnummer','Doosnummer','Prioriteit','Breekbaar','Inhoud']];
+    for(const item of labels){
+      const actualBoxCode=printedBoxCode(item.contents,item.count);
       rows.push([
-        item.room, String(item.id), String(item.number), priorityText[item.priority],
-        item.fragile ? 'Ja' : 'Nee', showContentsInCsv ? item.contents : ''
+        item.room,String(item.id),actualBoxCode??String(item.number),
+        priorityText[item.priority],item.fragile?'Ja':'Nee',
+        showContentsInCsv?(actualBoxCode?'':item.contents):''
       ]);
     }
-    const csv = '\uFEFF' + rows.map(row => row.map(escapeCsv).join(',')).join('\r\n') + '\r\n';
-    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+    return '\uFEFF'+rows.map(row=>row.map(escapeCsv).join(',')).join('\r\n')+'\r\n';
+  },[labels,showContentsInCsv]);
+
+  function saveCsv() {
+    if(!labels.length||previewedCsv!==csvPayload) {
+      setMessage('Bekijk de huidige CSV-inhoud en bevestig deze exact voordat je downloadt.');
+      return;
+    }
+    const blob = new Blob([csvPayload], {type: 'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     try {
       const link = document.createElement('a');
@@ -5565,8 +5576,8 @@ export function PrivateMovingBoxLabels() {
       link.click();
       link.remove();
       setMessage(showContentsInCsv
-        ? 'CSV gedownload inclusief de inhoud die je zelf invoerde.'
-        : 'CSV gedownload zonder vrije inhoudnotities.');
+        ? 'De exact vooraf bekeken CSV is gedownload, inclusief zelf gekozen vrije notities.'
+        : 'De exact vooraf bekeken CSV is gedownload: eigen dooscodes wel, vrije notities niet.');
     } finally {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -5793,9 +5804,32 @@ export function PrivateMovingBoxLabels() {
           Controleer de voorbeelden vóór afdrukken.</p>
         <div className="boxActions">
           <button type="button" disabled={!printLabels.length} onClick={() => window.print()}>Print zichtbare labels / PDF</button>
-          <button type="button" className="boxSecondary" disabled={!labels.length} onClick={saveCsv}>Download volledig CSV-overzicht</button>
+          <button type="button" className="boxSecondary" disabled={!labels.length}
+            onClick={()=>{setPreviewedCsv(csvPayload);setMessage('Controleer de volledige CSV-rijen en bevestig de download apart.');}}>
+            Bekijk volledig CSV-overzicht vóór download</button>
         </div>
-        <label className="boxCheckbox"><input type="checkbox" checked={showContentsInCsv} onChange={e => setShowContentsInCsv(e.target.checked)}/> Neem mijn vrije inhoudnotities ook op in de CSV (standaard uit)</label>
+        <label className="boxCheckbox"><input type="checkbox" checked={showContentsInCsv}
+          onChange={e => {setShowContentsInCsv(e.target.checked);setPreviewedCsv(null);}}/>
+          Neem mijn vrije inhoudnotities ook op in de CSV (standaard uit)</label>
+        <p>Een vanuit de paklijst overgenomen eigen dooscode verschijnt in de CSV-kolom
+          <strong> Doosnummer</strong>, ook als privé-inhoudnotities uitstaan.
+          De CSV bevat alle labels, ook etiketten die je op dit moment niet afdrukt.</p>
+        {previewedCsv!==null&&<div className="boxCsvPreview" role="group" aria-label="Controleer exact volledig CSV-bestand">
+          {previewedCsv!==csvPayload?
+            <p role="status">De labels of privacykeuze zijn sinds het voorbeeld veranderd.
+              Het eerdere akkoord is ongeldig; bekijk de huidige CSV opnieuw.</p>:
+            <>
+              <p><strong>Dit is de complete CSV-inhoud ({labels.length} etiketten).</strong>
+                Het onzichtbare UTF-8-BOM-teken voor spreadsheetsoftware staat vóór
+                de hieronder getoonde tekst. Controleer alle kamers, dooscodes,
+                prioriteiten en eventuele door jou aangezette vrije notities.</p>
+              <pre>{csvPayload.slice(1)}</pre>
+              <div className="boxActions">
+                <button type="button" onClick={saveCsv}>Ik heb de CSV bekeken — download exact dit bestand</button>
+                <button type="button" className="boxSecondary" onClick={()=>setPreviewedCsv(null)}>Annuleren</button>
+              </div>
+            </>}
+        </div>}
         <p className="boxStatus" role="status" aria-live="polite">{message}</p>
       </section>
       <section className="boxPanel boxBackup" aria-labelledby="box-backup-heading">
