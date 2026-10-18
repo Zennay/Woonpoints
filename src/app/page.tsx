@@ -322,15 +322,16 @@ function PrivateDepositLedger() {
       const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
       if (new TextEncoder().encode(text).length > MAX_FILE) throw Error('size');
       const parsed = validateBackup(JSON.parse(text));
-      if (current === null) throw Error('invalid current');
-      setPending({ data: parsed, before: JSON.stringify(current) });
+      // A fresh tab starts with no entered deposit: restoring a saved backup
+      // must work without inventing a new valid deposit first.
+      setPending({ data: parsed, before: JSON.stringify({ deposit, entries }) });
       setNotice('Controleer eerst de inhoudsverschillen hieronder. Er is nog niets vervangen.');
     } catch {
       setNotice('Geen geldig Woonpoints-borgboek. De huidige gegevens zijn niet veranderd.');
     }
   }
   function restoreBackup() {
-    if (!pending || !current || pending.before !== JSON.stringify(current)) {
+    if (!pending || pending.before !== JSON.stringify({ deposit, entries })) {
       setPending(null);
       setNotice('Eigen gegevens zijn gewijzigd. Kies de back-up opnieuw om die te beoordelen.');
       return;
@@ -416,7 +417,7 @@ function PrivateDepositLedger() {
         <label htmlFor="deposit-import">Herstel een eerder gedownload privé-borgboek (max. 12 KiB)</label>
         <input id="deposit-import" type="file" accept=".json,application/json" onChange={chooseBackup} />
         {pending && <div role="group" aria-label="Bevestig herstel borgboek">
-          <p><strong>Vervang alle huidige gegevens?</strong> Huidig: {entries.length} regels, borg {euro(current?.depositCents || 0)}.
+          <p><strong>Vervang alle huidige gegevens?</strong> Huidig: {entries.length} regels, borg {current ? euro(current.depositCents) : 'niet ingevuld' }.
             Back-up: {pending.data.entries.length} regels, borg {euro(pending.data.depositCents)}.
             Dit vervangt alle eigen notities in deze sessie, niet je eerdere bestanden.</p>
           <button type="button" onClick={restoreBackup}>Ja, vervang mijn borgboek</button>{' '}
