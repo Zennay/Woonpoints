@@ -348,6 +348,7 @@ export default function HomePage() {
       ?.scrollIntoView({behavior:'smooth',block:'start'}),0);
   }
   const [navigationSearch,setNavigationSearch]=useState('');
+  const [navHighlighted,setNavHighlighted]=useState(0);
   const searchTerm=normalizeNavQuery(navigationSearch);
   const navigationResults=homepageDestinations.filter(destination=>{
     if(searchTerm)return [destination.title,...(homeNavAliases[destination.id]??[])]
@@ -385,12 +386,32 @@ export default function HomePage() {
           style={{display:'block',margin:'12px 0 5px',fontWeight:700}}>
           Zoek een onderdeel
         </label>
-        <p id="woonpoints-nav-help">Ctrl+K (Mac: ⌘K) opent de zoekbalk;
-          Escape wist je zoekopdracht. Zoek bijvoorbeeld op dozen, bonnetjes of gebreken.</p>
+        <p id="woonpoints-nav-help">Ctrl+K (Mac: ⌘K) opent de zoekbalk.
+          Gebruik ↑ en ↓ om resultaten te kiezen, Enter om direct naar het gekozen
+          onderdeel te springen en Escape om het zoeken te sluiten.
+          Zoek bijvoorbeeld op dozen, bonnetjes of gebreken.</p>
         <input id="woonpoints-nav-search" ref={navSearchRef} type="search" value={navigationSearch}
           aria-describedby="woonpoints-nav-help"
-          onKeyDown={event=>{if(event.key==='Escape'){setNavigationSearch('');event.currentTarget.blur();}}}
-          onChange={event=>setNavigationSearch(event.target.value)}
+          onKeyDown={event=>{
+            if(event.key==='Escape'){
+              setNavigationSearch('');setNavHighlighted(0);event.currentTarget.blur();
+            }else if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+              if(navigationResults.length===0)return;
+              event.preventDefault();
+              const step=event.key==='ArrowDown'?1:-1;
+              setNavHighlighted(previous=>
+                (previous+step+navigationResults.length)%navigationResults.length);
+            }else if(event.key==='Enter'&&navigationResults.length>0){
+              event.preventDefault();
+              const found=navigationResults[Math.min(navHighlighted,navigationResults.length-1)];
+              if(!homepageDestinations.some(item=>item.id===found.id))return;
+              recordNavigation(found.id);
+              window.location.hash=found.id;
+              event.currentTarget.blur();
+              setNavHighlighted(0);
+            }
+          }}
+          onChange={event=>{setNavigationSearch(event.target.value);setNavHighlighted(0);}}
           maxLength={60} autoComplete="off"
           placeholder="Bijv. paklijst, maandrapport of nazorg"
           style={{display:'block',width:'100%',maxWidth:480,minHeight:44,
@@ -399,7 +420,7 @@ export default function HomePage() {
           style={{display:'flex',flexWrap:'wrap',gap:8,margin:'12px 0'}}>
           {homeCategoryOptions.map(category=><button type="button" key={category.id}
             aria-pressed={!searchTerm&&navigationCategory===category.id}
-            onClick={()=>{setNavigationCategory(category.id);setNavigationSearch('');}}
+            onClick={()=>{setNavigationCategory(category.id);setNavigationSearch('');setNavHighlighted(0);}}
             style={{minHeight:44,minWidth:74,padding:'8px 12px',borderRadius:9,
               border:'1px solid #355e42',cursor:'pointer',
               background:!searchTerm&&navigationCategory===category.id?'#355e42':'white',
@@ -408,14 +429,21 @@ export default function HomePage() {
           </button>)}
         </div>
         <p role="status" aria-live="polite">{navigationResults.length} van
-          {' '}{homepageDestinations.length} onderdelen zichtbaar{searchTerm?' · alle categorieën doorzocht':''}.</p>
+          {' '}{homepageDestinations.length} onderdelen zichtbaar{searchTerm?' · alle categorieën doorzocht':''}.
+          {searchTerm&&navigationResults.length>0&&
+            ' Toetsenbordselectie '+(Math.min(navHighlighted,navigationResults.length-1)+1)+
+            ' van '+navigationResults.length+': '+
+            navigationResults[Math.min(navHighlighted,navigationResults.length-1)].title+'.'}
+        </p>
         {navigationResults.length===0?
           <p>{navigationCategory==='favorieten'&&!searchTerm
             ?'Nog niets vastgezet. Open Alles en kies ☆ Vastzetten bij je favoriete onderdelen.'
             :navigationCategory==='recent'&&!searchTerm
               ?'Nog geen onderdelen geopend. Kies een onderdeel om het hier tijdelijk terug te vinden.'
               :'Geen onderdeel gevonden. Wis je zoektekst of kies Alles.'}</p>:
-          <ul className="quick-nav-links">{navigationResults.map(item=><li key={item.id}>
+          <ul className="quick-nav-links">{navigationResults.map((item,index)=><li key={item.id}
+            style={searchTerm&&index===Math.min(navHighlighted,navigationResults.length-1)?
+              {outline:'2px solid #355e42',outlineOffset:3,borderRadius:6}:undefined}>
             <a href={'#'+item.id} onClick={()=>recordNavigation(item.id)}>{item.title}</a>
             <button type="button" aria-pressed={pinnedNavIds.includes(item.id)}
               aria-label={(pinnedNavIds.includes(item.id)?'Verwijder ':'Zet vast: ')+item.title}
@@ -490,7 +518,7 @@ export default function HomePage() {
           nooit je zoekwoorden, adressen, notities of accountgegevens. Opslagstatus:
           {' '}{pinStorageState==='persistent'?'alleen deze browser':
             pinStorageState==='temporary'?'alleen dit tabblad':'nog onbekend'}.
-          Recente navigatie blijft uitsluitend in het geheugen van dit tabblad
+          Toetsenbordsprongen gebruiken alleen bestaande schermankers. Recente navigatie blijft uitsluitend in het geheugen van dit tabblad
           en verdwijnt bij herladen. Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
