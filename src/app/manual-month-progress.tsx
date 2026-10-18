@@ -2543,6 +2543,13 @@ export function PrivateMovingExpenseLedger(){
             {' · '}{group.filter(l=>l.actualCents===null).length} onbekend</li>;
         })}</ul>
       </>}
+      {planned>0&&planned<=9999999&&<button type="button" onClick={()=>{
+        window.dispatchEvent(new CustomEvent('woonpoints:moving-cost-split-offer',{
+          detail:{format:'woonpoints-moving-split-total',version:1,plannedCents:planned}
+        }));
+        document.getElementById('private-cost-split-heading')?.scrollIntoView({block:'start',behavior:'smooth'});
+        setNotice('Alleen je totale privébegroting is als voorstel naar de kostenverdeling gestuurd, geen betaalbewijs.');
+      }}>Bied eigen begroting aan om met anderen te verdelen…</button>}
       <button type="button" onClick={()=>{
         exportFile('woonpoints-prive-verhuiskosten.json',
           JSON.stringify({format:'woonpoints-moving-expenses',version:1,lines},null,2),
@@ -2854,7 +2861,7 @@ function privateSplitValidMember(item:unknown,index:number):item is PrivateSplit
   const row=item as Record<string,unknown>;
   return Object.keys(row).length===3&&row.id===index+1&&
     typeof row.alias==='string'&&row.alias.length>0&&row.alias.length<=30&&
-    row.alias.trim()===row.alias&&!/[\\u0000-\\u001f\\u007f]/.test(row.alias)&&
+    row.alias.trim()===row.alias&&!/[\u0000-\u001f\u007f]/.test(row.alias)&&
     typeof row.paid==='string'&&(row.paid===''||expenseCents(row.paid)!==null);
 }
 
@@ -2917,11 +2924,11 @@ export function PrivateMovingCostSplit(){
     !allKnown?'Nog niet alle betaalbedragen ingevuld: geen verrekenadvies.':
       !sameTotal?'Betaalde bedragen sluiten niet op gekozen totaal: geen verrekenadvies.':
         settlements.length?settlements.map(item=>
-          `Voorstel: ${members[item.from].alias} → ${members[item.to].alias}: ${expenseAmount(item.cents)}`).join('\\n'):
+          `Voorstel: ${members[item.from].alias} → ${members[item.to].alias}: ${expenseAmount(item.cents)}`).join('\n'):
           'Alle eigen bedragen gelijk verdeeld; geen onderlinge verrekening nodig.',
     'Verschillen van een cent bij een oneven totaal worden op basis van invoervolgorde toegewezen.',
     'Het resultaat is niet bevestigd met betaalbewijzen en verstuurt geen geld.'
-  ].join('\\n')+'\\n';
+  ].join('\n')+'\n';
   function invalidate(){
     setPendingBackup(null);setPendingReport(null);setConfirmClear(false);setNotice('');
   }
