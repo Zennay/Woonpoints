@@ -3952,20 +3952,51 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
       <p>De CSV gebruikt uitsluitend twee vaste kolommen:
         <code>month,points</code> en bijvoorbeeld <code>2026-10,12</code>.
         Alleen hele, zelf afgelezen punten, geen formules of vrije tekst.</p>
-      {pendingImport && <div className="private-points-confirm" role="group" aria-label="Bevestig privé-puntenbestand herstellen">
-        <p>Dit bestand bevat {pendingImport.length} geldige eigen maandstanden.
-          Bevestigen vervangt alle {rows.length} huidige notities, niet je
-          accountgegevens of andere Woonpoints-onderdelen.</p>
-        <button type="button" onClick={()=>{
-          setRows(pendingImport);setPendingImport(null);setPendingDelete(null);
-          setConfirmClear(false);setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
-          setMessage('Eigen puntenhistorie na bevestiging lokaal hersteld. Geen officiële bronverificatie.');
-        }}>Vervang huidige maandstanden</button>
+      {pendingImport&&<div className="private-points-confirm" role="group"
+        aria-label="Controleer impact en bevestig privé-puntenbestand herstellen">
+        {!importStillCurrent&&<p role="alert">De huidige punten zijn sinds
+          de bestandskeuze veranderd. Overschrijven is geblokkeerd.</p>}
+        <p>Gekozen bestand: {pendingImport.length} maandstanden.
+          Huidige invoer: {rows.length} maandstanden. De vervanging
+          voegt <strong>{importAdded}</strong> maanden toe,
+          wijzigt <strong>{importChanged}</strong> puntenstanden
+          en verwijdert <strong>{importRemoved}</strong> oude maanden.</p>
+        <p>Controleer alle verschillen:</p>
+        <ul>{pendingImport.map(entry=>{
+          const current=rows.find(row=>row.month===entry.month);
+          return <li key={entry.month}>{entry.month}: {entry.points} punten · {
+            current===undefined?'nieuwe maand':
+            current.points===entry.points?'ongewijzigd':
+            'gewijzigd van '+current.points+' naar '+entry.points
+          }</li>;
+        })}
+          {rows.filter(entry=>!pendingImport.some(row=>row.month===entry.month))
+            .map(entry=><li key={'deleted-'+entry.month}>
+              {entry.month}: {entry.points} punten · wordt verwijderd
+            </li>)}
+        </ul>
+        <p>Alleen deze puntenhistorie wordt vervangen, nooit je account
+          of andere Woonpoints-onderdelen. Je vorige invoer blijft tijdelijk
+          éénmalig herstelbaar zolang je na de import niets wijzigt.</p>
+        <button type="button" disabled={!importStillCurrent}
+          onClick={applyPointsImport}>Vervang na mijn controle deze puntenhistorie</button>
         <button type="button" className="secondary" onClick={()=>{
-          setPendingImport(null);setMessage('Import geannuleerd: de huidige maandstanden zijn behouden.');
+          setPendingImport(null);setPendingImportSource(null);
+          setMessage('Import geannuleerd: de huidige punten zijn behouden.');
         }}>Behoud huidige punten</button>
       </div>}
-      {message && <p role="status" aria-live="polite">{message}</p>}
+      {restoreUndo&&<div className="private-points-confirm" role="group"
+        aria-label="Laatste puntenimport eenmalig ongedaan maken">
+        <p>{canUndoRestore?
+          'Je kunt de laatste puntenimport eenmalig terugdraaien.':
+          'Sinds de import zijn je punten veranderd. Automatisch terugdraaien zou eigen wijzigingen kunnen verliezen en is geblokkeerd.'}</p>
+        <button type="button" disabled={!canUndoRestore} onClick={undoPointsImport}>
+          Draai laatste puntenimport éénmalig terug
+        </button>
+        <button type="button" className="secondary"
+          onClick={()=>setRestoreUndo(null)}>Verwerp tijdelijk herstelpunt</button>
+      </div>}
+      {message&&<p role="status" aria-live="polite">{message}</p>}
     </div>
   </section>;
 }
