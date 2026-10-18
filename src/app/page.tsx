@@ -6693,8 +6693,32 @@ const JOURNEY_IDS = new Set(HOUSING_JOURNEY.flatMap(phase => phase.steps.map(ste
 const JOURNEY_BACKUP_KIND = 'woonpoints-private-woonreis';
 const JOURNEY_BACKUP_LIMIT = 4096;
 
+const JOURNEY_TAB_STORAGE_KEY='woonpoints:private-housing-journey:tab-recovery:v1';
+function encodeJourneyTab(checked:string[]):string{
+  return JSON.stringify({kind:JOURNEY_BACKUP_KIND,version:1,checked});
+}
+function decodeJourneyTab(raw:string):string[]|null{
+  if(raw.length>JOURNEY_BACKUP_LIMIT)return null;
+  try{
+    const value:unknown=JSON.parse(raw);
+    if(!value||typeof value!=='object'||Array.isArray(value))return null;
+    const data=value as Record<string,unknown>;
+    if(Object.keys(data).sort().join(',')!=='checked,kind,version'||
+      data.kind!==JOURNEY_BACKUP_KIND||data.version!==1||
+      !Array.isArray(data.checked)||data.checked.length>JOURNEY_IDS.size||
+      !data.checked.every((id:unknown)=>typeof id==='string'&&JOURNEY_IDS.has(id))||
+      new Set(data.checked).size!==data.checked.length)return null;
+    return data.checked as string[];
+  }catch{return null;}
+}
+
+
 function PrivateHousingJourney({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
-  const [checked,setChecked] = useState<string[]>([]);
+  const {value:checked,setValue:setChecked,enabled:rememberJourney,hydrated:journeyReady,
+    storageMessage:journeyStorageMessage,enable:enableJourneyRestore,
+    disable:disableJourneyRestore}=usePrivateTabRecovery<string[]>(
+      JOURNEY_TAB_STORAGE_KEY,()=>[],encodeJourneyTab,decodeJourneyTab,
+      JOURNEY_BACKUP_LIMIT);
   const [selectedPhase,setSelectedPhase] = useState<JourneyPhase>('zoeken');
   const [onlyOpen,setOnlyOpen] = useState(false);
   const [pendingImport,setPendingImport] = useState<string[] | null>(null);
@@ -6774,7 +6798,27 @@ function PrivateHousingJourney({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>voi
     <h2 id="private-journey-heading">Van woning zoeken tot nazorg</h2>
     <p>Een persoonlijke routekaart langs de bestaande Woonpoints-hulpmiddelen.
       Vink zelf stappen af; dit zegt niets over geldige WoningNet-reacties, afspraken,
-      vergunningen of woningtoewijzing. Je voortgang blijft uitsluitend in dit browsertabblad.</p>
+      vergunningen of woningtoewijzing. Je voortgang blijft uitsluitend in dit
+      browsertabblad.</p>
+    <details>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Mijn woonreis herstellen na herladen ({rememberJourney?'aan':'uit'})
+      </summary>
+      <p>Zonder toestemming blijft de woonreis alleen in het geheugen van dit
+        tabblad. Met toestemming bewaren we uitsluitend bekende stapcodes
+        (geen namen, adressen, WoningNet-gegevens of notities) in
+        niet-versleutelde sessie-opslag van dit tabblad. Andere scripts op deze site
+        kunnen de codes lezen. Bij sluiten van het tabblad verdwijnen ze gewoonlijk.
+        Een JSON-download is nodig voor permanent bewaren.</p>
+      {rememberJourney?
+        <button type="button" disabled={!journeyReady} onClick={disableJourneyRestore}
+          style={{minHeight:44}}>Stop bewaren en wis deze tabbladstatus</button>:
+        <button type="button" disabled={!journeyReady} onClick={enableJourneyRestore}
+          style={{minHeight:44}}>Ja, onthoud mijn woonreis bij herladen</button>}
+      <p role="status" aria-live="polite">
+        {journeyStorageMessage|| (journeyReady?'Bewaren is uitgeschakeld.':'Opslag wordt gecontroleerd.')}
+      </p>
+    </details>
     <div role="status" aria-live="polite">
       <strong>{complete} van {total} stappen zelf afgevinkt</strong>
       <p><progress value={complete} max={total} aria-label="Eigen woonreisvoortgang" style={{width:'100%',maxWidth:560}}/>
