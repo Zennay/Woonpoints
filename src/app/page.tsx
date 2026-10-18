@@ -5575,11 +5575,44 @@ function handoverRestore(raw: string): {
  * Private moving-day worksheet; no WoningNet API, account, localStorage,
  * third-party sync, automatic supplier submission, or energy-usage inference.
  */
+
+type PrivateMeterTabData={
+  readings:Record<HandoverHomeKey,HandoverReading>;
+  included:Record<HandoverMeterKey,boolean>
+};
+const METER_TAB_STORAGE_KEY='woonpoints:private-meter-handover:tab-recovery:v1';
+function initialMeterTab():PrivateMeterTabData{
+  return {
+    readings:{
+      old:{day:'',values:{...HANDOVER_EMPTY_VALUES}},
+      new:{day:'',values:{...HANDOVER_EMPTY_VALUES}}
+    },
+    included:{powerDay:true,powerNight:false,gas:true,water:true,heat:false}
+  };
+}
+function encodeMeterTab(value:PrivateMeterTabData):string{
+  return handoverBackup(value.readings,value.included);
+}
+function decodeMeterTab(raw:string):PrivateMeterTabData|null{
+  try{return handoverRestore(raw);}catch{return null;}
+}
 function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
-  const [readings, setReadings] = useState<Record<HandoverHomeKey, HandoverReading>>(HANDOVER_EMPTY);
-  const [included, setIncluded] = useState<Record<HandoverMeterKey, boolean>>({
-    powerDay: true, powerNight: false, gas: true, water: true, heat: false
-  });
+  const {value:meterTab,setValue:setMeterTab,enabled:rememberMeters,
+    hydrated:metersReady,storageMessage:metersStorageMessage,
+    enable:enableMetersRestore,disable:disableMetersRestore}
+    =usePrivateTabRecovery<PrivateMeterTabData>(
+      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096);
+  const {readings,included}=meterTab;
+  const setReadings=(change:Record<HandoverHomeKey,HandoverReading>|
+    ((before:Record<HandoverHomeKey,HandoverReading>)=>Record<HandoverHomeKey,HandoverReading>))=>{
+    setMeterTab(previous=>({...previous,readings:
+      typeof change==='function'?change(previous.readings):change}));
+  };
+  const setIncluded=(change:Record<HandoverMeterKey,boolean>|
+    ((before:Record<HandoverMeterKey,boolean>)=>Record<HandoverMeterKey,boolean>))=>{
+    setMeterTab(previous=>({...previous,included:
+      typeof change==='function'?change(previous.included):change}));
+  };
   const [preview, setPreview] = useState<{
     source: string; text: string; format: 'txt' | 'json'
   } | null>(null);
@@ -5710,6 +5743,28 @@ function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void
     <p>Leg op de overdrachtsdag zelf de standen vast. Vul alleen meters in die echt bij de
       betreffende woning horen. Standen van twee verschillende woningen worden nooit van
       elkaar afgetrokken. Er is geen accountkoppeling of automatische leveranciersmelding.</p>
+    <details style={{marginBottom:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Meterstanden bij herladen behouden ({rememberMeters?'aan':'uit'})
+      </summary>
+      <p>Je eigen meterstanden zijn privé. Alleen met aparte toestemming
+        bewaren we de exact gecontroleerde oude/nieuwe standen en meterkeuzes
+        tijdelijk in <strong>niet-versleutelde sessie-opslag van dit tabblad</strong>.
+        Andere scripts op dezelfde website kunnen die informatie lezen. Gebruik
+        dit niet op gedeelde apparaten en vul geen adres- of accountgegevens in.
+        Sluiten van het tabblad verwijdert de opslag gewoonlijk. Download zelf
+        de JSON-back-up voor langdurig bewaren; er worden geen standen
+        automatisch naar verhuurder of energieleverancier verzonden.</p>
+      {rememberMeters?<button type="button" disabled={!metersReady}
+        onClick={disableMetersRestore} style={{minHeight:44}}>
+        Stop en wis opgeslagen meterstanden</button>:
+        <button type="button" disabled={!metersReady}
+          onClick={enableMetersRestore} style={{minHeight:44}}>
+          Ja, onthoud meterstanden bij herladen</button>}
+      <p role="status" aria-live="polite">
+        {metersStorageMessage|| (metersReady?'Geen sessieopslag actief.':'Opslag wordt gecontroleerd.')}
+      </p>
+    </details>
     <fieldset style={{ border: '1px solid #c4d6c9', borderRadius: 12, padding: 14 }}>
       <legend><strong>Welke meters wil je opnemen?</strong></legend>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
