@@ -94,6 +94,20 @@ function decodeNavPins(raw:string|null):string[]|null{
   }catch{return null;}
 }
 
+/** Portable format is strictly a fixed schema with known screen anchors only. */
+function readNavPinsBackup(raw:string):string[]|null{
+  if(raw.length>1400)return null;
+  try{
+    const data:unknown=JSON.parse(raw);
+    if(!data||typeof data!=='object'||Array.isArray(data))return null;
+    const record=data as Record<string,unknown>;
+    if(Object.keys(record).sort().join(',')!=='format,pins,version'||
+      record.format!=='woonpoints-favorites'||record.version!==1)return null;
+    if(!Array.isArray(record.pins))return null;
+    return decodeNavPins(JSON.stringify(record.pins));
+  }catch{return null;}
+}
+
 // These unknown-by-default values are an explicit safety contract for users
 // who have not entered a private observation or linked a real account.
 const initialCards = [
@@ -146,6 +160,12 @@ export default function HomePage() {
   }
   const [pinnedNavIds,setPinnedNavIds]=useState<string[]>([]);
   const [pinMessage,setPinMessage]=useState('');
+  const [pinBackupPreview,setPinBackupPreview]=useState<{
+    bytes:string;source:string
+  }|null>(null);
+  const [pinImportPreview,setPinImportPreview]=useState<{
+    pins:string[];source:string
+  }|null>(null);
   const [pinStorageState,setPinStorageState]=useState<'unknown'|'persistent'|'temporary'>('unknown');
   useEffect(()=>{
     function refresh(){
@@ -230,6 +250,81 @@ export default function HomePage() {
       setPinnedNavIds(fallback);
       setPinStorageState('temporary');
       setPinMessage('Nieuwe volgorde werkt alleen in dit tabblad; onbekende voorkeuren zijn niet overschreven.');
+    }
+  }
+  function previewNavPinsBackup(){
+    const bytes=JSON.stringify({
+      format:'woonpoints-favorites',version:1,pins:pinnedNavIds
+    },null,2)+'\\n';
+    setPinBackupPreview({bytes,source:JSON.stringify(pinnedNavIds)});
+    setPinMessage('Controleer de volledige inhoud voordat je de favorietenback-up opslaat.');
+  }
+  function downloadNavPinsBackup(){
+    if(!pinBackupPreview||pinBackupPreview.source!==JSON.stringify(pinnedNavIds)){
+      setPinBackupPreview(null);
+      setPinMessage('De bron is gewijzigd. Bekijk de actuele back-up opnieuw.');
+      return;
+    }
+    const blob=new Blob([pinBackupPreview.bytes],{type:'application/json;charset=utf-8'});
+    const href=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=href;
+    anchor.download='woonpoints-favorieten.json';
+    document.body.appendChild(anchor);
+    try{anchor.click();}finally{
+      anchor.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(href),1000);
+    }
+    setPinBackupPreview(null);
+    setPinMessage('Eigen favorietenbestand aangeboden; bepaal zelf waar je het opslaat.');
+  }
+  async function readNavPinsFile(event:ChangeEvent<HTMLInputElement>){
+    const file=event.target.files?.[0];
+    event.target.value='';
+    setPinImportPreview(null);
+    if(!file)return;
+    if(file.size>1400){
+      setPinMessage('Bestand te groot: maximaal 1400 bytes voor acht vaste onderdeelcodes.');
+      return;
+    }
+    try{
+      const raw=await file.text();
+      const pins=readNavPinsBackup(raw);
+      if(pins===null){
+        setPinMessage('Ongeldig favorietenbestand: bestaand overzicht blijft intact.');
+        return;
+      }
+      setPinImportPreview({pins,source:JSON.stringify(pinnedNavIds)});
+      setPinMessage('Bestand gelezen. Bekijk het bronoverzicht en bevestig apart vóór vervangen.');
+    }catch{
+      setPinMessage('Bestand niet leesbaar: er is niets vervangen.');
+    }
+  }
+  function applyNavPinsBackup(){
+    const pending=pinImportPreview;
+    if(!pending)return;
+    setPinImportPreview(null);
+    if(pending.source!==JSON.stringify(pinnedNavIds)){
+      setPinMessage('Favorieten zijn ondertussen veranderd. Kies je bestand opnieuw.');
+      return;
+    }
+    const next=JSON.stringify(pending.pins);
+    try{
+      const current=decodeNavPins(window.localStorage.getItem(NAV_PINS_STORAGE_KEY));
+      if(current===null||JSON.stringify(current)!==pending.source)
+        throw Error('unknown or changed stored pins');
+      window.localStorage.setItem(NAV_PINS_STORAGE_KEY,next);
+      if(window.localStorage.getItem(NAV_PINS_STORAGE_KEY)!==next)
+        throw Error('unverified write');
+      setPinnedNavIds(pending.pins);
+      setPinStorageState('persistent');
+      setPinMessage('Alleen je vaste onderdeelcodes zijn na toestemming hersteld in deze browser.');
+    }catch{
+      // Never replace unknown concurrent storage; explicit user acceptance
+      // can still use the in-memory list in this tab.
+      setPinnedNavIds(pending.pins);
+      setPinStorageState('temporary');
+      setPinMessage('Back-up alleen in dit tabblad geopend; eerdere of onbekende browseropslag niet overschreven.');
     }
   }
   function clearNavPins(){
@@ -357,6 +452,39 @@ export default function HomePage() {
           zijn in dit tabblad bereikbaar via ↗ Recent.
           {' '}<button type="button" className="secondary"
             onClick={()=>setRecentNavIds([])}>Wis recente navigatie</button></p>}
+        <details style={{marginTop:12}}>
+          <summary>Bewaar of herstel mijn favoriete onderdelen</summary>
+          <p>Alleen de codes van maximaal acht vastgezette onderdelen worden
+            opgeslagen. Geen privénotities, adressen of WoningNet-gegevens.
+            Zelf gekozen opslag kan extern synchroniseren.</p>
+          <button type="button" className="secondary" onClick={previewNavPinsBackup}>
+            Bekijk volledige favorietenback-up
+          </button>
+          {pinBackupPreview&&<div>
+            <p>{pinBackupPreview.source===JSON.stringify(pinnedNavIds)
+              ?'Dit is de volledige exacte bestandsinhoud. Controleer vóór opslaan.'
+              :'Je favorieten zijn gewijzigd; maak eerst een nieuwe preview.'}</p>
+            <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:200,overflow:'auto'}}>
+              {pinBackupPreview.bytes}</pre>
+            <button type="button" disabled={pinBackupPreview.source!==JSON.stringify(pinnedNavIds)}
+              onClick={downloadNavPinsBackup}>Ik wil dit gecontroleerde JSON-bestand downloaden</button>
+          </div>}
+          <label htmlFor="woonpoints-pin-backup-file" style={{display:'block',marginTop:16}}>
+            Kies mijn eerder bewaarde favorietenbestand (maximaal 1400 bytes)
+          </label>
+          <input id="woonpoints-pin-backup-file" type="file" accept=".json,application/json"
+            onChange={readNavPinsFile}/>
+          {pinImportPreview&&<div>
+            <p><strong>{pinImportPreview.pins.length} onderdelen</strong> in het bestand.
+              Deze vervangen uitsluitend je huidige vastgezette favorieten na jouw bevestiging.</p>
+            <ol>{pinImportPreview.pins.map(id=><li key={id}>
+              {homepageDestinations.find(item=>item.id===id)?.title}</li>)}</ol>
+            <button type="button" className="secondary" onClick={()=>setPinImportPreview(null)}>
+              Behoud huidige favorieten</button>
+            <button type="button" disabled={pinImportPreview.source!==JSON.stringify(pinnedNavIds)}
+              onClick={applyNavPinsBackup}>Vervang mijn favorieten door deze gecontroleerde codes</button>
+          </div>}
+        </details>
         <p role="status" aria-live="polite">{pinMessage}</p>
         <p>Vastzetten bewaart uitsluitend vooraf bekende onderdeelcodes op dit apparaat,
           nooit je zoekwoorden, adressen, notities of accountgegevens. Opslagstatus:
