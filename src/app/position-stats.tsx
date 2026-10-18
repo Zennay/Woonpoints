@@ -243,22 +243,56 @@ export function ManualPositionHistory({
             void selectCsv(file);
           }} />
         {pendingImport && (
-          <div className="month-csv-confirm" role="group" aria-label="Bevestig CSV-import">
-            <p><strong>{pendingImport.count}</strong> geldige handmatige resultaten gevonden.
-              Importeren vervangt alle huidige invoer in dit tabblad. Er wordt niets naar WoningNet verzonden.</p>
+          <div className="month-csv-confirm" role="group" aria-label="Kies hoe eigen posities worden geïmporteerd">
+            <h3>Posities toevoegen of vervangen?</h3>
+            <p>De geselecteerde CSV bevat <strong>{pendingImport.count}</strong> zelf ingevulde
+              woningresultaten. In je huidige tabblad staan <strong>{existingPositionLines.length}</strong> regels.
+              Geen enkele positie is onafhankelijk door een woningplatform geverifieerd.</p>
+            {!importSourceCurrent && <p role="alert">Je huidige maandposities zijn sinds
+              het kiezen van de CSV gewijzigd. Kies het bestand opnieuw;
+              de oude importtoestemming is vervallen.</p>}
+            {samePositionLines>0 && <p role="status">{samePositionLines} geselecteerde regel
+              {samePositionLines===1?' lijkt':'s lijken'} qua datum/positie/totaal op je huidige invoer.
+              Dat betekent niet automatisch dezelfde woning. Niets wordt stilzwijgend verwijderd.</p>}
+            <p><strong>Toevoegen:</strong> bestaande regels behouden; na samenvoegen
+              { ' '+(existingPositionLines.length+importedPositionLines.length)} woningresultaten.
+              Er gelden maximaal 120 regels, 24 ingevulde kalendermaanden en 8192 tekens.
+              Na bevestigen kan je de oude tabbladtekst één keer terugzetten.</p>
             <div className="month-history-actions">
+              <button type="button" disabled={!canAppendPositionImport}
+                onClick={() => applyPositionImport('append')}>
+                Voeg eigen CSV-posities toe
+              </button>
+              <button type="button" disabled={!importSourceCurrent}
+                onClick={() => applyPositionImport('replace')}>
+                Vervang alle huidige posities bewust
+              </button>
               <button type="button" onClick={() => {
-                setInput(pendingImport.text);
                 setPendingImport(null);
-                setFileMessage('CSV lokaal ingelezen. Nog steeds ongeverifieerde handmatige gegevens.');
-              }}>Vervang huidige invoer</button>
-              <button type="button" onClick={() => {
-                setPendingImport(null);
-                setFileMessage('Import geannuleerd: huidige invoer behouden.');
-              }}>Annuleren</button>
+                setFileMessage('Import geannuleerd: huidige maandposities behouden.');
+              }}>Behoud alle huidige posities</button>
             </div>
+            <p>De huidige lijst wordt alleen vervangen met je afzonderlijke
+              keuze hierboven. Een ongeldige gecombineerde lijst wordt in zijn geheel geweigerd.</p>
           </div>
         )}
+        {positionImportUndo && <div className="month-csv-confirm" role="group"
+          aria-label="Vorige posities veilig terugzetten">
+          <h3>Laatste CSV-import terugdraaien</h3>
+          <p>Je laatste {positionImportUndo.mode==='append'?'aanvulling':'vervanging'}
+            bevat een tijdelijk herstelpunt met je vorige tabbladtekst.
+            Dit is alleen geldig zolang er nadien niets aan de posities is veranderd.</p>
+          {!canUndoPositionImport&&<p role="status">De positiegegevens zijn inmiddels veranderd.
+            Automatisch herstel is geblokkeerd om nieuwe invoer te behouden.</p>}
+          <button type="button" disabled={!canUndoPositionImport||Boolean(pendingImport)}
+            onClick={undoPositionImport}>Herstel vorige maandposities</button>
+          <button type="button" onClick={()=>{
+            setPositionImportUndo(null);
+            setFileMessage('Herstelpunt gewist; huidige maandposities blijven staan.');
+          }}>Verwerp herstelpunt</button>
+          <p>Het herstelpunt blijft alleen in dit open browsertabblad. Gedownloade
+            bestanden en je reactiedagboek worden nooit door deze terugzetactie gewijzigd.</p>
+        </div>}
         {fileMessage && <p role="status">{fileMessage}</p>}
         <p>CSV-export is uitsluitend op eigen verzoek. Een bestand op een
           cloudgesynchroniseerde locatie kan buiten Woonpoints terechtkomen.</p>
