@@ -1069,3 +1069,34 @@ ingevulde inhoud ook op de etiketten te printen; die staat standaard UIT.
 
 Ook printbare labels zijn persoonlijke notities en geen gecertificeerde
 huisraadinventaris of adresbewijs. Deel het bestand niet onbedoeld.
+
+
+## Verhuiswerkmap v3: alle zeven lokale modules samen herstellen
+
+**Je verhuisoverzicht in één werkmap** neemt naast de bestaande zes
+modules nu ook de zelfstandige **Paklijst per kamer** op. Dit levert
+versie-3 JSON met strikt gevalideerde kamer-, doos-, status-,
+aantal- en identiteitsvelden voor maximaal 80 eigen pakregels.
+
+- De zeven actuele modules sturen uitsluitend tabbladinterne snapshots
+  naar de werkmap. Export is één bewuste handeling na een zichtbaar
+  overzicht van de totale inhoud. Het bestaande optionele leesbare
+  verhuisdossier kan nu eveneens expliciet de eigen pakregels bevatten.
+- Herstel van **v3** vervangt pas na expliciete bevestiging alle zeven
+  onderdelen, inclusief onbewaarde pakregels.
+- Een bestaande **v2**-werkmap herstelt alleen de eerdere zes modules;
+  de huidige paklijst blijft onaangeroerd. Een bestaande **v1** herstelt
+  alleen offertes, kostenboek en kostenverdeling: overige modules
+  inclusief paklijst blijven onaangeroerd.
+- Import is begrensd op 64 KiB, weigert vreemde velden, dubbele
+  identiteiten en ongeldige inhoud. Ongeldige of geannuleerde import
+  behoudt alle huidige gegevens. Geen live account, WoningNet-actie,
+  database- of cloudopslag, automatische upload of externe betaling.
+- Persoonlijke labels, aantekeningen, meterstanden, bedragen en
+  zelf ingepakte spullen staan in gekozen exports. Controleer
+  opslaglocatie en delen; sluiten van de browser zonder export wist
+  niet-bewaarde privégegevens.
+
+Woonpoints blijft uitsluitend een handmatig hulpmiddel. Er worden geen
+officiële termijnen, rechten, woningtoewijzingen of betaalbewijzen
+geclaimd. `BOT_DRY_RUN=true` en account-/toestemmingsgates blijven intact.
