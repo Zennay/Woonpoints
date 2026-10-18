@@ -2791,6 +2791,21 @@ function PrivateMoveAftercare() {
               </div>
             </div>}
           </div>
+          {contactCorrectionUndo && <div className="aftercare-confirm"
+            role="group" aria-label="Contactcorrectie eenmalig terugzetten">
+            <h3>Mijn laatste contactcorrectie herstellen</h3>
+            <p>{contactCorrectionUndoCurrent
+              ? 'Je vorige eigen contacttekst en datum zijn tijdelijk in dit tabblad bewaard.'
+              : 'Je dossier is sindsdien gewijzigd. Oude gegevens mogen nieuwe invoer niet overschrijven.'}</p>
+            <div className="aftercare-actions">
+              <button type="button" className="secondary"
+                disabled={!contactCorrectionUndoCurrent} onClick={undoContactCorrection}>
+                Herstel vorige contactnotitie
+              </button>
+              <button type="button" className="secondary"
+                onClick={() => setContactCorrectionUndo(null)}>Vernietig dit herstelpunt</button>
+            </div>
+          </div>}
           {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave. Wis de filters om alles terug te zien.</p> :
             <ul className="aftercare-list">{shown.map(item =>
               <li className="aftercare-item" key={item.id}
@@ -2820,7 +2835,66 @@ function PrivateMoveAftercare() {
                       .map(log => <li key={log.id}>
                         <strong>{log.day} · {CONTACT_TYPES.find(type => type.id === log.kind)?.title}</strong>
                         <p className="aftercare-note">{log.detail}</p>
+                        <button type="button" className="secondary"
+                          onClick={() => beginContactCorrection(log)}>Corrigeer dit eigen moment…</button>
                         <button className="secondary" onClick={() => setHistoryDeletePending(log.id)}>Verwijder dit moment…</button>
+                        {contactCorrection?.id === log.id && <form className="aftercare-confirm"
+                          aria-label="Eigen contactnotitie corrigeren"
+                          onSubmit={event => { event.preventDefault(); previewContactCorrection(); }}>
+                          <h4>Mijn bestaande contactmoment corrigeren</h4>
+                          {contactCorrection.source !== aftercareImportSignature &&
+                            <p className="aftercare-warning" role="status">
+                              Het dossier is gewijzigd. Open deze notitie opnieuw vóór corrigeren.
+                            </p>}
+                          <label htmlFor={'nazorg-correct-kind-' + log.id}>Mijn contactsoort</label>
+                          <select id={'nazorg-correct-kind-' + log.id} value={contactCorrection.kind}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, kind: event.target.value as ContactKind});
+                              setContactCorrectionPreview(null);
+                            }}>
+                            {CONTACT_TYPES.map(type => <option key={type.id} value={type.id}>{type.title}</option>)}
+                          </select>
+                          <label htmlFor={'nazorg-correct-date-' + log.id}>Eigen datum</label>
+                          <input id={'nazorg-correct-date-' + log.id} type="date" required
+                            min="2020-01-01" max="2099-12-31" value={contactCorrection.day}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, day: event.target.value});
+                              setContactCorrectionPreview(null);
+                            }} />
+                          <label htmlFor={'nazorg-correct-text-' + log.id}>Mijn eigen privécontactnotitie</label>
+                          <textarea id={'nazorg-correct-text-' + log.id} required maxLength={240}
+                            value={contactCorrection.detail}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, detail: event.target.value});
+                              setContactCorrectionPreview(null);
+                            }} />
+                          <div className="aftercare-actions">
+                            <button type="submit" disabled={contactCorrection.source !== aftercareImportSignature}>
+                              Bekijk mijn wijziging vóór bewaren
+                            </button>
+                            <button type="button" className="secondary"
+                              onClick={() => {setContactCorrection(null);setContactCorrectionPreview(null);}}>
+                              Annuleer zonder aanpassing
+                            </button>
+                          </div>
+                          {contactCorrectionPreview && <div className="aftercare-confirm"
+                            role="group" aria-label="Vergelijk oude en nieuwe contactnotitie">
+                            {!contactCorrectionCurrent && <p className="aftercare-warning" role="status">
+                              Bron of concept gewijzigd. Controleer opnieuw.</p>}
+                            <p><strong>Oorspronkelijk:</strong> {log.day} ·
+                              {' '}{CONTACT_TYPES.find(type => type.id === log.kind)?.title}</p>
+                            <p className="aftercare-note">{log.detail}</p>
+                            <p><strong>Na correctie:</strong> {contactCorrectionPreview.updated.day} ·
+                              {' '}{CONTACT_TYPES.find(type => type.id === contactCorrectionPreview.updated.kind)?.title}</p>
+                            <p className="aftercare-note">{contactCorrectionPreview.updated.detail}</p>
+                            <p>Alleen je eigen aantekening wordt aangepast. Bestaande correspondentie bij derden
+                              verandert niet en wordt hiermee niet geverifieerd.</p>
+                            <button type="button" disabled={!contactCorrectionCurrent}
+                              onClick={confirmContactCorrection}>
+                              Ja, bewaar precies deze correctie
+                            </button>
+                          </div>}
+                        </form>}
                         {historyDeletePending === log.id && <div className="aftercare-confirm">
                           <p>Contactmoment uit dit tabblad wissen?</p>
                           <div className="aftercare-actions">
