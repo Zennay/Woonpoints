@@ -824,3 +824,72 @@ achtergrondanalyse uit. Foto's met andere perspectieven en formaten
 zijn niet vanzelf vergelijkbaar; dit is geen bewijs dat afmetingen,
 kwaliteit of woningen gelijkwaardig zijn. Bij het wissen van de
 albums verdwijnen ook alle afbeeldingsvoorbeelden uit de app.
+
+
+## Woon-werkcalculator voor twee handmatige woningen
+
+In het dashboard staat bij **Woon-werk** een onafhankelijk overzicht waarin
+je twee mogelijke woningen vergelijkt op **jaarlijkse eigen woonkosten én
+woon-werkkosten**. Per woning kun je zelf een huur, overige woonkosten,
+werkweken, reisdagen per week, enkele reistijd en vervoersmiddel invoeren.
+Voor auto berekent het scherm de kosten uit retourkilometers × zelfgekozen
+alle-in kilometerschatting, plus parkeren/tol. Voor het OV geef je een
+zelf geraamd retourtarief per reisdag op; voor fiets/lopen kun je eveneens
+eventuele eigen dagkosten invullen. Een zelf geraamde werkgeversvergoeding
+wordt nooit voor meer dan de geraamde reiskosten in mindering gebracht.
+
+Het scherm toont per woning jaarlijkse reisuren, netto- en
+brutoreiskosten, gemiddelde maandlast en het **verschil B min A**
+voor totale jaarkosten en reisuren. Getallen worden begrensd en
+tegenstrijdige/ongeldige invoer wordt expliciet geweigerd; ontbreken
+van gegevens levert geen schijnzeker resultaat op. Als voorbeeld staan
+twee fictieve scenario's vooringevuld; deze zijn nooit actuele
+woningaanbiedingen of tarieven.
+
+Alle berekeningen zijn alleen voor de door de gebruiker ingevulde
+aannames. Het is **geen** routeplanner, OV-prijszoeker,
+kilometervergoedings-/belastingadvies of officieel budgetbesluit. Het
+model waardeert reistijd niet als geld, voorspelt geen tarieven, en
+houdt geen rekening met ziekte, onregelmatige diensten, toeslagen of
+variabele ritten. Werkelijke individuele vergoedingen en belastingen
+kunnen anders uitvallen.
+
+Via een afzonderlijke voorbeeld-/bevestigingsstap kan uitsluitend een
+eigen, leesbaar TXT-overzicht van de getallen worden opgeslagen.
+Bij annuleren gebeurt niets. De bron bevat geen eigen adres- of
+accountvelden, maakt geen netwerkverzoeken, slaat niets automatisch
+op en stuurt nooit gegevens naar WoningNet. Verversen/wissen verwijdert
+de invoer van het scherm. De bestaande shortlist, woningvergelijker,
+privé-notities en `BOT_DRY_RUN=true` blijven volledig onafhankelijk.
+
+
+## Zelf je verhuisvolume en mogelijke ritten inschatten
+
+De nieuwe sectie **Verhuisvolume** helpt bij het handmatig noteren van
+eigen meubels, apparaten en dozen. Drie fictieve voorbeelden zijn ingevuld
+en kunnen direct worden aangepast of verwijderd. Je kunt maximaal 25
+regels opnemen, elk met een korte eigen naam, breedte/diepte/hoogte in
+**centimeters** en aantal stuks.
+
+Per regel wordt de rechthoekige volume-omhulling berekend:
+`breedte_cm × diepte_cm × hoogte_cm × aantal / 1.000.000`
+in kubieke meters. De gebruiker kiest zelf een extra
+laadruimtepercentage (0–50%) en de **zelf geverifieerde bruikbare m³
+per rit** (1–30). Het scherm toont het totale volume inclusief reserve
+en een afgeronde, **uitsluitend volumematige ondergrens** van het
+aantal ritten. Een werkelijk passend verhuisvoertuig of veilig aantal
+ritten volgt hier nooit automatisch uit: sommige meubels zijn niet
+stapelbaar, passen niet door deuropeningen of overschrijden laadgewicht,
+massa-/aslast, vergunning-, rijbewijs- of veiligheidsregels.
+
+De calculator weigert ongeldige afmetingen/aantallen en volumes buiten
+de begrenzing. Via een **bewust bekeken concept** kan de gebruiker
+uitsluitend de eigen itemlijst en som als TXT downloaden; de knop biedt
+geen automatische agenda-, account- of backendactie. Persoonlijke
+itemnamen kunnen privé zijn: controleer de export zelf voor opslaan.
+
+Er is geen browseropslag, fotoverwerking, tariefzoeker, accounttoegang,
+WoningNet-integratie of VPS-werklast. Wissen/verversen verwijdert de
+gegevens uit de app, maar niet eventuele zelf gedownloade bestanden.
+De bestaande verhuischecklist, woningvergelijking en
+`BOT_DRY_RUN=true` worden niet gewijzigd.
