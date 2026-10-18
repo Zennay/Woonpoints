@@ -4336,6 +4336,7 @@ export function PrivatePhotoComparison() {
   const [selected, setSelected] = useState<Record<Side, number | null>>({ A: null, B: null });
   const [notes, setNotes] = useState<Record<Side, string>>({ A: '', B: '' });
   const [notice, setNotice] = useState('');
+  const [overlayPercent, setOverlayPercent] = useState(50);
   const [notesExport, setNotesExport] = useState<string | null>(null);
   useEffect(() => {
     alive.current = true;
@@ -4352,6 +4353,8 @@ export function PrivatePhotoComparison() {
     setAlbum(next);
   };
   const totalBytes = [...album.A, ...album.B].reduce((sum, photo) => sum + photo.bytes, 0);
+  const overlayA = album.A.find(item => item.id === selected.A) ?? album.A[0];
+  const overlayB = album.B.find(item => item.id === selected.B) ?? album.B[0];
   const knownImage = async (file: File) => {
     const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
     const jpg = file.type === 'image/jpeg' && bytes.length >= 3 &&
@@ -4532,6 +4535,39 @@ export function PrivatePhotoComparison() {
               autoComplete="off" />
           </div>;
         })}
+      </div>
+      <div className="month-csv-confirm"
+        aria-labelledby="private-photo-overlay-heading">
+        <h3 id="private-photo-overlay-heading">Leg twee eigen foto’s over elkaar</h3>
+        <p>Kies hierboven eerst één foto bij woning A en één bij woning B.
+          De schuif toont links een groter deel van woning B over foto A.
+          Dit is alleen een visueel hulpmiddel: perspectief, formaat en
+          schaal kunnen sterk verschillen. Er wordt geen bouwkundige
+          gelijkwaardigheid of identieke camerastand bewezen.</p>
+        {overlayA && overlayB ? <div>
+          <div style={{position:'relative',width:'100%',height:320,overflow:'hidden',
+            background:'#edf2f4',borderRadius:8}}>
+            <img src={overlayA.url} alt="Zelfgekozen lokale basisfoto van woning A"
+              style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}} />
+            <img src={overlayB.url} alt="Zelfgekozen lokale overliggende foto van woning B"
+              style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain',
+                clipPath:'inset(0 '+(100-overlayPercent)+'% 0 0)'}} />
+            <div aria-hidden="true" style={{position:'absolute',top:0,bottom:0,
+              left:overlayPercent+'%',width:2,background:'currentColor',
+              pointerEvents:'none'}} />
+          </div>
+          <label htmlFor="private-photo-overlay-range">
+            Deel van foto B links: {overlayPercent}% · foto A rechts: {100-overlayPercent}%
+          </label>
+          <input id="private-photo-overlay-range" type="range" min="0" max="100" step="5"
+            value={overlayPercent} onChange={event=>setOverlayPercent(Number(event.target.value))}
+            style={{width:'100%'}} />
+          <button type="button" className="secondary"
+            onClick={()=>setOverlayPercent(50)}>Verdeling terug naar 50/50</button>
+          <p>Beide foto’s worden slechts tijdelijk lokaal getoond.
+            De schuif verandert geen origineel bestand of notitie.</p>
+        </div> : <p>Voeg in beide kolommen een foto toe om de schuifvergelijking
+          te gebruiken. Er worden geen voorbeelden of foto's opgehaald.</p>}
       </div>
       <div className="month-csv-confirm">
         <h3>Bewaar alleen eigen observaties</h3>
