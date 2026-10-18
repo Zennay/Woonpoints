@@ -1162,6 +1162,15 @@ function PrivateMoveAftercare() {
   const [historyDay, setHistoryDay] = useState(today());
   const [historyDetail, setHistoryDetail] = useState('');
   const [historyDeletePending, setHistoryDeletePending] = useState<string | null>(null);
+  const [contactCorrection, setContactCorrection] = useState<{
+    id: string; source: string; kind: ContactKind; day: string; detail: string
+  } | null>(null);
+  const [contactCorrectionPreview, setContactCorrectionPreview] = useState<{
+    source: string; draft: string; updated: FollowUp
+  } | null>(null);
+  const [contactCorrectionUndo, setContactCorrectionUndo] = useState<{
+    previous: FollowUp[]; resultingSignature: string
+  } | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState<'actief' | 'alles' | 'afgerond'>('actief');
@@ -1354,6 +1363,15 @@ function PrivateMoveAftercare() {
     pendingJsonExport.itemsCount === items.length &&
     pendingJsonExport.historyCount === history.length;
   const aftercareImportSignature = JSON.stringify({ items, history });
+  const contactCorrectionCurrent = contactCorrection !== null &&
+    contactCorrectionPreview !== null &&
+    contactCorrection.source === aftercareImportSignature &&
+    contactCorrectionPreview.source === aftercareImportSignature &&
+    contactCorrectionPreview.draft === JSON.stringify(contactCorrection) &&
+    history.some(log => log.id === contactCorrectionPreview.updated.id &&
+      log.issueId === contactCorrectionPreview.updated.issueId);
+  const contactCorrectionUndoCurrent = contactCorrectionUndo !== null &&
+    contactCorrectionUndo.resultingSignature === aftercareImportSignature;
   const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
   const incomingMerge = incoming === null ? null :
     planPrivateAftercareMerge({items, history}, incoming, mergeConflictChoices);
@@ -1568,6 +1586,85 @@ function PrivateMoveAftercare() {
     setHistoryDeletePending(null);
     setMessage('Contactmoment alleen in dit tabblad opgeslagen; niet extern geverifieerd of verzonden.');
   }
+  function beginContactCorrection(log: FollowUp) {
+    if (!history.some(row => row.id === log.id && row.issueId === log.issueId)) return;
+    setContactCorrection({id: log.id, source: aftercareImportSignature,
+      kind: log.kind, day: log.day, detail: log.detail});
+    setContactCorrectionPreview(null);
+    setHistoryDeletePending(null);
+    setHistoryTarget(null);
+  }
+  function previewContactCorrection() {
+    const draft = contactCorrection;
+    if (!draft || draft.source !== aftercareImportSignature) {
+      setContactCorrectionPreview(null);
+      setMessage('Je eigen dossier is veranderd. Open het contactmoment opnieuw.');
+      return;
+    }
+    const old = history.find(row => row.id === draft.id);
+    if (!old || !items.some(item => item.id === old.issueId)) {
+      setContactCorrectionPreview(null);
+      setMessage('Dit eigen contactmoment is niet langer aanwezig.');
+      return;
+    }
+    const updated: FollowUp = {...old, kind: draft.kind, day: draft.day, detail: draft.detail.trim()};
+    if (!validFollowUp(updated) || (updated.kind !== 'afspraak' && updated.day > today())) {
+      setContactCorrectionPreview(null);
+      setMessage('Controleer de datum, notitiesoort en privétekst. Alleen afspraken kunnen toekomstig zijn.');
+      return;
+    }
+    if (JSON.stringify(old) === JSON.stringify(updated)) {
+      setContactCorrectionPreview(null);
+      setMessage('Er zijn nog geen wijzigingen om te bewaren.');
+      return;
+    }
+    const next = history.map(row => row.id === updated.id ? updated : row);
+    if (new TextEncoder().encode(JSON.stringify({kind: KIND, schema: 2, items, history: next}, null, 2)).length > MAX_BYTES) {
+      setContactCorrectionPreview(null);
+      setMessage('Deze correctie past niet in je volledige 16 KiB herstel-JSON.');
+      return;
+    }
+    setContactCorrectionPreview({source: aftercareImportSignature,
+      draft: JSON.stringify(draft), updated});
+    setMessage('Controleer eerst de eigen oorspronkelijke en gecorrigeerde notitie.');
+  }
+  function confirmContactCorrection() {
+    if (!contactCorrectionCurrent || !contactCorrectionPreview ||
+        !validFollowUp(contactCorrectionPreview.updated)) {
+      setContactCorrectionPreview(null);
+      setMessage('Correctie geweigerd: bron of concept is inmiddels veranderd.');
+      return;
+    }
+    const updated = contactCorrectionPreview.updated;
+    const next = history.map(row => row.id === updated.id ? {...updated} : row);
+    if (new TextEncoder().encode(JSON.stringify({kind: KIND, schema: 2, items, history: next}, null, 2)).length > MAX_BYTES) {
+      setContactCorrectionPreview(null);
+      setMessage('Correctie geweigerd: herstelbestand zou groter dan 16 KiB zijn.');
+      return;
+    }
+    setContactCorrectionUndo({previous: history.map(row => ({...row})),
+      resultingSignature: JSON.stringify({items, history: next})});
+    setHistory(next);
+    setContactCorrection(null);
+    setContactCorrectionPreview(null);
+    setTimelineExportPreview(null);
+    setTimelineExportApproved(false);
+    setMessage('Eigen contactnotitie gecorrigeerd met behoud van ID; eenmalig herstel mogelijk.');
+  }
+  function undoContactCorrection() {
+    if (!contactCorrectionUndo || !contactCorrectionUndoCurrent) {
+      setMessage('Herstel geweigerd: het dossier veranderde na je correctie.');
+      return;
+    }
+    setHistory(contactCorrectionUndo.previous.map(row => ({...row})));
+    setContactCorrectionUndo(null);
+    setContactCorrection(null);
+    setContactCorrectionPreview(null);
+    setTimelineExportPreview(null);
+    setTimelineExportApproved(false);
+    setMessage('Vorige eigen contactnotitie in dit tabblad teruggezet; geen externe melding gewijzigd.');
+  }
+
   function rememberRemoval(nextItems: Item[], nextHistory: FollowUp[], label: string) {
     setRemovalUndo({
       previous: {items: items.map(item => ({...item})),
@@ -2443,6 +2540,12 @@ function PrivateMoveAftercare() {
                     onClick={() => openIssueFromInbox(item.id)}>
                     Open het bijbehorende eigen nazorgpunt ↓
                   </button>
+                  <button type="button" className="secondary" onClick={() => {
+                    beginContactCorrection(event);
+                    openIssueFromInbox(item.id);
+                  }}>
+                    Corrigeer deze eigen tijdlijnnotitie ↓
+                  </button>
                 </li>)}
             </ol>}
           {contactTimeline.length > 20 && <button type="button" className="secondary"
@@ -2694,6 +2797,21 @@ function PrivateMoveAftercare() {
               </div>
             </div>}
           </div>
+          {contactCorrectionUndo && <div className="aftercare-confirm"
+            role="group" aria-label="Contactcorrectie eenmalig terugzetten">
+            <h3>Mijn laatste contactcorrectie herstellen</h3>
+            <p>{contactCorrectionUndoCurrent
+              ? 'Je vorige eigen contacttekst en datum zijn tijdelijk in dit tabblad bewaard.'
+              : 'Je dossier is sindsdien gewijzigd. Oude gegevens mogen nieuwe invoer niet overschrijven.'}</p>
+            <div className="aftercare-actions">
+              <button type="button" className="secondary"
+                disabled={!contactCorrectionUndoCurrent} onClick={undoContactCorrection}>
+                Herstel vorige contactnotitie
+              </button>
+              <button type="button" className="secondary"
+                onClick={() => setContactCorrectionUndo(null)}>Vernietig dit herstelpunt</button>
+            </div>
+          </div>}
           {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave. Wis de filters om alles terug te zien.</p> :
             <ul className="aftercare-list">{shown.map(item =>
               <li className="aftercare-item" key={item.id}
@@ -2714,7 +2832,9 @@ function PrivateMoveAftercare() {
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
                 {item.note && <p className="aftercare-note">{item.note}</p>}
-                <details className="aftercare-history">
+                <details className="aftercare-history"
+                  open={Boolean(contactCorrection && history.some(event =>
+                    event.id === contactCorrection.id && event.issueId === item.id))}>
                   <summary>Mijn contacthistorie ({history.filter(event => event.issueId === item.id).length})</summary>
                   <p>Alleen wat je zelf invult. Geen e-mail-, verhuurder- of WoningNet-verificatie.</p>
                   {history.filter(event => event.issueId === item.id).length > 0 ?
@@ -2723,7 +2843,66 @@ function PrivateMoveAftercare() {
                       .map(log => <li key={log.id}>
                         <strong>{log.day} · {CONTACT_TYPES.find(type => type.id === log.kind)?.title}</strong>
                         <p className="aftercare-note">{log.detail}</p>
+                        <button type="button" className="secondary"
+                          onClick={() => beginContactCorrection(log)}>Corrigeer dit eigen moment…</button>
                         <button className="secondary" onClick={() => setHistoryDeletePending(log.id)}>Verwijder dit moment…</button>
+                        {contactCorrection?.id === log.id && <form className="aftercare-confirm"
+                          aria-label="Eigen contactnotitie corrigeren"
+                          onSubmit={event => { event.preventDefault(); previewContactCorrection(); }}>
+                          <h4>Mijn bestaande contactmoment corrigeren</h4>
+                          {contactCorrection.source !== aftercareImportSignature &&
+                            <p className="aftercare-warning" role="status">
+                              Het dossier is gewijzigd. Open deze notitie opnieuw vóór corrigeren.
+                            </p>}
+                          <label htmlFor={'nazorg-correct-kind-' + log.id}>Mijn contactsoort</label>
+                          <select id={'nazorg-correct-kind-' + log.id} value={contactCorrection.kind}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, kind: event.target.value as ContactKind});
+                              setContactCorrectionPreview(null);
+                            }}>
+                            {CONTACT_TYPES.map(type => <option key={type.id} value={type.id}>{type.title}</option>)}
+                          </select>
+                          <label htmlFor={'nazorg-correct-date-' + log.id}>Eigen datum</label>
+                          <input id={'nazorg-correct-date-' + log.id} type="date" required
+                            min="2020-01-01" max="2099-12-31" value={contactCorrection.day}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, day: event.target.value});
+                              setContactCorrectionPreview(null);
+                            }} />
+                          <label htmlFor={'nazorg-correct-text-' + log.id}>Mijn eigen privécontactnotitie</label>
+                          <textarea id={'nazorg-correct-text-' + log.id} required maxLength={240}
+                            value={contactCorrection.detail}
+                            onChange={event => {
+                              setContactCorrection({...contactCorrection, detail: event.target.value});
+                              setContactCorrectionPreview(null);
+                            }} />
+                          <div className="aftercare-actions">
+                            <button type="submit" disabled={contactCorrection.source !== aftercareImportSignature}>
+                              Bekijk mijn wijziging vóór bewaren
+                            </button>
+                            <button type="button" className="secondary"
+                              onClick={() => {setContactCorrection(null);setContactCorrectionPreview(null);}}>
+                              Annuleer zonder aanpassing
+                            </button>
+                          </div>
+                          {contactCorrectionPreview && <div className="aftercare-confirm"
+                            role="group" aria-label="Vergelijk oude en nieuwe contactnotitie">
+                            {!contactCorrectionCurrent && <p className="aftercare-warning" role="status">
+                              Bron of concept gewijzigd. Controleer opnieuw.</p>}
+                            <p><strong>Oorspronkelijk:</strong> {log.day} ·
+                              {' '}{CONTACT_TYPES.find(type => type.id === log.kind)?.title}</p>
+                            <p className="aftercare-note">{log.detail}</p>
+                            <p><strong>Na correctie:</strong> {contactCorrectionPreview.updated.day} ·
+                              {' '}{CONTACT_TYPES.find(type => type.id === contactCorrectionPreview.updated.kind)?.title}</p>
+                            <p className="aftercare-note">{contactCorrectionPreview.updated.detail}</p>
+                            <p>Alleen je eigen aantekening wordt aangepast. Bestaande correspondentie bij derden
+                              verandert niet en wordt hiermee niet geverifieerd.</p>
+                            <button type="button" disabled={!contactCorrectionCurrent}
+                              onClick={confirmContactCorrection}>
+                              Ja, bewaar precies deze correctie
+                            </button>
+                          </div>}
+                        </form>}
                         {historyDeletePending === log.id && <div className="aftercare-confirm">
                           <p>Contactmoment uit dit tabblad wissen?</p>
                           <div className="aftercare-actions">
