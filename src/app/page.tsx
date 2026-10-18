@@ -106,7 +106,7 @@ export default function HomePage() {
           <h2 id="nazorg-link-heading">Gebreken en open punten bijhouden</h2>
         </div>
         <div>
-          <p>Maak een privé-overzicht met eigen prioriteiten, streefdatums en opvolgstatussen. Bewaar op verzoek JSON, CSV of een leesbaar dossier. Er wordt niets naar een verhuurder of woningportaal verstuurd.</p>
+          <p>Doe eerst de begeleide startinspectie (22 controles), markeer zelf wat aandacht vraagt en zet alleen na bevestiging nieuwe punten in je privé-nazorgdossier. Beheer vervolgens deadlines, contactmomenten en optionele exports. Niets wordt naar een verhuurder of woningportaal verstuurd.</p>
           <p><a href="#nazorg">Open mijn privé-nazorgdossier ↓</a></p>
         </div>
       </section>
@@ -707,6 +707,14 @@ function PrivateMoveAftercare() {
         .aftercare .aftercare-note { white-space:pre-wrap; overflow-wrap:anywhere; }
         .aftercare .aftercare-warning { border-left:4px solid #9c5725; padding:12px; background:#fff5e9; margin:14px 0; }
         .aftercare .aftercare-confirm { border:2px solid #355e42; background:#edf2ee; padding:15px; border-radius:12px; margin:12px 0; }
+        .aftercare .aftercare-inspection-room { border:1px solid #bdcfc2; border-radius:10px; margin:12px 0; padding:12px 14px; background:#f8faf8; }
+        .aftercare .aftercare-inspection-room summary { cursor:pointer; padding:7px 0; font-size:17px; }
+        .aftercare .aftercare-inspection-check { border:1px solid #d7e3d9; border-radius:10px; background:#fff; margin:12px 0; padding:12px; min-width:0; }
+        .aftercare .aftercare-inspection-check legend { padding:0 4px; }
+        .aftercare .aftercare-inspection-check .aftercare-actions label { display:inline-flex; gap:7px; align-items:center; font-weight:600; margin:0; cursor:pointer; }
+        .aftercare .aftercare-inspection-check input[type="radio"] { display:inline-block; width:18px; min-width:18px; height:18px; min-height:18px; margin:0; padding:0; accent-color:#355e42; }
+        .aftercare .aftercare-inspection-room progress { display:block; }
+
         .aftercare .aftercare-stats { display:flex; flex-wrap:wrap; gap:12px; padding:0; list-style:none; }
         .aftercare .aftercare-stats li { background:#edf2ee; padding:10px 14px; border-radius:10px; }
         .aftercare .aftercare-check { display:flex; align-items:start; gap:10px; font-weight:500; margin:12px 0; }
