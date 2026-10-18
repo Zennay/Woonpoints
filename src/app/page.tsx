@@ -7,6 +7,43 @@ import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
+type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
+const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
+  {id:'projectstatus-heading',title:'Status',category:'essentieel'},
+  {id:'manual-progress-heading',title:'Maanddoel',category:'essentieel'},
+  {id:'private-month-pulse-heading',title:'Maandoverzicht en rapport',category:'essentieel'},
+  {id:'private-reaction-pacing-heading',title:'Maandplan',category:'reacties'},
+  {id:'private-points-heading',title:'Zoekpunten',category:'reacties'},
+  {id:'reaction-journal-title',title:'Reactiedagboek',category:'reacties'},
+  {id:'housing-shortlist-heading',title:'Woningen vergelijken',category:'woning'},
+  {id:'private-budget-title',title:'Woonkosten',category:'woning'},
+  {id:'private-commute-heading',title:'Woon-werk',category:'woning'},
+  {id:'private-longterm-title',title:'Meerjarenkosten',category:'woning'},
+  {id:'private-viewing-title',title:'Bezichtiging',category:'woning'},
+  {id:'private-photo-comparison-heading',title:'Fotovergelijking',category:'woning'},
+  {id:'private-plan-title',title:'Planner',category:'essentieel'},
+  {id:'private-moving-heading',title:'Verhuizen',category:'verhuizen'},
+  {id:'private-moving-volume-heading',title:'Verhuisvolume',category:'verhuizen'},
+  {id:'private-moving-workspace-heading',title:'Verhuiswerkmap',category:'verhuizen'},
+  {id:'private-moving-day-heading',title:'Verhuisdag',category:'verhuizen'},
+  {id:'private-packing-heading',title:'Paklijst',category:'verhuizen'},
+  {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
+  {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
+  {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
+  {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
+  {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
+  {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
+  {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
+  {id:'position-stats-heading',title:'Posities',category:'inzichten'},
+  {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
+  {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
+];
+const homeCategoryOptions=[
+  {id:'snel',label:'Snelstart'},{id:'alles',label:'Alles'},
+  {id:'reacties',label:'Reacties'},{id:'woning',label:'Woningen'},
+  {id:'verhuizen',label:'Verhuizen'},{id:'inzichten',label:'Inzichten'}
+] as const;
+
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
   ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
@@ -15,6 +52,14 @@ const cards = [
 ];
 
 export default function HomePage() {
+  const [navigationCategory,setNavigationCategory]=useState<'snel'|'alles'|HomeNavCategory>('snel');
+  const [navigationSearch,setNavigationSearch]=useState('');
+  const searchTerm=navigationSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const navigationResults=homepageDestinations.filter(destination=>{
+    if(searchTerm)return destination.title.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(searchTerm);
+    return navigationCategory==='alles'||(navigationCategory==='snel'?
+      destination.category==='essentieel':destination.category===navigationCategory);
+  });
   return (
     <main className="shell">
       <section className="hero">
