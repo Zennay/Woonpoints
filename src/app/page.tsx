@@ -1,6 +1,6 @@
 import ManualMonthProgress from './manual-month-progress';
 import PositionStats from './position-stats';
-import { ManualPositionsWorkspace } from './position-stats';
+import { ManualPositionsWorkspace, PrivateSearchPointsHistory } from './position-stats';
 import { ManualHousingDecisionWorkspace } from './position-stats';
 
 const cards = [
@@ -32,6 +32,7 @@ export default function HomePage() {
           {([
             ['projectstatus-heading', 'Status'],
             ['manual-progress-heading', 'Maanddoel'],
+            ['private-points-heading', 'Zoekpunten'],
             ['reaction-journal-title', 'Reacties'],
             ['housing-shortlist-heading', 'Woningen'],
             ['private-budget-title', 'Woonkosten'],
@@ -60,6 +61,7 @@ export default function HomePage() {
       </section>
 
       <ManualMonthProgress />
+      <PrivateSearchPointsHistory />
       <PositionStats />
       <ManualPositionsWorkspace />
       <ManualHousingDecisionWorkspace />
