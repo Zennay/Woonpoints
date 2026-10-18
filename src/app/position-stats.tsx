@@ -973,6 +973,109 @@ export function ManualReactionJournal({
             Toon genoteerde eindposities in maandgrafiek
           </button>
         )}
+        <section className="journal-monthly" aria-labelledby="journal-daily-heading"
+          style={{border:'1px solid #c7d7ce',borderRadius:12,padding:14,marginTop:16}}>
+          <h3 id="journal-daily-heading">Mijn dagelijkse reactieoverzicht</h3>
+          <p>Bekijk per dag wat je <strong>zelf hebt genoteerd</strong>. Alleen je eigen
+            status ‘Zelf gereageerd’ op datums tot en met vandaag telt in de
+            getoonde maandsom. Toekomstige ‘gereageerd’-markeringen worden apart
+            zichtbaar, nooit als reeds gedane of geldige reactie meegerekend.</p>
+          <label htmlFor="journal-calendar-month">Maand voor eigen kalender</label>
+          <select id="journal-calendar-month" value={calendarMonth}
+            onChange={event=>{
+              setJournalCalendarMonth(event.target.value);
+              setJournalCalendarDay(null);setCalendarApproved(false);
+            }}>
+            {calendarMonthChoices.map(month=><option key={month} value={month}>{month}</option>)}
+          </select>
+          <p><strong>{calendarMonthNotes}</strong> eigen notities in {calendarMonth}
+            {' · '}<strong>{calendarMonthReacted}</strong> door jou als gereageerd
+            gemarkeerd tot vandaag (geen geldigheidsbewijs)
+            {calendarUnverifiedDays>0?
+              ' · '+calendarUnverifiedDays+' toekomstige dag(en) met een gereageerd-markering':''}.
+          </p>
+          {calendarMonthReacted>=MANUAL_MONTHLY_GOAL&&
+            <p role="status">Minstens {MANUAL_MONTHLY_GOAL} eigen statusmarkeringen in deze
+              maand. Dit bevestigt NIET het officiële maanddoel bij WoningNet.</p>}
+          {calendarDays.length>0&&<div role="group" aria-label={'Kalender '+calendarMonth}
+            style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',gap:5,margin:'14px 0'}}>
+            {calendarDays.map(row=><button type="button" key={row.day}
+              aria-label={row.day+': '+row.total+' eigen notities, '+row.reacted+
+                ' zelf als gereageerd tot vandaag, '+row.planned+' gepland, '+
+                row.invited+' uitgenodigd'+(row.futureReacted?
+                  ', '+row.futureReacted+' toekomstige gereageerd-markeringen':'')}
+              aria-pressed={journalCalendarDay===row.day}
+              onClick={()=>showJournalDay(row.day)}
+              style={{minHeight:65,padding:4,textAlign:'center',
+                border:journalCalendarDay===row.day?'2px solid currentColor':undefined,
+                opacity:row.observed?1:0.75}}>
+              <strong>{row.day.slice(-2)}</strong><br/>
+              <span style={{fontSize:'0.8em'}}>{row.total===0?'—':row.total+' not.'}</span><br/>
+              <span style={{fontSize:'0.75em'}}>{row.reacted?
+                row.reacted+' gereag.':row.futureReacted?
+                row.futureReacted+' toekomst':row.planned?
+                row.planned+' plan':' '}</span>
+            </button>)}
+          </div>}
+          <div className="month-history-actions">
+            <button type="button" disabled={journalCalendarDay===null}
+              onClick={()=>{setJournalCalendarDay(null);setMonthFilter('all');
+                setMessage('Dagfilter opgeheven; al je eigen notities zijn weer zichtbaar.');}}>
+              Toon alle notities weer
+            </button>
+            <button type="button" disabled={journalCalendarDay===null ||
+              Boolean(pendingImport)||editingId!==null||entries.length>=100}
+              onClick={()=>{
+                if(!journalCalendarDay)return;
+                setDate(journalCalendarDay);setStatus('planned');
+                setRankInput('');setTotalInput('');
+                setMessage('Datum '+journalCalendarDay+
+                  ' ingevuld voor een nieuwe eigen notitie. Niets automatisch toegevoegd.');
+                document.getElementById('journal-date')?.scrollIntoView({behavior:'smooth',block:'center'});
+              }}>
+              Gebruik geselecteerde dag voor nieuwe notitie
+            </button>
+          </div>
+          {journalCalendarDay&&<p role="status">Eigen dagfilter actief:
+            {' '+journalCalendarDay}. Je kunt notities van die dag hieronder
+            bekijken of bewerken. Andere notities zijn alleen tijdelijk verborgen.</p>}
+          <div>
+            <h4>Eigen dagoverzicht bewaren</h4>
+            <p>Het dagoverzicht toont alleen datums en aantallen per status;
+              geen ruwe transcripties, adressen, namen of eindposities.
+              Er wordt niets automatisch opgeslagen of verzonden.</p>
+            <button type="button" disabled={calendarMonthNotes===0 ||
+              Boolean(pendingImport)}
+              onClick={prepareCalendarDaySummary}>Bekijk privé-dagoverzicht als TXT…</button>
+            {calendarPreview&&<div className="journal-confirm" role="group"
+              aria-label="Controleer exact privé-dagoverzicht">
+              {!calendarPreviewCurrent&&<p role="alert">
+                Maand, dagboek of invoer is veranderd. Maak een nieuwe actuele
+                voorvertoning; de oude goedkeuring is ongeldig.</p>}
+              <label htmlFor="journal-calendar-preview">Exacte tekst, uitsluitend
+                jouw handmatige totalen</label>
+              <textarea id="journal-calendar-preview" value={calendarPreview.text}
+                readOnly rows={12} style={{display:'block',width:'100%',maxWidth:'100%'}}/>
+              <label htmlFor="journal-calendar-approve" style={{display:'flex',
+                alignItems:'center',gap:8}}>
+                <input id="journal-calendar-approve" type="checkbox"
+                  checked={calendarApproved} disabled={!calendarPreviewCurrent}
+                  onChange={e=>setCalendarApproved(e.target.checked)} />
+                Ik heb de inhoud en privacygevolgen zelf nagekeken
+              </label>
+              <button type="button" disabled={!calendarPreviewCurrent||!calendarApproved}
+                onClick={downloadCalendarDaySummary}>
+                Download eigen dagoverzicht (TXT)
+              </button>
+              <button type="button" className="secondary"
+                onClick={()=>{setCalendarPreview(null);setCalendarApproved(false);
+                  setCalendarMessage('Voorvertoning gesloten zonder download.');}}>
+                Sluit zonder downloaden
+              </button>
+            </div>}
+            {calendarMessage&&<p role="status">{calendarMessage}</p>}
+          </div>
+        </section>
         {!!journal.months.length && (
           <div className="journal-monthly">
             <h3>Overzicht per ingevulde maand</h3>
@@ -997,7 +1100,7 @@ export function ManualReactionJournal({
           <>
             <label htmlFor="journal-filter">Toon reacties uit maand</label>
             <select id="journal-filter" value={monthFilter}
-              onChange={e => setMonthFilter(e.target.value)}>
+              onChange={e => {setMonthFilter(e.target.value);setJournalCalendarDay(null);}}>
               <option value="all">Alle ingevulde maanden</option>
               {journal.months.map(row =>
                 <option key={row.month} value={row.month}>{row.month}</option>)}
