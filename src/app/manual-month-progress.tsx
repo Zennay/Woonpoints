@@ -1776,6 +1776,25 @@ export function PrivateMovingDayTimeline() {
   const [pending, setPending] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<{ moveDate: string; completed: string[]; extras: ExtraTask[] } | null>(null);
   const [message, setMessage] = useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'timeline',data:{moveDate,completed,extras}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[moveDate,completed,extras]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setMoveDate(archive.timeline.moveDate);setCompleted(archive.timeline.completed);setExtras(archive.timeline.extras);setNewTask('');setNewOffset('-7');setPending(null);setPendingRestore(null);
+      setMessage('De planning is uit de privé-werkmap hersteld na je bevestiging.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
 
   const dateValid = dateOnly(moveDate) !== null;
   const tasks = [...DEFAULT_TASKS, ...extras]
@@ -1980,6 +1999,25 @@ export function PrivateMovingHandover() {
   const [pendingExport, setPendingExport] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'handover',data:{entries}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[entries]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setEntries(archive.handover.entries);setStage('in');setForm(handoverEmpty());setPendingSave(null);setPendingExport(null);setConfirmClear(false);
+      setNotice('Sleutel- en meteropnamen zijn uit de privé-werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
 
   function change<K extends keyof PrivateHandoverForm>(name:K, value:PrivateHandoverForm[K]) {
     setForm(old => ({...old, [name]:value}));
@@ -2145,6 +2183,25 @@ export function PrivateMoveDocumentReadiness(){
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [pendingClear,setPendingClear]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'documents',data:{extras,states,dates}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[extras,states,dates]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      setExtras(archive.documents.extras);setStates(archive.documents.states);setDates(archive.documents.dates);setTitle('');setPendingBackup(null);setPendingReport(null);setPendingClear(false);
+      setNotice('Documentstatussen zijn uit de privé-werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const docs=[...READINESS_DEFAULTS,...extras];
   const actionable=docs.filter(item=>(states[item.id]||'needed')!=='skip');
   const ready=actionable.filter(item=>states[item.id]==='ready').length;
@@ -3147,11 +3204,99 @@ type MovingWorkspaceArchive = {
 };
 type MovingWorkspaceSection = 'quotes' | 'expenses' | 'split';
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive {
+type MovingWorkspaceArchiveV2 = Omit<MovingWorkspaceArchive,'version'> & {
+  version: 2;
+  timeline: {moveDate:string;completed:string[];extras:ExtraTask[]};
+  handover: {entries:{in?:PrivateHandoverEntry;out?:PrivateHandoverEntry}};
+  documents: ReadinessBackup;
+};
+
+function validMovingWorkspaceTimeline(value:unknown):
+  value is MovingWorkspaceArchiveV2['timeline'] {
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const data=value as Record<string,unknown>;
+  if(Object.keys(data).sort().join('|')!=='completed|extras|moveDate' ||
+    typeof data.moveDate!=='string'||(data.moveDate!==''&&!dateOnly(data.moveDate))||
+    !Array.isArray(data.extras)||data.extras.length>6||
+    !Array.isArray(data.completed)||data.completed.length>15)return false;
+  const extraIds:string[]=[];
+  for(const item of data.extras){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const task=item as Record<string,unknown>;
+    if(Object.keys(task).sort().join('|')!=='group|id|offset|title' ||
+      typeof task.id!=='string'||!/^extra-[0-9]+-[0-9]+$/.test(task.id)||
+      typeof task.title!=='string'||!task.title.trim()||task.title.length>60||
+      task.title!==task.title.trim()||
+      task.group!=='Eigen taak'||typeof task.offset!=='number'||
+      !Number.isInteger(task.offset)||task.offset < -120||task.offset > 60)return false;
+    extraIds.push(task.id);
+  }
+  const validIds=new Set([...DEFAULT_TASKS.map(t=>t.id),...extraIds]);
+  return validIds.size===DEFAULT_TASKS.length+extraIds.length &&
+    data.completed.every((id:unknown)=>typeof id==='string'&&validIds.has(id)) &&
+    new Set(data.completed).size===data.completed.length;
+}
+function validMovingWorkspaceHandover(value:unknown):
+  value is MovingWorkspaceArchiveV2['handover']{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const envelope=value as Record<string,unknown>;
+  if(Object.keys(envelope).join('|')!=='entries'||!envelope.entries||
+    typeof envelope.entries!=='object'||Array.isArray(envelope.entries))return false;
+  const entries=envelope.entries as Record<string,unknown>;
+  if(Object.keys(entries).some(k=>k!=='in'&&k!=='out'))return false;
+  for(const item of Object.values(entries)){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const row=item as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='day|electricity|gas|keys|property|remarks|water'||
+      typeof row.day!=='string'||!dateOnly(row.day)||
+      typeof row.property!=='string'||row.property.length>70||
+      typeof row.keys!=='number'||!Number.isInteger(row.keys)||row.keys<0||row.keys>99||
+      typeof row.remarks!=='string'||row.remarks.length>900)return false;
+    for(const meter of ['electricity','gas','water']){
+      if(typeof row[meter]!=='string'||handoverMeter(row[meter] as string)===null)return false;
+    }
+  }
+  return true;
+}
+function validMovingWorkspaceDocuments(value:unknown):
+  value is ReadinessBackup {
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const doc=value as Record<string,unknown>;
+  if(Object.keys(doc).sort().join('|')!=='dates|extras|states'||
+    !Array.isArray(doc.extras)||doc.extras.length>8||
+    !doc.states||typeof doc.states!=='object'||Array.isArray(doc.states)||
+    !doc.dates||typeof doc.dates!=='object'||Array.isArray(doc.dates))return false;
+  const ids=READINESS_DEFAULTS.map(item=>item.id);
+  for(const raw of doc.extras){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+    const extra=raw as Record<string,unknown>;
+    if(Object.keys(extra).sort().join('|')!=='id|title' ||
+      typeof extra.id!=='string'||!/^custom-[0-9]+-[0-9]+$/.test(extra.id)||
+      typeof extra.title!=='string'||!extra.title.trim()||extra.title.length>60||
+      extra.title!==extra.title.trim())return false;
+    ids.push(extra.id);
+  }
+  const allowed=new Set(ids);
+  if(allowed.size!==ids.length)return false;
+  const states=doc.states as Record<string,unknown>,dates=doc.dates as Record<string,unknown>;
+  if(Object.keys(states).length>16||Object.keys(dates).length>16)return false;
+  return Object.keys(states).every(key=>
+      allowed.has(key)&&['needed','ready','skip'].includes(String(states[key]))) &&
+    Object.keys(dates).every(key=>
+      allowed.has(key)&&typeof dates[key]==='string'&&
+      (dates[key]===''||dateOnly(dates[key] as string)!==null));
+}
+
+
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  if(Object.keys(obj).sort().join('|')!=='expenses|format|quotes|split|version' ||
-    obj.format !== 'woonpoints-private-moving-workspace' || obj.version !== 1)return false;
+  const v2=obj.version===2;
+  const keys=Object.keys(obj).sort().join('|');
+  if(keys!==(v2?'documents|expenses|format|handover|quotes|split|timeline|version':
+    'expenses|format|quotes|split|version') ||
+    obj.format !== 'woonpoints-private-moving-workspace' ||
+    (obj.version!==1&&!v2))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3174,9 +3319,12 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const quoteIds=(quotes.quotes as MovingQuote[]).map(q=>q.id);
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
-    new Set(expenseIds).size===expenseIds.length;
+    new Set(expenseIds).size===expenseIds.length &&
+    (!v2 || (validMovingWorkspaceTimeline(obj.timeline)&&
+      validMovingWorkspaceHandover(obj.handover)&&
+      validMovingWorkspaceDocuments(obj.documents)));
 }
-function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive):string{
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2):string{
   return JSON.stringify(data);
 }
 
@@ -3189,7 +3337,10 @@ export function PrivateMovingWorkspace() {
   const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
   const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
   const [split,setSplit]=useState<MovingWorkspaceArchive['split']|null>(null);
-  const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|null>(null);
+  const [timeline,setTimeline]=useState<MovingWorkspaceArchiveV2['timeline']|null>(null);
+  const [handover,setHandover]=useState<MovingWorkspaceArchiveV2['handover']|null>(null);
+  const [documents,setDocuments]=useState<MovingWorkspaceArchiveV2['documents']|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|null>(null);
   const [pendingExport,setPendingExport]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
@@ -3211,6 +3362,12 @@ export function PrivateMovingWorkspace() {
         if(d && Array.isArray(d.members)&&d.members.length>=2&&d.members.length<=4&&
           d.members.every((m,index)=>privateSplitValidMember(m,index)))
           setSplit({members:d.members,total:d.total});
+      }else if(item.section==='timeline'){
+        if(validMovingWorkspaceTimeline(item.data))setTimeline(item.data);
+      }else if(item.section==='handover'){
+        if(validMovingWorkspaceHandover(item.data))setHandover(item.data);
+      }else if(item.section==='documents'){
+        if(validMovingWorkspaceDocuments(item.data))setDocuments(item.data);
       }
     }
     window.addEventListener('woonpoints:moving-workspace:snapshot',capture);
@@ -3224,10 +3381,12 @@ export function PrivateMovingWorkspace() {
       window.removeEventListener('woonpoints:moving-workspace:snapshot',capture);
     };
   },[]);
-  const complete=quotes!==null&&expenses!==null&&split!==null;
-  const archive:MovingWorkspaceArchive|null=complete?{
-    format:'woonpoints-private-moving-workspace',version:1,
-    quotes:quotes!,expenses:expenses!,split:split!
+  const complete=quotes!==null&&expenses!==null&&split!==null&&
+    timeline!==null&&handover!==null&&documents!==null;
+  const archive:MovingWorkspaceArchiveV2|null=complete?{
+    format:'woonpoints-private-moving-workspace',version:2,
+    quotes:quotes!,expenses:expenses!,split:split!,
+    timeline:timeline!,handover:handover!,documents:documents!
   }:null;
   const signature=archive?privateMovingWorkspaceSignature(archive):'';
   const quoteCount=quotes?.quotes.length??0;
@@ -3239,6 +3398,12 @@ export function PrivateMovingWorkspace() {
   const selectedQuote=quotes?.quotes.find(q=>q.id===quotes.selected);
   const splitAmount=split?.total?expenseCents(split.total):null;
   const potentialMismatch=splitAmount!==null&&splitAmount!==planned;
+  const totalTimelineTasks=timeline?DEFAULT_TASKS.length+timeline.extras.length:0;
+  const completeTimelineTasks=timeline?.completed.length??0;
+  const handoverCount=handover?Number(!!handover.entries.in)+Number(!!handover.entries.out):0;
+  const documentItems=documents?[...READINESS_DEFAULTS,...documents.extras]:[];
+  const relevantDocumentItems=documentItems.filter(doc=>documents?.states[doc.id]!=='skip');
+  const readyDocumentItems=relevantDocumentItems.filter(doc=>documents?.states[doc.id]==='ready');
   function exportWorkspace(){
     if(!archive||pendingExport!==signature){
       setPendingExport(null);
@@ -3277,15 +3442,17 @@ export function PrivateMovingWorkspace() {
       detail:imported
     }));
     setPendingRestore(null);setPendingExport(null);
-    setNotice('Alle drie privé-onderdelen zijn in dit tabblad vervangen, zonder externe broncontrole of netwerkverzoek.');
+    setNotice(imported.version===2?
+      'Alle zes privé-onderdelen zijn na bevestiging vervangen, zonder netwerkverzoek of accountcontrole.':
+      'Bestaande werkmap v1 hersteld: alleen offertes, kosten en verdeling vervangen. Planning, overdracht en documenten zijn behouden.');
   }
   return (
     <section className="panel" aria-labelledby="private-moving-workspace-heading">
       <p className="eyebrow">VERHUISWERKMAP · LOKAAL IN ÉÉN TABBLAD</p>
       <h2 id="private-moving-workspace-heading">Je verhuisoverzicht in één werkmap</h2>
-      <p>Hier komen je eigen offertes, verhuiskosten en gedeelde verdeling samen.
-        De werkmap leest uitsluitend de drie lokale schermen hieronder; er wordt
-        niets naar WoningNet, een leverancier, bank of cloud verstuurd.</p>
+      <p>Je eigen planning, sleuteloverdracht, documenten, offertes, verhuiskosten
+        en kostenverdeling bij elkaar. Alle gegevens blijven alleen in dit tabblad;
+        er wordt niets naar WoningNet, een leverancier, bank of cloud verstuurd.</p>
       <dl>
         <div><dt>Eigen offertes</dt><dd>{quotes===null?'Nog laden':quoteCount}
           {selectedQuote?' · Eigen keuze: '+selectedQuote.name:''}</dd></div>
@@ -3294,6 +3461,12 @@ export function PrivateMovingWorkspace() {
         <div><dt>Zelf ingevulde werkelijke bedragen</dt><dd>
           {expenses===null?'Onbekend':expenseAmount(actual)+' ('+known+'/'+expenseCount+' ingevuld)'}</dd></div>
         <div><dt>Te verdelen totaal</dt><dd>{splitAmount===null?'Onbekend':expenseAmount(splitAmount)}</dd></div>
+        <div><dt>Verhuisplanning</dt><dd>{timeline===null?'Nog laden':
+          completeTimelineTasks+' van '+totalTimelineTasks+' zelf afgevinkt'}</dd></div>
+        <div><dt>Sleutel-/meteropnamen</dt><dd>{handover===null?'Nog laden':
+          handoverCount+' van 2 eigen opnamen'}</dd></div>
+        <div><dt>Eigen documentenstatus</dt><dd>{documents===null?'Nog laden':
+          readyDocumentItems.length+' van '+relevantDocumentItems.length+' toepasselijke regels'}</dd></div>
       </dl>
       {potentialMismatch&&<p role="status">Het eigen verdeeltotaal wijkt af van de kostenbegroting.
         Controleer zelf wat je wilt verdelen; dit wordt niet automatisch aangepast.</p>}
@@ -3303,23 +3476,31 @@ export function PrivateMovingWorkspace() {
       <div>
         <a href="#private-moving-quotes-heading">Naar offertes</a>{' · '}
         <a href="#private-moving-expenses-heading">Naar kostenboek</a>{' · '}
-        <a href="#private-cost-split-heading">Naar kosten delen</a>
+        <a href="#private-cost-split-heading">Naar kosten delen</a>{' · '}
+        <a href="#private-moving-day-heading">Planning</a>{' · '}
+        <a href="#private-handover-heading">Sleuteloverdracht</a>{' · '}
+        <a href="#private-document-readiness-heading">Documenten</a>
       </div>
       <h3>Je eigen volledige werkmap bewaren</h3>
       <p>Deze gecombineerde privé-JSON bevat ook alle zelf ingevoerde namen, notities,
-        betaalbedragen en offertes. Niets wordt op de achtergrond opgeslagen.
+        betaalbedragen, offertes, verhuisdata, sleutel- en meterstanden en documentenstatus.
+        Niets wordt op de achtergrond opgeslagen.
         Sla alleen bewust op en controleer of je opslaglocatie synchroniseert.</p>
       <button type="button" disabled={!complete} onClick={()=>{
         setPendingExport(signature);setNotice('');
       }}>Bekijk gecombineerde privé-JSON-export…</button>
       {archive&&pendingExport===signature&&<div role="group" aria-label="Bevestig gecombineerde werkmap-export">
-        <p>Deze export bevat <strong>{quoteCount} eigen offerte(s)</strong>,
-          <strong> {expenseCount} kostenpost(en)</strong> en <strong>{split!.members.length} deelnemers</strong>.
-          Alle privé-invoer uit die drie onderdelen gaat mee. Je gegevens worden niet extern gecontroleerd.</p>
+        <p>Versie 2 bevat <strong>{quoteCount} offerte(s)</strong>,
+          <strong> {expenseCount} kostenpost(en)</strong>,
+          <strong> {split!.members.length} deelnemers</strong>,
+          <strong> {totalTimelineTasks} geplande taken</strong>,
+          <strong> {handoverCount} opname(n)</strong> en
+          <strong> {documentItems.length} documentenregels</strong>.
+          Ook persoonlijke notities en meterstanden worden mee geëxporteerd.</p>
         <button type="button" onClick={exportWorkspace}>Bevestig volledige JSON-download</button>
         <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
       </div>}
-      <label htmlFor="private-moving-workspace-upload">Herstel een volledige privé-werkmap (JSON, max. 32 KiB)</label>
+      <label htmlFor="private-moving-workspace-upload">Herstel een eigen werkmap v1 of v2 (JSON, max. 32 KiB)</label>
       <input id="private-moving-workspace-upload" type="file" accept=".json,application/json"
         onChange={event=>{
           const file=event.currentTarget.files?.[0];
@@ -3327,11 +3508,14 @@ export function PrivateMovingWorkspace() {
           void prepareRestore(file);
         }} />
       {pendingRestore&&<div role="group" aria-label="Bevestig volledige privé-werkmap herstellen">
-        <p>De ingelezen versie bevat <strong>{pendingRestore.quotes.quotes.length} offerte(s)</strong>,
+        <p>Werkmap <strong>versie {pendingRestore.version}</strong> bevat
+          <strong> {pendingRestore.quotes.quotes.length} offerte(s)</strong>,
           <strong> {pendingRestore.expenses.lines.length} kostenpost(en)</strong> en
           <strong> {pendingRestore.split.members.length} deelnemers</strong>.
-          Bevestigen <strong>vervangt alle drie bestaande werkvelden en eventuele niet-opgeslagen
-          invoer</strong> in dit tabblad. Een apart opgeslagen bestand blijft ongewijzigd.</p>
+          {pendingRestore.version===2?
+            ' Dit bestand bevat ook je planning, sleutel- en meteropnamen en documentenstatus. Bevestigen vervangt alle zes onderdelen inclusief onbewaarde invoer.':
+            ' Een oudere versie-1-werkmap vervangt alleen deze drie onderdelen; planning, overdracht en documenten blijven behouden.'}
+          Een eerder opgeslagen bestand blijft ongewijzigd.</p>
         <button type="button" onClick={restoreWorkspace}>Bevestig complete werkmap vervangen</button>
         <button type="button" onClick={()=>{
           setPendingRestore(null);setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
