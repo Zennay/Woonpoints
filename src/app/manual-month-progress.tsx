@@ -1315,7 +1315,7 @@ export function PrivateMovingVolume() {
     }
     setItems(pendingArchive.rows.map(row=>({...row,id:nextId.current++})));
     setMargin(pendingArchive.margin);setCapacity(pendingArchive.capacity);
-    setPreview(null);setPendingArchive(null);
+    setPreview(null);setPendingArchive(null);setBudgetReport(null);
     setMessage('Eigen inventaris bewust in dit tabblad hersteld. Niets is extern verstuurd.');
   }
 
@@ -1458,6 +1458,65 @@ export function PrivateMovingVolume() {
           <p>Een nulhoeveelheid telt niet mee. Een ritindicatie kan te laag zijn
             als goederen niet stapelbaar zijn of de bus een lagere gewichtslimiet heeft.</p>
         </div>}
+      <div className="month-csv-confirm" aria-labelledby="private-moving-budget-heading">
+        <h3 id="private-moving-budget-heading">Begroot je eigen verhuizing</h3>
+        <p>Maak een voorzichtig <strong>eigen kostenplaatje</strong>. Gebruik
+          minimaal evenveel geplande ritten als de volumematige ondergrens.
+          Kies zelf kosten per rit, hulpuurtarief, inpakkosten en een reserve.
+          Het gaat niet om een actuele prijs, offerte of beladingsgarantie.</p>
+        {([
+          ['plannedTrips','Zelf gepland aantal ritten (0–300, niet minder dan de volumeschatting)'],
+          ['euroPerTrip','Eigen voertuigkosten per rit (€)'],
+          ['laborHours','Zelf geplande betaalde hulpuren'],
+          ['helperHourlyEuro','Zelf geraamd bedrag per hulpuur (€)'],
+          ['materialsEuro','Dozen en inpakmateriaal (€)'],
+          ['otherEuro','Andere eigen verhuiskosten (€)'],
+          ['reservePct','Extra reserveruimte voor onverwachte kosten (%)']
+        ] as const).map(([key,label])=><div key={key}>
+          <label htmlFor={'mv-budget-'+key}>{label}</label>
+          <input id={'mv-budget-'+key} type="text" inputMode="decimal"
+            maxLength={10} value={budget[key]} onChange={e=>{
+              setBudget(current=>({...current,[key]:e.target.value}));
+              setBudgetReport(null);setMessage('');
+            }}/>
+        </div>)}
+        {!costValid ? <p role="alert">Geen bruikbare begroting: kies geldige
+          kosten, reserve van 0–50% en minimaal {trips} eigen rit(ten).
+          Maximumbedragen en aantallen zijn begrensd. Je
+          volumeberekening en inventaris blijven bruikbaar.</p>:
+          <div aria-live="polite">
+            <dl>
+              <div><dt>Voertuigritten</dt><dd>€{fmt(vehicleExpense)}</dd></div>
+              <div><dt>Betaalde hulp</dt><dd>€{fmt(helpersExpense)}</dd></div>
+              <div><dt>Subtotaal incl. materialen en overige kosten</dt>
+                <dd>€{fmt(preReserveCost)}</dd></div>
+              <div><dt>Jouw onvoorziene reserve</dt><dd>€{fmt(reserveExpense)}</dd></div>
+              <div><dt><strong>Totaal eigen kostenplaatje</strong></dt>
+                <dd><strong>€{fmt(finalMovingCost)}</strong></dd></div>
+              <div><dt>Een extra rit, exclusief overige wijzigingen</dt>
+                <dd>+ €{fmt(costValues.euroPerTrip!)}</dd></div>
+            </dl>
+            <p>De geplande ritten zijn een eigen inschatting, geen
+              gegarandeerde laadcapaciteit. Neem gewicht, tillen,
+              toegang en eventuele vergunningen zelf mee.</p>
+          </div>}
+        <button type="button" disabled={!costValid} onClick={prepareMovingBudget}>
+          Bekijk eigen verhuiskosten-TXT eerst…
+        </button>
+        {budgetReport&&<div role="group" aria-label="Bevestig eigen verhuisbudgetexport">
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{budgetReport.text}</pre>
+          <button type="button" disabled={!costValid||budgetReport.signature!==budgetSignature}
+            onClick={saveMovingBudget}>
+            Ja, bewaar alleen dit budget als privé-TXT…
+          </button>
+          <button type="button" className="secondary" onClick={()=>{
+            setBudgetReport(null);setMessage('Budgetexport geannuleerd; geen bestand gemaakt.');
+          }}>Nee, alleen bekijken</button>
+        </div>}
+        <p>Je begroting wordt alleen op dit scherm vastgehouden en staat niet
+          in de afzonderlijke JSON-inventaris. Bewaar desgewenst een
+          eigen TXT-samenvatting om dit bedrag later terug te vinden.</p>
+      </div>
       <div className="month-csv-confirm">
         <h3>Eigen inventaris bewust bewaren of herstellen</h3>
         <p>Bewaar een volledige privé-JSON om je maten en aantallen later
@@ -1502,6 +1561,7 @@ export function PrivateMovingVolume() {
       </div>
       <button type="button" className="secondary" onClick={()=>{
         setItems(initial.map(row=>({...row})));setMargin('15');setCapacity('10');
+        setBudget(budgetDefaults);setBudgetReport(null);
         setPreview(null);setMessage('Eigen invoer gewist; fictieve voorbeelden hersteld.');
       }}>Wis mijn invoer en herstel voorbeelden</button>
       <p role="status">{message}</p>
