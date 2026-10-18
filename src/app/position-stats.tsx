@@ -4065,8 +4065,8 @@ export function PrivateReactionPacing() {
     }
     lines.push('END:VCALENDAR');
     // All emitted characters are ASCII; fold calendar physical lines below 75 bytes.
-    const fold = (line: string) => line.match(/.{1,73}/g)?.join('\\r\\n ') ?? line;
-    const uri = URL.createObjectURL(new Blob([lines.map(fold).join('\\r\\n')+'\\r\\n'],
+    const fold = (line: string) => line.match(/.{1,73}/g)?.join('\r\n ') ?? line;
+    const uri = URL.createObjectURL(new Blob([lines.map(fold).join('\r\n')+'\r\n'],
       {type:'text/calendar;charset=utf-8'}));
     const link = document.createElement('a');
     link.href = uri;
