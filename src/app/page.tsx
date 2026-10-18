@@ -2919,6 +2919,73 @@ function PrivateMoveAftercare() {
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
                 {item.note && <p className="aftercare-note">{item.note}</p>}
+                <button type="button" className="secondary"
+                  onClick={() => openCaseSheet(item.id)}>Maak mijn privé-puntoverzicht…</button>
+                {caseSheetItemId === item.id && <div className="aftercare-confirm"
+                  role="group" aria-label="Eén eigen aandachtspunt zorgvuldig overdragen">
+                  <h4>Alleen dit eigen nazorgpunt voorbereiden</h4>
+                  <p>Dit overzicht bevat uitsluitend {item.room}: {item.title} en de
+                    {' '}{history.filter(row => row.issueId === item.id).length} bijbehorende
+                    zelf genoteerde contactmomenten. Het is géén officiële melding of bewijsstuk.</p>
+                  <label className="aftercare-check"
+                    htmlFor={'nazorg-case-include-note-' + item.id}>
+                    <input id={'nazorg-case-include-note-' + item.id} type="checkbox"
+                      checked={caseSheetIncludeItemNote}
+                      onChange={event => {
+                        setCaseSheetIncludeItemNote(event.target.checked);
+                        setCaseSheetPreview(null); setCaseSheetApproved(false);
+                      }} />
+                    Neem mijn vrije privétoelichting bij dit punt bewust op
+                  </label>
+                  <label className="aftercare-check"
+                    htmlFor={'nazorg-case-include-contacts-' + item.id}>
+                    <input id={'nazorg-case-include-contacts-' + item.id} type="checkbox"
+                      checked={caseSheetIncludeContactDetails}
+                      onChange={event => {
+                        setCaseSheetIncludeContactDetails(event.target.checked);
+                        setCaseSheetPreview(null); setCaseSheetApproved(false);
+                      }} />
+                    Neem mijn vrije privécontactteksten bewust op
+                  </label>
+                  <p>De eigen datums, status, titel en contactsoorten zijn zichtbaar.
+                    Beide soorten vrije privétekst blijven standaard uit.</p>
+                  <div className="aftercare-actions">
+                    <button type="button" onClick={prepareCaseSheet}>
+                      Bekijk de volledige tekst vóór downloaden
+                    </button>
+                    <button type="button" className="secondary"
+                      onClick={() => {
+                        setCaseSheetItemId(null);
+                        setCaseSheetPreview(null);
+                        setCaseSheetApproved(false);
+                      }}>Sluit zonder downloaden</button>
+                  </div>
+                  {caseSheetPreview && <div className="aftercare-confirm"
+                    role="group" aria-label="Eigen nazorgpuntoverzicht controleren">
+                    <p>Dit bestand bevat precies één eigen punt met
+                      {' '}{caseSheetPreview.contactCount} bijbehorende contactmomenten.</p>
+                    {!caseSheetCurrent && <p className="aftercare-warning" role="status">
+                      Het dossier of je privacykeuze is veranderd. Maak een nieuwe voorvertoning.
+                    </p>}
+                    <details className="aftercare-history" open={caseSheetCurrent}>
+                      <summary>Bekijk mijn hele daadwerkelijke privébestand</summary>
+                      <pre className="aftercare-note" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                        {caseSheetPreview.content}
+                      </pre>
+                    </details>
+                    <label className="aftercare-check"
+                      htmlFor={'nazorg-case-approve-' + item.id}>
+                      <input id={'nazorg-case-approve-' + item.id} type="checkbox"
+                        checked={caseSheetApproved && caseSheetCurrent}
+                        disabled={!caseSheetCurrent}
+                        onChange={event => setCaseSheetApproved(event.target.checked)} />
+                      Ik heb het volledige actuele overzicht bekeken en bepaal zelf of en
+                      waar ik dit privébestand bewaar.
+                    </label>
+                    <button type="button" disabled={!caseSheetApproved || !caseSheetCurrent}
+                      onClick={confirmCaseSheet}>Download precies dit gecontroleerde puntoverzicht</button>
+                  </div>}
+                </div>}
                 <details className="aftercare-history"
                   open={Boolean(contactCorrection && history.some(event =>
                     event.id === contactCorrection.id && event.issueId === item.id))}>
