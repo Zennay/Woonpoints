@@ -511,7 +511,7 @@ export function ManualReactionJournal({
   const calendarMonth = journalCalendarMonth || currentJournalMonth;
   const calendarYear = Number(calendarMonth.slice(0,4));
   const calendarNumber = Number(calendarMonth.slice(5,7));
-  const calendarValid = /^20\\d{2}-(?:0[1-9]|1[0-2])$/.test(calendarMonth) &&
+  const calendarValid = /^20\d{2}-(?:0[1-9]|1[0-2])$/.test(calendarMonth) &&
     calendarYear >= 2000 && calendarYear <= 2099;
   const calendarDaysInMonth = calendarValid ?
     new Date(Date.UTC(calendarYear,calendarNumber,0)).getUTCDate() : 0;
@@ -682,7 +682,7 @@ export function ManualReactionJournal({
       summarizeManualReactionJournal(candidate);
       setEntries(candidate);setEditingId(null);
       setConfirmClearAll(false);
-      setMonthFilter('all'); // Reveal the corrected row if its date moved outside the old filter.
+      setMonthFilter('all');setJournalCalendarDay(null); // Reveal the corrected row if its date moved outside the old filter.
       setMessage('Je eigen datum, status en eindpositie zijn bijgewerkt. Dit verandert geen officiële woningreactie.');
     } catch {
       setMessage('Datum of eindpositie is ongeldig; de oorspronkelijke notitie is behouden.');
@@ -806,7 +806,7 @@ export function ManualReactionJournal({
       setPendingImportSource(null);
       setRecentlyRemoved(null);
       setConfirmClearAll(false);
-      setMonthFilter('all');
+      setMonthFilter('all');setJournalCalendarDay(null);
       setMessage(mode==='append'
         ? 'Eigen CSV-notities toegevoegd zonder eerdere notities te vervangen. Eén terugzetactie is tijdelijk beschikbaar.'
         : 'Eigen CSV-notities hebben de oude tabbladgegevens na jouw bevestiging vervangen.');
@@ -824,7 +824,7 @@ export function ManualReactionJournal({
     setMergeUndo(null);
     setRecentlyRemoved(null);
     setConfirmClearAll(false);
-    setMonthFilter('all');
+    setMonthFilter('all');setJournalCalendarDay(null);
     setMessage('De laatst aangevulde CSV-notities zijn teruggedraaid. Je eerdere tabbladnotities zijn hersteld.');
   }
 
@@ -1019,7 +1019,7 @@ export function ManualReactionJournal({
           </div>}
           <div className="month-history-actions">
             <button type="button" disabled={journalCalendarDay===null}
-              onClick={()=>{setJournalCalendarDay(null);setMonthFilter('all');
+              onClick={()=>{setJournalCalendarDay(null);setMonthFilter('all');setJournalCalendarDay(null);
                 setMessage('Dagfilter opgeheven; al je eigen notities zijn weer zichtbaar.');}}>
               Toon alle notities weer
             </button>
@@ -1170,7 +1170,7 @@ export function ManualReactionJournal({
                 setEditingId(null);
                 setRecentlyRemoved(null);
                 setConfirmClearAll(false);
-                setMonthFilter('all');
+                setMonthFilter('all');setJournalCalendarDay(null);
                 setMessage('Alle eigen notities na bevestiging gewist. Er is niets op WoningNet gewijzigd.');
               }}>Ja, wis echt alle notities</button>
               <button type="button" onClick={()=>{
