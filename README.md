@@ -902,3 +902,33 @@ WoningNet-integratie of VPS-werklast. Wissen/verversen verwijdert de
 gegevens uit de app, maar niet eventuele zelf gedownloade bestanden.
 De bestaande verhuischecklist, woningvergelijking en
 `BOT_DRY_RUN=true` worden niet gewijzigd.
+
+
+### Zelf begrote verhuiskosten (geen offerte)
+
+Onder **Verhuisvolume → Begroot je eigen verhuizing** staat nu een
+losse, privacyvriendelijke schatting van de **totale eenmalige
+verhuiskosten**, opgebouwd uit het door de gebruiker gewenste aantal
+ritten, zelf geraamde vervoerskosten per rit, betaalde hulpuren en
+uurtarief, inpakmateriaal, overige eigen kosten en onvoorziene
+kostenreserve. Het aantal begrote ritten mag niet lager zijn dan
+de eerder berekende volumematige minimumritten; wanneer er niets
+te vervoeren is mag het aantal 0 zijn. Invoervelden zijn begrensd
+en ongeldige of onvolledige bedragen blokkeren de budgetuitkomst
+zonder de afzonderlijke inventaris onbruikbaar te maken.
+
+Woonpoints toont het **subtotaal, reserve, eigen totaal** en de
+extra kosten van één bijkomende voertuigrit, zonder impliciet
+toegang, voertuigpasvorm, gewichtslimieten, werkelijk aantal
+ritten, vergunningsregels of actuele prijzen te garanderen.
+Alle getallen zijn uitsluitend door de gebruiker gekozen
+scenario's en vormen geen offerte, financieel of verhuisadvies.
+
+Een eigen TXT-rapport vereist eerst een zichtbare inhoudscontrole
+en daarna een aparte downloadbevestiging. Het rapport bevat alleen
+eigen aannames en het kostenresultaat, geen adres, account, voertuig-
+of persoonsgegevens. Bij wijziging van invoer vervalt het eerdere
+concept. **De apart op te slaan JSON-inventaris bevat bewust geen
+kostenbudget**; wie ook een begroting wil bewaren kiest
+de aparte TXT-export. Geen browseropslag, upload, automatische
+afspraken of wijzigingen aan andere Woonpoints-onderdelen.
