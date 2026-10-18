@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner } from './position-stats';
@@ -58,6 +58,14 @@ const cards = [
 
 export default function HomePage() {
   const [navigationCategory,setNavigationCategory]=useState<'snel'|'alles'|HomeNavCategory>('snel');
+  const [contactIntent,setContactIntent]=useState<{
+    utility:PrivateUtilityKey; revision:number
+  }|null>(null);
+  function startUtilityContact(utility:PrivateUtilityKey) {
+    setContactIntent(previous=>({utility,revision:(previous?.revision??0)+1}));
+    window.setTimeout(()=>document.getElementById('private-utility-contacts-heading')
+      ?.scrollIntoView({behavior:'smooth',block:'start'}),0);
+  }
   const [navigationSearch,setNavigationSearch]=useState('');
   const searchTerm=navigationSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
   const navigationResults=homepageDestinations.filter(destination=>{
@@ -148,8 +156,8 @@ export default function HomePage() {
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
       <PrivateMeterHandover />
-      <PrivateUtilityTransfer />
-      <PrivateUtilityContactLog />
+      <PrivateUtilityTransfer onLogContact={startUtilityContact} />
+      <PrivateUtilityContactLog intent={contactIntent} />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
@@ -4623,7 +4631,9 @@ function PrivateUtilityDeadlineDesk({
  * or local storage. A calendar file may be shared by an external calendar app
  * only after an explicit full preview and a separate user consent checkbox.
  */
-function PrivateUtilityTransfer() {
+function PrivateUtilityTransfer({
+  onLogContact
+}: { onLogContact?: (utility:PrivateUtilityKey)=>void }={}) {
   const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
     PRIVATE_UTILITY_EMPTY);
   const [preview, setPreview] = useState<{
@@ -4735,6 +4745,10 @@ function PrivateUtilityTransfer() {
       }}>
         <legend><strong>{item.name}</strong></legend>
         <p>{item.guidance}</p>
+        {onLogContact && <button type="button" className="secondary"
+          onClick={()=>onLogContact(item.id)}>
+          Noteer mijn contact over {item.name.toLocaleLowerCase('nl-NL')} ↓
+        </button>}
         <label style={{ display: 'block', fontWeight: 700 }}>
           Mijn eigen voortgang
           <select value={entries[item.id].state} onChange={event =>
@@ -4930,9 +4944,14 @@ function privateContactCalendar(entries: PrivateUtilityContact[], today: string)
 }
 
 /** A separate private contact timeline: no account sync, supplier calls or persistent records. */
-function PrivateUtilityContactLog() {
+function PrivateUtilityContactLog({intent}:{
+  intent?:{utility:PrivateUtilityKey;revision:number}|null
+}={}) {
   const [entries,setEntries] = useState<PrivateUtilityContact[]>([]);
   const [draft,setDraft] = useState<PrivateContactDraft>({ ...CONTACT_NEW });
+  useEffect(()=>{
+    if(intent) setDraft(previous=>({...previous,utility:intent.utility}));
+  },[intent]);
   const [selected,setSelected] = useState<PrivateUtilityKey|'all'>('all');
   const [includeNotes,setIncludeNotes] = useState(false);
   const [preview,setPreview] = useState<{
@@ -4964,11 +4983,22 @@ function PrivateUtilityContactLog() {
   const today=new Date();
   const dayToday=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),
     String(today.getDate()).padStart(2,'0')].join('-');
-  const upcoming=entries.filter(item=>item.followUp!==''&&item.followUp>=dayToday)
-    .sort((a,b)=>a.followUp.localeCompare(b.followUp));
+  const dated=entries.filter(item=>item.followUp!=='' && handoverValidDay(item.followUp))
+    .sort((a,b)=>a.followUp.localeCompare(b.followUp)||a.id-b.id);
+  const upcoming=dated.filter(item=>item.followUp>=dayToday);
+  const overdue=dated.filter(item=>item.followUp<dayToday);
+  let weekLimit=dayToday;
+  for(let i=0;i<7;i++)weekLimit=privateUtilityTomorrow(weekLimit);
+  const dueSoon=upcoming.filter(item=>item.followUp<=weekLimit);
+  const dueLater=upcoming.filter(item=>item.followUp>weekLimit);
   function editDraft(patch:Partial<PrivateContactDraft>) {
     setDraft(previous=>({...previous,...patch}));
     setFeedback('');
+  }
+  function jumpToContact(item:PrivateUtilityContact) {
+    setSelected(item.utility);
+    window.setTimeout(()=>document.getElementById('private-utility-contact-'+item.id)
+      ?.scrollIntoView({behavior:'smooth',block:'center'}),0);
   }
   function save() {
     if(!draftValid||entries.length>=CONTACT_LIMIT)return;
@@ -5048,6 +5078,8 @@ function PrivateUtilityContactLog() {
     style={{display:'block'}}>
     <p className="eyebrow">MIJN EIGEN NOTITIES</p>
     <h2 id="private-utility-contacts-heading">Contacten en opvolging bijhouden</h2>
+    <p><a href="#private-utility-transfer-heading">Terug naar mijn zesstappen-verhuischecklist ↑</a>
+      {' '}Dit contactlogboek wijzigt nooit vanzelf de status van een contract of aanvraag.</p>
     <p>Leg zelf een contactmoment vast voor energie, water, internet, verzekering, gemeente
       of parkeren. Bewaar geen wachtwoorden, rekeningnummers, identiteitsnummers of andere
       geheime gegevens. Niets wordt naar leveranciers, overheid of WoningNet verstuurd.</p>
@@ -5081,7 +5113,30 @@ function PrivateUtilityContactLog() {
     <button type="button" disabled={!draftValid||entries.length>=CONTACT_LIMIT}
       onClick={save}>Bewaar dit contact uitsluitend in mijn tabblad</button>
     <p>{entries.length} van maximaal {CONTACT_LIMIT} eigen contactmomenten.
-      {''} {upcoming.length} zelf geplande opvolgmomenten vanaf vandaag.</p>
+      {''} {upcoming.length} zelf geplande toekomstige opvolgmomenten,
+      {' '}{overdue.length} verstreken eigen datums.</p>
+    <div role="group" aria-label="Mijn privéopvolgdesk">
+      <h3>Mijn eigen opvolgdesk</h3>
+      <p><strong>{overdue.length} verstreken</strong> · {dueSoon.length} binnen zeven dagen
+        · {dueLater.length} later. Dit zijn geen officiële reactietermijnen.</p>
+      {([
+        {id:'overdue',name:'Eigen controledatum verstreken',items:overdue},
+        {id:'soon',name:'Binnen zeven dagen',items:dueSoon},
+        {id:'later',name:'Later gepland',items:dueLater}
+      ] as {id:string;name:string;items:PrivateUtilityContact[]}[]).map(bucket=>
+        <details key={bucket.id} style={{marginTop:10}}>
+          <summary>{bucket.name} ({bucket.items.length})</summary>
+          {bucket.items.length===0?<p>Geen eigen contactmomenten in deze categorie.</p>:
+            <ol>{bucket.items.map(entry=><li key={entry.id}
+              style={{padding:'8px 0'}}>
+              <strong>{entry.followUp}</strong> — {
+                PRIVATE_UTILITIES.find(i=>i.id===entry.utility)?.name}
+              <button type="button" className="secondary"
+                onClick={()=>jumpToContact(entry)}>
+                Open dit contact in mijn privétijdlijn ↓</button>
+            </li>)}</ol>}
+        </details>)}
+    </div>
     <label style={{display:'block'}}>Filter mijn contacten
       <select value={selected}
         onChange={e=>setSelected(e.target.value as PrivateUtilityKey|'all')}>
@@ -5099,7 +5154,7 @@ function PrivateUtilityContactLog() {
       <p>Alleen zelf ingevulde data; geen officiële of geboekte afspraken.</p>
     </details>}
     {visible.length===0?<p>Geen contactmomenten voor deze selectie.</p>:
-      <ol>{visible.map(entry=><li key={entry.id} style={{margin:'14px 0',padding:'12px 0',
+      <ol>{visible.map(entry=><li key={entry.id} id={'private-utility-contact-'+entry.id} style={{margin:'14px 0',padding:'12px 0',
         borderBottom:'1px solid #dce7e0'}}>
         <strong>{entry.day}</strong> · {PRIVATE_UTILITIES.find(x=>x.id===entry.utility)?.name}
         {' '}· {CONTACT_CHANNELS.find(x=>x.id===entry.channel)?.label}
