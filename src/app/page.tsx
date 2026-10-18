@@ -1,6 +1,5 @@
-import { PrivateReactionWorkflow, PrivateReactionPacing } from './position-stats';
+import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
-import PrivateCommuteComparison from './commute-costs';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
 const cards = [
