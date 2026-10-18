@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import ManualMonthProgress from './manual-month-progress';
 import { localMonthKey, MANUAL_MONTHLY_GOAL } from '../lib/manual-month-progress.mjs';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
   encodeHousingShortlist, decodeHousingShortlist, compareTwoManualHomes,
@@ -3786,4 +3787,20 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
         Niets doet een woningreactie, inschrijving, betaling of contracthandeling.</p>
     </div>
   </section>;
+}
+
+
+/**
+ * No global event, cross-tab persistence or account bridge.
+ * The only shared context is an explicitly proposed private aggregate.
+ */
+export default function PrivateReactionWorkflow({children}:{children:ReactNode}) {
+  const [offer,setOffer]=useState<PrivateJournalCountOffer|null>(null);
+  const propose=useCallback((value:PrivateJournalCountOffer|null)=>setOffer(value),[]);
+  const decide=useCallback(()=>setOffer(null),[]);
+  return <>
+    <ManualMonthProgress journalOffer={offer} onJournalDecision={decide} />
+    {children}
+    <ManualPositionsWorkspace onMonthCountOffer={propose}/>
+  </>;
 }
