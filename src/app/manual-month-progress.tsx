@@ -2870,6 +2870,7 @@ export function PrivateMovingCostSplit(){
   const [members,setMembers]=useState<PrivateSplitMember[]>([splitMember(1),splitMember(2)]);
   const [total,setTotal]=useState('');
   const [pendingOffer,setPendingOffer]=useState<number|null>(null);
+  const [pendingCount,setPendingCount]=useState<number|null>(null);
   const [pendingBackup,setPendingBackup]=useState<{members:PrivateSplitMember[];total:string}|null>(null);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [confirmClear,setConfirmClear]=useState(false);
@@ -2930,7 +2931,7 @@ export function PrivateMovingCostSplit(){
     'Het resultaat is niet bevestigd met betaalbewijzen en verstuurt geen geld.'
   ].join('\n')+'\n';
   function invalidate(){
-    setPendingBackup(null);setPendingReport(null);setConfirmClear(false);setNotice('');
+    setPendingBackup(null);setPendingReport(null);setPendingCount(null);setConfirmClear(false);setNotice('');
   }
   async function loadBackup(file:File|undefined){
     setPendingBackup(null);setPendingReport(null);
@@ -2977,9 +2978,25 @@ export function PrivateMovingCostSplit(){
       <label htmlFor="private-cost-split-count">Aantal personen (2–4)</label>
       <select id="private-cost-split-count" value={members.length} onChange={event=>{
         const count=Number(event.target.value);
+        if(count<members.length&&members.slice(count).some(person=>
+          !!person.paid.trim()||person.alias.trim()!=='Persoon '+person.id)){
+          setPendingCount(count);setNotice('Controleer eerst welke betaalgegevens verdwijnen bij minder deelnemers.');
+          return;
+        }
         setMembers(old=>Array.from({length:count},(_,index)=>old[index]??splitMember(index+1)));
         invalidate();
       }}>{[2,3,4].map(n=><option value={n} key={n}>{n}</option>)}</select>
+      {pendingCount!==null&&<div role="group" aria-label="Bevestig deelnemers verminderen">
+        <p>Als je naar {pendingCount} personen teruggaat, verdwijnen de ingevulde naamlabels
+          en betaalbedragen van de laatste {members.length-pendingCount} persoon/personen.
+          De overige invoer blijft behouden. Maak eventueel eerst een privé-JSON back-up.</p>
+        <button type="button" onClick={()=>{
+          setMembers(old=>old.slice(0,pendingCount));
+          invalidate();setNotice('Aantal personen verlaagd na expliciete bevestiging.');
+        }}>Bevestig verwijderen van deelnemers</button>
+        <button type="button" onClick={()=>{setPendingCount(null);setNotice('Huidige personen behouden.');}}>
+          Annuleren</button>
+      </div>}
       <ul>{members.map((member,index)=><li key={member.id}>
         <label htmlFor={`split-person-name-${member.id}`}>Naamlabel persoon {member.id}</label>
         <input id={`split-person-name-${member.id}`} type="text" autoComplete="off"
