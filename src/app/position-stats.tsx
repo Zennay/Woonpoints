@@ -3184,3 +3184,245 @@ export function PrivateSearchPointsHistory() {
     </div>
   </section>;
 }
+
+
+/** Voluntary post-offer checklist. No account, address, network or persistent storage. */
+type PrivateMoveTask = {
+  id: string;
+  label: string;
+  offset: number;
+  done: boolean;
+};
+const PRIVATE_MOVE_FORMAT = 'woonpoints-private-moving-checklist-v1';
+const PRIVATE_MOVE_OFFSETS = [-45,-21,-7,0,7] as const;
+const PRIVATE_MOVE_SUGGESTIONS: ReadonlyArray<Omit<PrivateMoveTask,'done'>> = [
+  {id:'s1',label:'Plan een eigen overzicht van verhuiskosten en reserve',offset:-45},
+  {id:'s2',label:'Controleer zelf welke huur- en overdrachtdocumenten je nodig hebt',offset:-45},
+  {id:'s3',label:'Vergelijk verhuisvervoer en vraag zo nodig hulp',offset:-45},
+  {id:'s4',label:'Controleer contracten voor energie, water en internet',offset:-21},
+  {id:'s5',label:'Regel zelf de nodige adreswijzigingen bij betrokken partijen',offset:-21},
+  {id:'s6',label:'Bedenk hoe je spullen sorteert, weggeeft of inpakt',offset:-21},
+  {id:'s7',label:'Controleer de persoonlijke sleuteloverdracht-afspraken',offset:-7},
+  {id:'s8',label:'Pak een tas met onmisbare spullen voor de eerste dagen',offset:-7},
+  {id:'s9',label:'Maak eigen meterstand- en staatnotities indien van toepassing',offset:0},
+  {id:'s10',label:'Controleer de nieuwe woning en noteer eigen aandachtspunten',offset:0},
+  {id:'s11',label:'Controleer zelf de registratie van de adreswijziging',offset:7},
+  {id:'s12',label:'Bewaar je eigen overdrachtspapieren op een gekozen plek',offset:7}
+];
+const privateMoveDefaults = (): PrivateMoveTask[] =>
+  PRIVATE_MOVE_SUGGESTIONS.map(task => ({...task,done:false}));
+function privateMoveDateValid(date: string) {
+  if (!/^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date)) return false;
+  const time = Date.parse(date+'T12:00:00Z');
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0,10) === date;
+}
+function privateMoveDue(date: string, offset: number) {
+  if (!date) return offset < 0 ? Math.abs(offset)+' dagen vóór verhuizing' :
+    offset > 0 ? offset+' dagen na verhuizing' : 'op de verhuisdag';
+  const utc = Date.parse(date+'T12:00:00Z')+offset*86400000;
+  return new Date(utc).toISOString().slice(0,10);
+}
+function privateMoveArchiveRead(raw: string): {movingDate:string;items:PrivateMoveTask[]} | null {
+  if (!raw || new TextEncoder().encode(raw).length > 16384) return null;
+  try {
+    const decoded: unknown = JSON.parse(raw);
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return null;
+    const obj = decoded as Record<string,unknown>;
+    if (Object.keys(obj).sort().join('|') !== 'format|items|movingDate' ||
+      obj.format !== PRIVATE_MOVE_FORMAT || typeof obj.movingDate !== 'string' ||
+      (obj.movingDate !== '' && !privateMoveDateValid(obj.movingDate)) ||
+      !Array.isArray(obj.items) || obj.items.length < PRIVATE_MOVE_SUGGESTIONS.length ||
+      obj.items.length > 36) return null;
+    const seen = new Set<string>();
+    const restored: PrivateMoveTask[] = [];
+    for (const item of obj.items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const t = item as Record<string,unknown>;
+      if (Object.keys(t).sort().join('|') !== 'done|id|label|offset' ||
+        typeof t.id !== 'string' || seen.has(t.id) ||
+        typeof t.label !== 'string' || t.label.length < 1 || t.label.length > 72 ||
+        t.label !== t.label.trim() || /[<>\x00-\x1F\x7F]/.test(t.label) ||
+        typeof t.done !== 'boolean' ||
+        typeof t.offset !== 'number' || !PRIVATE_MOVE_OFFSETS.includes(t.offset as typeof PRIVATE_MOVE_OFFSETS[number])) return null;
+      const suggestion = PRIVATE_MOVE_SUGGESTIONS.find(s => s.id === t.id);
+      if (suggestion ? suggestion.label !== t.label || suggestion.offset !== t.offset :
+        !/^c-[a-z0-9-]{8,64}$/.test(t.id)) return null;
+      seen.add(t.id);
+      restored.push({id:t.id,label:t.label,offset:t.offset,done:t.done});
+    }
+    if (!PRIVATE_MOVE_SUGGESTIONS.every(s=>seen.has(s.id))) return null;
+    return {movingDate:obj.movingDate,items:restored};
+  } catch {
+    return null;
+  }
+}
+export function PrivateMovingChecklist() {
+  const [movingDate,setMovingDate] = useState('');
+  const [items,setItems] = useState<PrivateMoveTask[]>(privateMoveDefaults);
+  const [customLabel,setCustomLabel] = useState('');
+  const [customOffset,setCustomOffset] = useState(-21);
+  const [filter,setFilter] = useState<'open'|'all'|'done'>('open');
+  const [pendingImport,setPendingImport] = useState<{movingDate:string;items:PrivateMoveTask[]}|null>(null);
+  const [confirmReset,setConfirmReset] = useState(false);
+  const [message,setMessage] = useState('');
+  const completed = items.filter(item => item.done).length;
+  const remaining = items.length-completed;
+  const visible = items.filter(item => filter === 'all' || (filter === 'done' ? item.done : !item.done))
+    .sort((a,b)=>a.offset-b.offset || a.id.localeCompare(b.id));
+  const phases: Record<number,string> = {
+    [-45]:'Oriëntatie · circa zes weken eerder',
+    [-21]:'Voorbereiden · circa drie weken eerder',
+    [-7]:'Laatste week',
+    [0]:'De verhuisdag',
+    [7]:'Eerste week erna'
+  };
+  function addTask(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const label = customLabel.trim();
+    if (!label || label.length > 72 || /[<>\x00-\x1F\x7F]/.test(label) ||
+        items.length >= 36 || items.some(item=>item.label.toLowerCase()===label.toLowerCase())) {
+      setMessage('Gebruik een unieke korte taak (max. 72 tekens) zonder besturingstekens; maximaal 36 taken.');
+      return;
+    }
+    const id='c-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+    setItems(current=>[...current,{id,label,offset:customOffset,done:false}]);
+    setCustomLabel('');
+    setPendingImport(null);
+    setMessage('Eigen taak toegevoegd. Alleen in dit browsertabblad.');
+  }
+  function exportArchive() {
+    const content=JSON.stringify({format:PRIVATE_MOVE_FORMAT,movingDate,items},null,2);
+    const url=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-prive-verhuischecklist.json';
+    link.rel='noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Privé-JSON aangeboden om zelf te bewaren; je opslaglocatie kan extern synchroniseren.');
+  }
+  async function prepareImport(file: File|undefined) {
+    setPendingImport(null);
+    if (!file) return;
+    if (file.size < 1 || file.size > 16384) {
+      setMessage('Bestand geweigerd: alleen een geldige privé-JSON van maximaal 16 KiB.');
+      return;
+    }
+    try {
+      const archive=privateMoveArchiveRead(await file.text());
+      if (!archive) throw new Error('invalid');
+      setPendingImport(archive);
+      setMessage('Bestand lokaal gelezen. Bevestig apart voor vervanging.');
+    } catch {
+      setMessage('Ongeldig of onbekend checklistbestand. Alle huidige taken blijven behouden.');
+    }
+  }
+  return <section className="panel" aria-labelledby="private-moving-heading">
+    <div>
+      <p className="eyebrow">EIGEN VERHUISPLAN · ZONDER WONINGNET-ACCOUNT</p>
+      <h2 id="private-moving-heading">Van eigen woonkeuze naar een haalbare verhuizing</h2>
+      <p>Werk met twaalf aanpasbare afvinkstappen en voeg eigen taken toe.
+        De datums zijn alleen <strong>persoonlijke richtmomenten</strong>:
+        geen wettelijke termijnen, contractcontrole of automatische afspraken.</p>
+      <p>Alles blijft in het geheugen van dit tabblad. Geen adres, naam,
+        huurcontract, account of inloggegevens invoeren. Er is geen
+        netwerkverzoek of automatische opslag. Exporteer bewust als je
+        jouw voortgang wilt bewaren.</p>
+    </div>
+    <div>
+      <label htmlFor="moving-date">Mijn vermoedelijke verhuisdag (optioneel)</label>
+      <input id="moving-date" type="date" min="2000-01-01" max="2099-12-31"
+        value={movingDate} onChange={event=>{
+          const value=event.target.value;
+          if (value === '' || privateMoveDateValid(value)) {
+            setMovingDate(value);setPendingImport(null);setMessage('');
+          }
+        }} />
+      <p aria-live="polite"><strong>{completed} van {items.length} taken gedaan</strong>
+        {' · '}{remaining} open. Een datum toevoegen rekent alleen eigen richtmomenten uit.</p>
+      <label htmlFor="moving-filter">Toon checklist</label>
+      <select id="moving-filter" value={filter} onChange={e=>setFilter(e.target.value as typeof filter)}>
+        <option value="open">Nog open</option>
+        <option value="all">Alle taken</option>
+        <option value="done">Afgevinkt</option>
+      </select>
+      {PRIVATE_MOVE_OFFSETS.map(offset=>{
+        const tasks=visible.filter(item=>item.offset===offset);
+        if (!tasks.length) return null;
+        return <div key={offset} className="private-points-overview">
+          <h3>{phases[offset]}</h3>
+          <p>Richtmoment: <strong>{privateMoveDue(movingDate,offset)}</strong></p>
+          <ul>{tasks.map(task=><li key={task.id}>
+            <label style={{display:'inline-flex',gap:8,alignItems:'flex-start'}}>
+              <input type="checkbox" checked={task.done} onChange={event=>{
+                const done=event.target.checked;
+                setItems(current=>current.map(row=>row.id===task.id?{...row,done}:row));
+                setPendingImport(null);
+              }} />
+              <span>{task.label}</span>
+            </label>
+            {task.id.startsWith('c-') && <button type="button" className="secondary"
+              onClick={()=>{setItems(current=>current.filter(row=>row.id!==task.id));setPendingImport(null);}}>
+              Verwijder eigen taak</button>}
+          </li>)}</ul>
+        </div>;
+      })}
+      {!visible.length && <p>Geen taken in deze weergave. Wissel de filter om je lijst te zien.</p>}
+      <form onSubmit={addTask}>
+        <fieldset>
+          <legend>Maak een eigen stap</legend>
+          <label htmlFor="moving-task-label">Taak, zonder persoons- of adresgegevens</label>
+          <input id="moving-task-label" type="text" maxLength={72}
+            value={customLabel} onChange={e=>setCustomLabel(e.target.value)}
+            placeholder="Bijvoorbeeld: dozen regelen" />
+          <label htmlFor="moving-task-stage">Richtfase</label>
+          <select id="moving-task-stage" value={customOffset}
+            onChange={e=>setCustomOffset(Number(e.target.value))}>
+            {PRIVATE_MOVE_OFFSETS.map(offset=><option value={offset} key={offset}>{phases[offset]}</option>)}
+          </select>
+          <button type="submit" disabled={items.length>=36}>Voeg eigen stap toe</button>
+          <p>Maximaal 36 stappen, waarvan de twaalf suggesties vaste uitgangspunten zijn.</p>
+        </fieldset>
+      </form>
+      <div className="month-history-actions">
+        <button type="button" onClick={exportArchive}>Bewaar eigen checklist als privé-JSON…</button>
+        <button type="button" className="secondary" onClick={()=>setConfirmReset(true)}>
+          Begin opnieuw…</button>
+      </div>
+      {confirmReset && <div className="month-csv-confirm" role="group" aria-label="Bevestig checklist wissen">
+        <p>Dit wist je eigen taken, vinkjes en verhuisdatum in dit tabblad. Niet-geëxporteerde informatie kun je niet terughalen.</p>
+        <button type="button" onClick={()=>{
+          setItems(privateMoveDefaults());setMovingDate('');setPendingImport(null);
+          setConfirmReset(false);setMessage('Checklist opnieuw begonnen in dit tabblad.');
+        }}>Wis mijn checklist</button>
+        <button type="button" onClick={()=>setConfirmReset(false)}>Behoud mijn checklist</button>
+      </div>}
+      <label htmlFor="moving-archive">Open eerder bewaarde privéchecklist (JSON, maximaal 16 KiB)</label>
+      <input id="moving-archive" type="file" accept=".json,application/json" onChange={event=>{
+        const file=event.currentTarget.files?.[0];
+        event.currentTarget.value='';
+        void prepareImport(file);
+      }} />
+      {pendingImport && <div className="month-csv-confirm" role="group"
+        aria-label="Bevestig checklist herstellen">
+        <p>Dit eigen bestand bevat {pendingImport.items.length} stappen, waarvan
+          {pendingImport.items.filter(item=>item.done).length} afgevinkt.
+          Vervangen overschrijft alle huidige taken, vinkjes en de verhuisdatum.</p>
+        <button type="button" onClick={()=>{
+          setItems(pendingImport.items);setMovingDate(pendingImport.movingDate);
+          setPendingImport(null);setConfirmReset(false);
+          setMessage('Eigen checklist lokaal hersteld; geen externe gegevens gecontroleerd.');
+        }}>Vervang mijn huidige checklist</button>
+        <button type="button" onClick={()=>{
+          setPendingImport(null);setMessage('Herstel geannuleerd: huidige checklist behouden.');
+        }}>Behoud mijn huidige checklist</button>
+      </div>}
+      {message && <p role="status">{message}</p>}
+      <p>Bewaren of herstellen werkt alleen na jouw expliciete keuze.
+        Een eigen bestand kan buiten deze app worden gesynchroniseerd.
+        Niets doet een woningreactie, inschrijving, betaling of contracthandeling.</p>
+    </div>
+  </section>;
+}
