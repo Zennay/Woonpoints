@@ -547,6 +547,9 @@ export function ManualHousingShortlist() {
   const [pendingImport, setPendingImport] = useState<{preferences: Preferences; homes: Home[]} | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [compared, setCompared] = useState<number[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState(emptyHousing);
+  const [removedHome, setRemovedHome] = useState<{index: number; home: Home} | null>(null);
   const validPreferences = normalizeHousingPreferences(preferences) as Preferences | null;
   const ranked = validPreferences ? rankManualHomes(homes, validPreferences) : null;
   const eligible = ranked?.filter((row: {suitable: boolean}) => row.suitable).length ?? 0;
@@ -567,8 +570,47 @@ export function ManualHousingShortlist() {
       return;
     }
     setHomes(current => [...current, entered]);
+    setRemovedHome(null);
     setDraft(emptyHousing);
     setNotice('Woning toegevoegd aan je privévergelijking; er is niets online gecontroleerd.');
+  }
+
+  function editHome(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (editingIndex === null || editingIndex < 0 || editingIndex >= homes.length) {
+      setEditingIndex(null);
+      setNotice('De woning is veranderd; open het bewerkformulier opnieuw.');
+      return;
+    }
+    const updated = normalizeManualHome({
+      label: editDraft.label.trim(),
+      rent: number(editDraft.rent),
+      rooms: number(editDraft.rooms),
+      travel: number(editDraft.travel),
+      balcony: editDraft.balcony
+    }) as Home | null;
+    if (!updated) {
+      setNotice('Wijziging niet opgeslagen: gebruik een geldig label, €100–€10.000, 1–20 kamers en 0–300 minuten.');
+      return;
+    }
+    setHomes(current => current.map((home, index) => index === editingIndex ? updated : home));
+    setEditingIndex(null);
+    setRemovedHome(null);
+    setNotice('Eigen woninggegevens aangepast; de rangorde is opnieuw berekend.');
+  }
+
+  function undoRemove() {
+    if (!removedHome || homes.length >= MAX_MANUAL_HOMES) return;
+    const snapshot = removedHome;
+    setHomes(current => {
+      const restored = [...current];
+      restored.splice(Math.min(snapshot.index, restored.length), 0, snapshot.home);
+      return restored;
+    });
+    setCompared([]);
+    setEditingIndex(null);
+    setRemovedHome(null);
+    setNotice('Laatst verwijderde woning teruggezet; niet online gecontroleerd.');
   }
 
   function exportJson() {
@@ -696,6 +738,7 @@ export function ManualHousingShortlist() {
           <button type="button" onClick={() => {
             setPreferences(pendingImport.preferences); setHomes(pendingImport.homes);
             setCompared([]); setPendingImport(null); setConfirmClear(false);
+            setEditingIndex(null); setRemovedHome(null);
             setNotice('Privévergelijking lokaal overgenomen; gegevens blijven ongeverifieerd.');
           }}>Vervang vergelijking</button>
           <button type="button" className="secondary" onClick={() => {
@@ -705,10 +748,17 @@ export function ManualHousingShortlist() {
         {confirmClear && <div className="housing-confirm" role="group" aria-label="Wissen bevestigen">
           <p>Alleen deze handmatig ingevulde woningvergelijking verwijderen? Andere Woonpoints-notities blijven bestaan.</p>
           <button type="button" onClick={() => {setHomes([]); setCompared([]); setConfirmClear(false);
+            setEditingIndex(null); setRemovedHome(null);
             setPendingImport(null); setNotice('Woningen uit dit tabblad verwijderd.');}}>Ja, wis woningen</button>
           <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>Behoud woningen</button>
         </div>}
         {notice && <p role="status" aria-live="polite">{notice}</p>}
+        {removedHome && <div className="housing-undo" role="status">
+          <p>Een woning is uit deze privésessie verwijderd. Je kunt de laatste verwijdering nog terugdraaien.</p>
+          <button type="button" onClick={undoRemove} disabled={homes.length >= MAX_MANUAL_HOMES}>
+            Herstel laatst verwijderde woning
+          </button>
+        </div>}
         <h3>Jouw rangorde: {eligible} passend van {homes.length} ingevoerde woningen</h3>
         {!homes.length && <p>Voeg een woning toe om de vergelijking te starten. De gegevens zijn alleen voor jou zichtbaar in dit tabblad.</p>}
         {!ranked && homes.length > 0 && <p role="alert">Je voorkeuren zijn niet volledig. De rangorde is onbekend.</p>}
@@ -759,6 +809,55 @@ export function ManualHousingShortlist() {
               <p>Zelf genoteerd: €{row.home.rent}/maand · {row.home.rooms} kamers · {row.home.travel} minuten ·
                 {row.home.balcony ? ' balkon' : ' geen balkon'}</p>
               <ul>{row.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+              {editingIndex === row.index && <form onSubmit={editHome}
+                className="housing-edit-form">
+                <fieldset>
+                  <legend>Bewerk jouw notitie: {row.home.label}</legend>
+                  <label htmlFor="hs-edit-label">Neutraal label</label>
+                  <input id="hs-edit-label" required maxLength={64} autoComplete="off"
+                    value={editDraft.label}
+                    onChange={event => setEditDraft(d => ({...d, label: event.target.value}))} />
+                  <div className="housing-fields">
+                    <div><label htmlFor="hs-edit-rent">Maandhuur (€)</label>
+                      <input id="hs-edit-rent" type="number" min="100" max="10000" step="1" required
+                        value={editDraft.rent}
+                        onChange={event => setEditDraft(d => ({...d, rent: event.target.value}))} /></div>
+                    <div><label htmlFor="hs-edit-rooms">Kamers</label>
+                      <input id="hs-edit-rooms" type="number" min="1" max="20" step="1" required
+                        value={editDraft.rooms}
+                        onChange={event => setEditDraft(d => ({...d, rooms: event.target.value}))} /></div>
+                    <div><label htmlFor="hs-edit-travel">Reistijd (minuten)</label>
+                      <input id="hs-edit-travel" type="number" min="0" max="300" step="1" required
+                        value={editDraft.travel}
+                        onChange={event => setEditDraft(d => ({...d, travel: event.target.value}))} /></div>
+                  </div>
+                  <label className="housing-check">
+                    <input type="checkbox" checked={editDraft.balcony}
+                      onChange={event => setEditDraft(d => ({...d, balcony: event.target.checked}))} />
+                    Balkon aanwezig
+                  </label>
+                  <div className="housing-edit-actions">
+                    <button type="submit">Bewaar aanpassingen</button>
+                    <button type="button" className="secondary" onClick={() => setEditingIndex(null)}>
+                      Annuleren
+                    </button>
+                  </div>
+                </fieldset>
+              </form>}
+              <button type="button" className="secondary"
+                onClick={() => {
+                  setEditingIndex(row.index);
+                  setEditDraft({
+                    label: row.home.label,
+                    rent: String(row.home.rent),
+                    rooms: String(row.home.rooms),
+                    travel: String(row.home.travel),
+                    balcony: row.home.balcony
+                  });
+                  setNotice('Wijzigingen gelden pas na Bewaar aanpassingen.');
+                }}>
+                {editingIndex === row.index ? 'Opnieuw bewerken' : 'Bewerk deze woning'}
+              </button>
               <button type="button"
                 aria-pressed={compared.includes(row.index)}
                 className="secondary"
@@ -772,6 +871,8 @@ export function ManualHousingShortlist() {
               </button>
               <button type="button" className="secondary" onClick={() => {
                 setCompared([]);
+                setEditingIndex(null);
+                setRemovedHome({index: row.index, home: row.home});
                 setHomes(current => current.filter((_, index) => index !== row.index));
                 setNotice('Woning verwijderd uit je privévergelijking.');
               }}>Verwijder deze woning</button>
