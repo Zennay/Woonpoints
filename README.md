@@ -275,6 +275,20 @@ synchroniseren). Woninglijst, kosten en actieplanning blijven uitsluitend in het
 huidige browsertabblad; wis je de woninglijst, dan worden eerder aangemaakte
 handmatige acties niet automatisch uit de agenda of planning verwijderd.
 
+
+### Privé-maandkalender en één enkele eigen actie delen met je agenda
+
+De bestaande handmatige planner biedt nu een **maandkalender** met vorige/volgende
+maand en terug naar vandaag. Alleen zelf genoteerde afspraken verschijnen, maximaal
+twaalf, eventueel gefilterd op open acties. Tik op een dagactie om deze in hetzelfde
+formulier te bewerken. Daarnaast biedt elke **open** eigen actie
+**Alleen deze actie naar agenda (.ics)…**. Hiermee exporteer je niet per ongeluk
+alle andere zelf ingevulde deadlines naar je kalenderprovider. De bestaande
+opt-in download van alle open deadlines blijft beschikbaar als afzonderlijke
+keuze. Een ICS-download is **geen synchronisatie, kalenderwijziging of bevestiging
+van WoningNet**; import en externe cloudopslag gebeuren uitsluitend via de door
+jou gekozen kalenderapp. De lokale maandweergave stuurt nooit meldingen zelf.
+
 ### Eigen betaalbaarheid en buffer bij tegenslag (handmatige preview)
 
 Onder **Wat kost wonen je écht per maand?** kun je na vergelijking van twee handmatig ingevulde woningen nu je netto besteedbaar inkomen, overige maandlasten en voor verhuizing beschikbaar spaargeld invoeren. Dezelfde twee scenario's tonen naast hun maand- en jaarkosten direct de buffer ná verhuiskosten, het maandoverschot/-tekort en het geschatte saldo na 12 maanden, zowel bij huidige aannames als bij een zelfgekozen inkomensdaling en stijging van de gezamenlijke woonlasten. Bij een negatief maandbedrag wordt ook de geschatte uitputtingsduur in volle maanden getoond. Een tekort of negatieve buffer krijgt een expliciete waarschuwing.
