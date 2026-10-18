@@ -4268,6 +4268,46 @@ export function PrivateReactionPacing() {
       <button type="button" className="secondary" onClick={()=>{
         setSelfCount('0');setAlreadyPlanned('0');setDateChoices({});setMessage('');
       }}>Wis mijn aantallen</button>
+      <div className="month-csv-confirm">
+        <h3>Bewaar of herstel mijn maandplan</h3>
+        <p>De huidige maand, je eigen aantallen en gekozen dagen kunnen alleen
+          op jouw verzoek als privé-JSON worden bewaard. Geen automatische
+          opslag in de browser of op een server.</p>
+        <button type="button" onClick={savePrivateBackup}
+          disabled={!validMonth || !countsOk || insufficient ||
+            !selectionValid || selected.length!==missing}>
+          Bewaar eigen maandplan als privé-JSON…
+        </button>
+        <label htmlFor="pacing-restore">Kies eerder bewaard maandplan (maximaal 2 KiB)</label>
+        <input id="pacing-restore" type="file" accept=".json,application/json"
+          onChange={event=>{
+            const file=event.currentTarget.files?.[0];
+            event.currentTarget.value='';
+            void choosePrivateBackup(file);
+          }}/>
+        {pendingBackup && <div role="group" aria-label="Bevestig herstel maandplan">
+          <p>Geselecteerd: <strong>{pendingBackup.data.month}</strong>,
+            {' '}{pendingBackup.data.selfCount} eigen kijkmomenten,
+            {' '}{pendingBackup.data.alreadyPlanned} elders gepland,
+            {' '}{pendingBackup.data.dates.length} voorgestelde dagen.</p>
+          {pendingBackup.currentSignature!==currentSignature && <p role="alert">
+            Dit herstel is verouderd doordat je huidige invoer is gewijzigd.
+            Kies het bestand opnieuw.</p>}
+          <p><strong>Vervangen?</strong> De huidige maand, aantallen en
+            voorgestelde dagen verdwijnen uit het tabblad. Andere Woonpoints-
+            onderdelen en je reeds gedownloade bestanden veranderen niet.</p>
+          <button type="button" onClick={restorePrivateBackup}
+            disabled={pendingBackup.currentSignature!==currentSignature}>
+            Ja, vervang alleen dit maandplan
+          </button>
+          <button type="button" className="secondary"
+            onClick={()=>{setPendingBackup(null);setMessage('Herstel geannuleerd. Huidige invoer behouden.');}}>
+            Nee, behoud huidig maandplan
+          </button>
+        </div>}
+        <p>Oude of handmatig gewijzigde bestanden worden geweigerd. Kies je
+          voor cloudopslag, dan kan dat platform jouw privéplan synchroniseren.</p>
+      </div>
       <p aria-live="polite">{message}</p>
       <p>Een ICS-download gebeurt alleen na jouw klik. Je kalenderprovider kan
         de gekozen dagen synchroniseren; Woonpoints verstuurt nooit
