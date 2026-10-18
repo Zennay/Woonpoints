@@ -1616,7 +1616,7 @@ function PrivateMoveAftercare() {
         item.note || '(geen toelichting)', '');
     }
     download('woonpoints-nazorg-overzicht.txt', lines.join('\n'), 'text/plain;charset=utf-8');
-    setMessage('Eigen TXT-overzicht gemaakt. Neem het zelf door vóór je het deelt.');
+    setMessage('Eigen TXT met ' + shown.length + ' zichtbare punten gemaakt; andere filters zijn niet meegenomen. Neem de inhoud zelf door vóór delen.');
   }
   async function importFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -2222,14 +2222,18 @@ function PrivateMoveAftercare() {
           <div className="aftercare-actions">
             <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
             <button className="secondary" disabled={!items.length} onClick={exportCsv}>Download CSV</button>
-            <button className="secondary" disabled={!items.length} onClick={exportText}>Download TXT-dossier</button>
+            <button className="secondary" disabled={!shown.length} onClick={exportText}>Download TXT van {shown.length} zichtbare punten</button>
           </div>
+          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen de TXT-download
+            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters. Controleer privénotities
+            vóór je een gekozen bestand ergens anders opslaat of deelt.</p>
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
             <p>{incoming.items.length} geldige punten en {incoming.history.length} contactmomenten gevonden. Je huidige {items.length} punten en {history.length} contactmomenten worden pas na bevestiging vervangen.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems(incoming.items); setHistory(incoming.history); setHistoryTarget(null); setHistoryDeletePending(null); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setMessage('Import bevestigd. Alleen dit tabblad is gewijzigd.'); }}>Vervang huidige punten</button>
+              <button onClick={() => { setItems(incoming.items); setHistory(incoming.history); setHistoryTarget(null); setHistoryDeletePending(null); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setIssueSearch(''); setIssuePriority('alle'); setIssueRoom('alle');
+                setFilter('alles'); setMessage('Import bevestigd. Alle herstelde punten zijn zichtbaar.'); }}>Vervang huidige punten</button>
               <button className="secondary" onClick={() => { setIncoming(null); setMessage('Import geannuleerd; bestaande punten behouden.'); }}>Annuleer import</button>
             </div>
           </div>}
