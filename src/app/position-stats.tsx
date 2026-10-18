@@ -3666,9 +3666,28 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
   const [editingMonth,setEditingMonth] = useState<string|null>(null);
   const [pendingDelete,setPendingDelete] = useState<string|null>(null);
   const [pendingImport,setPendingImport] = useState<PrivatePointsEntry[]|null>(null);
+  const [pendingImportSource,setPendingImportSource]=useState<string|null>(null);
+  const readSequence=useRef(0);
+  const [restoreUndo,setRestoreUndo]=useState<{
+    previous:PrivatePointsEntry[]; importedSignature:string
+  }|null>(null);
+  const [pendingExport,setPendingExport]=useState<{kind:'json'|'csv';source:string}|null>(null);
+  const [exportApproved,setExportApproved]=useState(false);
   const [confirmClear,setConfirmClear] = useState(false);
   const [message,setMessage] = useState('');
   const sorted = [...rows].sort((a,b) => a.month.localeCompare(b.month));
+  const signature=JSON.stringify(rows);
+  const backupJson=JSON.stringify({format:PRIVATE_POINTS_ARCHIVE,entries:sorted},null,2)+'\n';
+  const backupCsv=['month,points',...sorted.map(row=>row.month+','+String(row.points))]
+    .join('\r\n')+'\r\n';
+  const exportText=pendingExport?.kind==='csv'?backupCsv:backupJson;
+  const exportStillCurrent=pendingExport!==null&&pendingExport.source===signature;
+  const importStillCurrent=pendingImport!==null&&pendingImportSource===signature;
+  const canUndoRestore=restoreUndo!==null&&restoreUndo.importedSignature===signature;
+  const importAdded=pendingImport?.filter(x=>!rows.some(r=>r.month===x.month)).length??0;
+  const importChanged=pendingImport?.filter(x=>rows.some(r=>
+    r.month===x.month&&r.points!==x.points)).length??0;
+  const importRemoved=rows.filter(x=>!pendingImport?.some(r=>r.month===x.month)).length;
   const monthExists = rows.some(row => row.month === month);
   const parsedPoints = /^\d{1,5}$/.test(points) ? Number(points) : NaN;
   const canSave = privatePointsMonthValid(month) && Number.isSafeInteger(parsedPoints) &&
@@ -3714,7 +3733,9 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
   }
   async function selectCsvArchive(file: File|undefined) {
-    setPendingImport(null);
+    const token=++readSequence.current;
+    const source=signature;
+    setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
     if (file.size < 1 || file.size > 4096) {
       setMessage('CSV geweigerd: maximaal 4 KiB toegestaan.');
@@ -3722,15 +3743,19 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
     try {
       const imported = privatePointsDecodeCsv(await file.text());
+      if(token!==readSequence.current)return;
       if (!imported) throw new Error('invalid');
-      setPendingImport(imported);
+      setPendingImport(imported);setPendingImportSource(source);
       setMessage('Eigen CSV gelezen; bevestig apart of je de huidige maandstanden wilt vervangen.');
     } catch {
+      if(token!==readSequence.current)return;
       setMessage('CSV geweigerd: gebruik exact month,points en geldige unieke maand,gehele-punten-regels. Huidige notities behouden.');
     }
   }
   async function selectArchive(file: File|undefined) {
-    setPendingImport(null);
+    const token=++readSequence.current;
+    const source=signature;
+    setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
     if (file.size < 1 || file.size > 16384) {
       setMessage('Bestand geweigerd: gebruik eigen Woonpoints-JSON tot maximaal 16 KiB.');
@@ -3738,10 +3763,12 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
     try {
       const imported = privatePointsDecodeArchive(await file.text());
+      if(token!==readSequence.current)return;
       if (!imported) throw new Error('invalid');
-      setPendingImport(imported);
+      setPendingImport(imported);setPendingImportSource(source);
       setMessage('Geldig privébestand. Bevestig apart of de huidige notities mogen worden vervangen.');
     } catch {
+      if(token!==readSequence.current)return;
       setMessage('Bestand geweigerd: verkeerde versie, dubbele maanden of ongeldige punten. Bestaande notities behouden.');
     }
   }
