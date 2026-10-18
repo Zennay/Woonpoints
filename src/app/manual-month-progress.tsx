@@ -827,7 +827,7 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
   const monthNow=localMonthKey(new Date());
   const currentYear=Number(monthNow.slice(0,4));
   const year=Number(selectedYear);
-  const yearIsValid=/^20\\d{2}$/.test(selectedYear) &&
+  const yearIsValid=/^20\d{2}$/.test(selectedYear) &&
     year>=2000 && year<=currentYear;
   const yearRows=Array.from({length:12},(_,i)=>{
     const monthKey=selectedYear+'-'+String(i+1).padStart(2,'0');
@@ -861,7 +861,7 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
       lines.push(row.month+' | '+(row.count===null?(row.future?'toekomst / onbekend':'niet ingevuld'):row.count+'/4')+
         ' | '+(row.change===null?'onbekend':(row.change>0?'+':'')+row.change));
     }
-    const url=URL.createObjectURL(new Blob([lines.join('\\n')+'\\n'],{
+    const url=URL.createObjectURL(new Blob([lines.join('\n')+'\n'],{
       type:'text/plain;charset=utf-8'
     }));
     const link=document.createElement('a');
