@@ -1739,6 +1739,42 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
           setNotice('Alle bedragen uit dit kostenoverzicht gewist.');
         }}>Wis beide scenario&apos;s</button>
       </div>
+      <div className="private-budget-provenance">
+        <h4>Eigen vergelijking later hervatten (alleen na jouw keuze)</h4>
+        <p>Download een privé-JSON met beide woningen, jouw financiële aannames en
+          verhuis-spaarplan. Dit bevat gevoelige privébedragen. Er wordt niets
+          automatisch bewaard of verstuurd. Een cloudbestandsprovider kan
+          de gekozen JSON wel synchroniseren.</p>
+        <button type="button" disabled={!ready || !budgetInputs || moveMonths === null || reserveMonths === null || !show}
+            onClick={exportPrivateBudgetBackup}>
+          Bewaar complete privévergelijking als JSON…
+        </button>
+        <label htmlFor="budget-restore-file">Lees een eigen Woonpoints-herstelbestand
+          (JSON, maximaal 16 KiB)</label>
+        <input id="budget-restore-file" type="file" accept=".json,application/json"
+          onChange={event => {
+            const selected = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void selectBudgetRestore(selected);
+          }} />
+        {pendingBudgetRestore && <div className="housing-confirm" role="group"
+          aria-label="Bevestig herstel van financiële privégegevens">
+          <p><strong>Vervang huidige privévergelijking?</strong> Beide bestaande
+            woning- en budgetscenario&apos;s en de verhuis-spaartermijn worden
+            vervangen. De geïmporteerde invoer is niet officieel gecontroleerd;
+            oorspronkelijke woninglijstbewijzen worden niet hersteld.</p>
+          <div className="private-budget-buttons">
+            <button type="button" onClick={applyBudgetRestore}>Ja, herstel lokaal</button>
+            <button type="button" className="secondary" onClick={() => {
+              setPendingBudgetRestore(null);
+              setBudgetArchiveMessage('Herstel geannuleerd. Bestaande invoer behouden.');
+            }}>Annuleer herstel</button>
+          </div>
+        </div>}
+        {budgetArchiveMessage && <p role="status">{budgetArchiveMessage}</p>}
+      </div>
+
+
       {show && ready && left && right && <div className="private-budget-results" aria-live="polite">
         <h3>Eigen kostenoverzicht</h3>
         <div className="private-budget-table-wrap">
@@ -1871,40 +1907,6 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
                 de startkosten of een negatieve buffer binnen twaalf maanden.
                 Dit is een indicatie op basis van je eigen invoer, geen financieel advies.</p>}
             <button type="button" onClick={exportBudgetForecast}>Bewaar eigen bufferprognose als TXT…</button>
-            <div className="private-budget-provenance">
-              <h4>Eigen vergelijking later hervatten (alleen na jouw keuze)</h4>
-              <p>Download een privé-JSON met beide woningen, jouw financiële aannames en
-                verhuis-spaarplan. Dit bevat gevoelige privébedragen. Er wordt niets
-                automatisch bewaard of verstuurd. Een cloudbestandsprovider kan
-                de gekozen JSON wel synchroniseren.</p>
-              <button type="button" onClick={exportPrivateBudgetBackup}>
-                Bewaar complete privévergelijking als JSON…
-              </button>
-              <label htmlFor="budget-restore-file">Lees een eigen Woonpoints-herstelbestand
-                (JSON, maximaal 16 KiB)</label>
-              <input id="budget-restore-file" type="file" accept=".json,application/json"
-                onChange={event => {
-                  const selected = event.currentTarget.files?.[0];
-                  event.currentTarget.value = '';
-                  void selectBudgetRestore(selected);
-                }} />
-              {pendingBudgetRestore && <div className="housing-confirm" role="group"
-                aria-label="Bevestig herstel van financiële privégegevens">
-                <p><strong>Vervang huidige privévergelijking?</strong> Beide bestaande
-                  woning- en budgetscenario&apos;s en de verhuis-spaartermijn worden
-                  vervangen. De geïmporteerde invoer is niet officieel gecontroleerd;
-                  oorspronkelijke woninglijstbewijzen worden niet hersteld.</p>
-                <div className="private-budget-buttons">
-                  <button type="button" onClick={applyBudgetRestore}>Ja, herstel lokaal</button>
-                  <button type="button" className="secondary" onClick={() => {
-                    setPendingBudgetRestore(null);
-                    setBudgetArchiveMessage('Herstel geannuleerd. Bestaande invoer behouden.');
-                  }}>Annuleer herstel</button>
-                </div>
-              </div>}
-              {budgetArchiveMessage && <p role="status">{budgetArchiveMessage}</p>}
-            </div>
-
             <p>Bestand alleen na jouw klik; een gekozen cloudbestandslocatie kan je
               zelf ingevoerde financiële gegevens synchroniseren.</p>
           </div>}
