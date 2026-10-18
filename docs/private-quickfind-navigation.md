@@ -40,3 +40,26 @@ blijven van kracht.
 
 Dit is de gebruikershandleiding van de bronwijziging; niet het bewijs
 dat de huidige productie-app is bijgewerkt.
+
+## Bewaar of herstel je favorieten (JSON)
+
+Onder de snelnavigatie kun je **Bekijk volledige favorieten-back-up** kiezen.
+De pagina toont daarna precies de JSON die je eventueel zelf kunt downloaden.
+De inhoud is beperkt tot `format: woonpoints-favorites`, `version: 1`
+en ten hoogste acht vooraf bekende, unieke schermcodes in eigen volgorde.
+Een aparte knop bevestigt de huidige inhoud en biedt het bestand pas
+dan als download aan. Aanpassen of wissen van een favoriet maakt een
+bestaande preview ongeldig.
+
+Voor herstel selecteer je zelf een JSON-bestand van maximaal **1400 bytes**.
+De app weigert onbekende velden, onjuiste versies, extra schermcodes,
+dubbele onderdelen en te veel favorieten. Je ziet alle gevonden
+schermnamen vóór **Vervang mijn favorieten**. Annuleren laat de huidige
+lijst intact. Als die tijdens de preview verandert, moet je opnieuw
+selecteren. Bij onbekende, gewijzigde of niet-schrijfbare browseropslag
+wordt niets daar overschreven; de bewust gekozen import is dan alleen
+in dit tabblad beschikbaar met een zichtbare waarschuwing.
+
+Dit bestand is geen synchronisatie: geen upload naar Woonpoints en geen
+automatische import uit een andere browser. Je eigen bestandsprovider
+kan de bewust gedownloade kopie wel buiten Woonpoints bewaren.
