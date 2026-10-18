@@ -144,3 +144,41 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 }
 .month-position-history input[type="file"]:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
 .month-csv-confirm { background: #edf2ee; border: 2px solid #436b4e; border-radius: 12px; padding: 12px; margin: 14px 0; }
+
+/* User-entered housing-reaction notebook: clear offline, unverified controls. */
+.reaction-journal p { line-height: 1.55; color: #536059; }
+.reaction-journal h3 { margin: 18px 0 10px; font-size: 19px; }
+.reaction-journal label { display: block; font-weight: 700; margin: 9px 0 6px; }
+.reaction-journal button {
+  border: 1px solid #355e42; background: #355e42; color: #fff;
+  font: inherit; font-weight: 650; border-radius: 9px; min-height: 44px;
+  padding: 9px 15px; cursor: pointer;
+}
+.reaction-journal button:disabled { opacity: .48; cursor: not-allowed; }
+.reaction-journal button:focus-visible,
+.reaction-journal select:focus-visible,
+.reaction-journal input:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+.reaction-journal input:not([type=file]), .reaction-journal select {
+  font: inherit; width: 100%; min-height: 44px; border: 2px solid #536d5a;
+  border-radius: 9px; background: #fff; padding: 9px; color: #18231c;
+}
+.reaction-journal input[type=file] {
+  display: block; max-width: 100%; width: 100%; padding: 12px;
+  background: #edf2ee; border: 1px solid #dfe7e1; border-radius: 9px;
+}
+.journal-entry-form { border: 1px solid #dfe7e1; border-radius: 12px; margin: 0; padding: 14px; }
+.journal-entry-form legend { padding: 0 6px; font-weight: 800; }
+.journal-ranks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.journal-entry-form button { margin-top: 12px; }
+.journal-toolbar { margin: 16px 0; }
+.journal-toolbar button { margin-bottom: 12px; }
+.journal-confirm {
+  background: #edf2ee; border: 2px solid #355e42; padding: 12px;
+  border-radius: 12px; margin-bottom: 12px;
+}
+.journal-confirm button + button { margin-left: 8px; color: #355e42; background: #fff; }
+.journal-items { display: grid; gap: 12px; margin: 16px 0; }
+.journal-row { padding: 14px; border: 1px solid #dfe7e1; border-radius: 12px; background: #f5f7f5; }
+.journal-row p { margin: 5px 0; }
+.journal-row button { margin-top: 12px; background: #fff; color: #355e42; }
+@media (max-width: 540px) { .journal-ranks { grid-template-columns: 1fr; } }
