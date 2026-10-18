@@ -26,7 +26,10 @@ organisaties, boekingen, accountdata of berichten naar derden.
 2. Onder **Nu zelf controleren** staan uitsluitend zelfgekozen verstreken
    controledatums en invoerwaarschuwingen.
 3. Volg **Open en werk bij** om het echte brononderdeel te openen. Na wijzigingen,
-   import of undo wordt het regiebord automatisch bijgewerkt.
+   import of undo wordt het regiebord automatisch bijgewerkt. In de woonreis
+   en het plan B kan de gebruiker nu **expliciet** kiezen voor tijdelijk
+   tabbladherstel na herladen. Bij een geldige, opt-in sessiekopie verschijnt
+   automatisch de herstelde voortgang in de regiekaart.
 4. Het regiebord verzamelt de **open, zelfgekozen controledatums** uit de
    bestaande plan-B- en nutsvoorzieningsmodules, sorteert die op datum en
    toont verwijzingen naar de oorspronkelijke invoer. Afgeronde taken verdwijnen
@@ -43,8 +46,11 @@ organisaties, boekingen, accountdata of berichten naar derden.
 ## Gegevensveiligheid
 
 - Geen netwerkaanroep, API-, SQLite- of serverwijziging.
-- Geen localStorage, cookies of automatische browseropslag. Alle voortgang wordt
-  alleen uit de reeds bestaande tabbladstatus van de broncomponenten gelezen.
+- Geen localStorage of cookies; het regiebord slaat zelf niets op. Het leest
+  de bestaande tabbladstatus van broncomponenten. Alleen de woonreis en plan B
+  kunnen na afzonderlijke expliciete toestemming een niet-versleutelde,
+  versiegebonden `sessionStorage`-kopie voor hetzelfde tabblad bewaren.
+  Dit verandert de bestaande privacygrenzen van de andere modules niet.
 - Geen externe meldingen, agenda-import, betalingen of automatische acties.
 - Agenda-export voldoet aan RFC 5545-regelvouw en geeft zelfgekozen, niet
   officieel gevalideerde dagafspraken; daadwerkelijk importeren blijft een
