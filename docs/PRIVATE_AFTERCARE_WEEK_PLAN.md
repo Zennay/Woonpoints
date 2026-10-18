@@ -26,3 +26,13 @@ De feature is broncodefunctionaliteit, niet automatisch een productie-deploy. Be
 ## Geplande acties naar bestaande berichteneditor
 
 Een selectie van **1–12 actuele punten** kan rechtstreeks worden klaargezet voor een zelf te beoordelen eerste-meldingsconcept of opvolgconcept. Het plan overschrijft geen dossier- of contactgegevens. Het onderdeel zet alleen de geselecteerde ID's en de gekozen soort concept over; eerder geopende concept- en toestemmingstoestand vervalt. De bestaande editor stelt vervolgens de tekst op en vereist nog steeds een afzonderlijke expliciete menselijke bevestiging. Bij meer dan 12 punten blijft deze handoff uitgeschakeld en kies je eerst een kleinere selectie. Er gaat géén bericht uit, ook wordt de eigen status niet automatisch op gemeld gezet.
+
+## Selectieve eigen kalender (.ics)
+
+De weekplanner kan nu desgewenst een **aparte, selectieve agenda-export** samenstellen. Dit verschilt van de bestaande volledige eigen deadline-ICS: alleen door jou **geselecteerde punten met een niet-verstreken streefdatum binnen de gekozen 7/30-dagenperiode** worden een hele-dag-item. Verstreken punten, ongedateerde acties en niet-geselecteerde punten krijgen geen agenda-event.
+
+Toekomstige afspraaknotities zijn **standaard uitgesloten**. Alleen na een expliciete checkbox gaan eigen afspraakdatums uit de bestaande contacthistorie als afzonderlijke niet-geverifieerde hele-dag-events mee. De afgeleide agenda krijgt geen automatische reminders, geen contacttekst, adressen, bijlagen of derdengegevens van de app. Eigen ruimte en titel zijn zichtbaar in de expliciete volledige ICS-preview, en moeten vóór downloaden afzonderlijk worden goedgekeurd.
+
+De export gebruikt RFC 5545-veldafbakening, CRLF-regels, UTF-8-veilige 75-octet folding, vaste pseudo-lokale kalender-UIDs en inclusieve dag+1 voor een heel-dag-event. Door de tekstlabels eerst controle-/bidi-vrij te maken en daarna speciale ICS-tekens te escapen worden eigen invoervelden geen extra gebeurtenissen. De brondata blijven onveranderd.
+
+Verandering van de dossierbron, selectie, planningsperiode, kalenderdag of afspraak-opt-in maakt elke voorgaande preview/goedkeuring ongeldig. Na downloaden vervalt het akkoord. Een agenda-app of cloudprovider kan het bestand vervolgens op initiatief van de gebruiker importeren/synchroniseren; Woonpoints maakt zelf **geen** agenda-afspraak of kennisgeving aan verhuurder/WoningNet.
