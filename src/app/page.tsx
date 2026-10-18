@@ -256,10 +256,23 @@ function PrivateMoveAftercare() {
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<Item[] | null>(null);
   const [message, setMessage] = useState('');
+  // A draft is a human-reviewed local export, never a sent or verified notice.
+  const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
+  const [includeDetails, setIncludeDetails] = useState(false);
+  const [noticeSubject, setNoticeSubject] = useState('Open aandachtspunten na mijn verhuizing');
+  const [noticeDraft, setNoticeDraft] = useState('');
+  const [noticeSource, setNoticeSource] = useState('');
+  const [noticeApproved, setNoticeApproved] = useState(false);
+
   const uploadRef = useRef<HTMLInputElement>(null);
   const currentDay = today();
   const active = items.filter(item => item.status !== 'afgerond');
   const overdue = active.filter(item => item.due && item.due < currentDay);
+  const noticeItems = active.filter(item => chosenIssueIds.includes(item.id)).slice(0, 12);
+  const noticeFingerprint = JSON.stringify({ noticeItems, includeDetails, noticeSubject });
+  const noticeCurrent = noticeDraft.length > 0 && noticeDraft.length <= 10000 &&
+    noticeSource === noticeFingerprint && noticeItems.length > 0;
+
   const dueActive = active.filter(item => item.due).sort((a, b) =>
     a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
   const [year, month, day] = currentDay.split('-').map(Number);
@@ -329,6 +342,64 @@ function PrivateMoveAftercare() {
     download('woonpoints-eigen-nazorgdeadlines.ics', calendarFor(dueActive), 'text/calendar;charset=utf-8');
     setMessage('Eigen ICS-agenda gemaakt. Import en herinneringen worden uitsluitend door je agenda-app beheerd.');
   }
+
+  function toggleNoticeItem(id: string) {
+    setChosenIssueIds(prev => prev.includes(id)
+      ? prev.filter(existing => existing !== id)
+      : prev.length >= 12 ? prev : [...prev, id]);
+    setNoticeApproved(false);
+  }
+  function createNoticeDraft() {
+    if (noticeItems.length < 1 || noticeItems.length > 12 ||
+        !validText(noticeSubject, 1, 100)) {
+      setMessage('Selecteer 1–12 actuele punten en controleer het onderwerp.'); return;
+    }
+    const lines = [
+      'Onderwerp: ' + noticeSubject.trim(),
+      '',
+      'Geachte verhuurder/beheerder,',
+      '',
+      'Ik wil de volgende door mij geconstateerde aandachtspunten bespreken en hoor graag wat een passende vervolgstap is.',
+      ''
+    ];
+    noticeItems.forEach((item, i) => {
+      lines.push(
+        `${i + 1}. ${item.room}: ${item.title} (eigen prioriteit: ${item.priority})`,
+        ...(includeDetails && item.note.trim() ? ['Mijn toelichting: ' + item.note.replace(/\\s+/g, ' ').trim()] : []),
+        ...(item.due ? ['Mijn eigen streefdatum: ' + item.due + ' (niet met u afgesproken)'] : []),
+        ''
+      );
+    });
+    lines.push(
+      'Kunt u aangeven of en hoe ik deze punten verder moet melden of laten beoordelen?',
+      '',
+      'Met vriendelijke groet,',
+      '[Vul zelf uw naam en contactgegevens in na controle]',
+      '',
+      'CONCEPT — niet automatisch verzonden of juridisch getoetst.'
+    );
+    const candidate = lines.join('\\n');
+    if (candidate.length > 10000) { setMessage('Te veel inhoud voor één concept; kies minder punten.'); return; }
+    setNoticeDraft(candidate);
+    setNoticeSource(noticeFingerprint);
+    setNoticeApproved(false);
+    setMessage('Concept aangemaakt. Controleer en bewerk het vóór kopiëren of downloaden.');
+  }
+  async function copyNoticeDraft() {
+    if (!noticeCurrent || !noticeApproved) { setMessage('Controleer en bevestig eerst het actuele concept.'); return; }
+    try {
+      if (!navigator.clipboard?.writeText) throw Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(noticeDraft);
+      setMessage('Concept gekopieerd. Plak het bewust in je eigen bericht en controleer ontvanger en bijlagen.');
+    } catch {
+      setMessage('Kopiëren niet beschikbaar in deze browser; gebruik de bewuste TXT-download.');
+    }
+  }
+  function downloadNoticeDraft() {
+    if (!noticeCurrent || !noticeApproved) { setMessage('Controleer en bevestig eerst het actuele concept.'); return; }
+    download('woonpoints-eigen-conceptmelding.txt', noticeDraft, 'text/plain;charset=utf-8');
+    setMessage('Concept-TXT gedownload. Er is niets verstuurd.');
+  }
   function exportText() {
     const lines = ['WOONPOINTS — eigen nazorgoverzicht', 'Niet verzonden of juridisch geverifieerd.', ''];
     for (const item of shown) {
@@ -373,6 +444,13 @@ function PrivateMoveAftercare() {
         .aftercare .aftercare-confirm { border:2px solid #355e42; background:#edf2ee; padding:15px; border-radius:12px; margin:12px 0; }
         .aftercare .aftercare-stats { display:flex; flex-wrap:wrap; gap:12px; padding:0; list-style:none; }
         .aftercare .aftercare-stats li { background:#edf2ee; padding:10px 14px; border-radius:10px; }
+        .aftercare .aftercare-check { display:flex; align-items:start; gap:10px; font-weight:500; margin:12px 0; }
+        .aftercare .aftercare-check input[type=checkbox] { width:22px; height:22px; min-height:22px; flex:0 0 22px; }
+        .aftercare .aftercare-notice-picks { min-width:0; border:1px solid #d0e0d4; border-radius:12px; padding:12px; }
+        .aftercare .aftercare-notice-picks legend { font-weight:700; }
+        .aftercare .aftercare-notice-picks ul { list-style:none; margin:0; padding:0; max-height:350px; overflow:auto; }
+        .aftercare #nazorg-notice-text { min-height:290px; }
+
         @media(max-width:650px) { .aftercare .aftercare-grid { grid-template-columns:1fr; } }
       `}</style>
       
@@ -471,6 +549,59 @@ function PrivateMoveAftercare() {
                   </div>
                 </div>}
               </li>)}</ul>}
+        </div>
+      </section>
+
+      <section className="panel" aria-labelledby="nazorg-notice-title">
+        <div>
+          <p className="eyebrow">BERICHT VOORBEREIDEN</p>
+          <h2 id="nazorg-notice-title">Concept voor de verhuurder</h2>
+          <p>Stel zelf een conceptbericht samen uit 1–12 niet-afgeronde aandachtspunten. Je selecteert precies welke punten meegaan. Standaard blijven je privénotities buiten het concept.</p>
+          <p>Dit is geen officiële gebrekenmelding of juridisch termijnadvies. Woonpoints verstuurt niets en bewaart geen berichten op een server.</p>
+        </div>
+        <div>
+          <fieldset className="aftercare-notice-picks">
+            <legend>Kies de aandachtspunten ({noticeItems.length} van maximaal 12)</legend>
+            {active.length === 0 ? <p>Voeg eerst een open nazorgpunt toe.</p> :
+              <ul>{active.map(item => <li key={item.id}>
+                <label className="aftercare-check">
+                  <input type="checkbox" checked={chosenIssueIds.includes(item.id)}
+                    disabled={!chosenIssueIds.includes(item.id) && noticeItems.length >= 12}
+                    onChange={() => toggleNoticeItem(item.id)} />
+                  <span>{item.room}: {item.title} · {item.status}</span>
+                </label>
+              </li>)}</ul>}
+          </fieldset>
+          <label htmlFor="nazorg-notice-subject">Onderwerp (max. 100 tekens)</label>
+          <input id="nazorg-notice-subject" maxLength={100} value={noticeSubject} onChange={e => {
+            setNoticeSubject(e.target.value); setNoticeApproved(false);
+          }} />
+          <label className="aftercare-check" htmlFor="nazorg-notice-details">
+            <input id="nazorg-notice-details" type="checkbox" checked={includeDetails}
+              onChange={e => { setIncludeDetails(e.target.checked); setNoticeApproved(false); }} />
+            <span>Neem ook mijn privétoelichtingen van geselecteerde punten op</span>
+          </label>
+          <p>Als je dit aanzet, lees de toelichtingen dan extra zorgvuldig op gevoelige gegevens na.</p>
+          <button disabled={!noticeItems.length} onClick={createNoticeDraft}>Maak lokaal concept</button>
+          {noticeDraft && <div className="aftercare-confirm" aria-labelledby="nazorg-review-title">
+            <h3 id="nazorg-review-title">Controleer het concept vóór gebruik</h3>
+            {!noticeCurrent && <p className="aftercare-warning" role="status">De selectie of brongegevens zijn gewijzigd. Maak een nieuw concept om te voorkomen dat je een verouderd bericht gebruikt.</p>}
+            <label htmlFor="nazorg-notice-text">Bewerk het bericht hier (max. 10.000 tekens)</label>
+            <textarea id="nazorg-notice-text" value={noticeDraft} maxLength={10000} rows={15}
+              onChange={e => { setNoticeDraft(e.target.value); setNoticeApproved(false); }} />
+            <label className="aftercare-check" htmlFor="nazorg-notice-confirm">
+              <input id="nazorg-notice-confirm" type="checkbox" checked={noticeApproved}
+                disabled={!noticeCurrent}
+                onChange={e => setNoticeApproved(e.target.checked)} />
+              <span>Ik heb de inhoud nagekeken, inclusief persoonsgegevens, ontvanger en niet-officiële termijnen.</span>
+            </label>
+            <div className="aftercare-actions">
+              <button disabled={!noticeCurrent || !noticeApproved} onClick={copyNoticeDraft}>Kopieer bericht bewust</button>
+              <button className="secondary" disabled={!noticeCurrent || !noticeApproved} onClick={downloadNoticeDraft}>Download concept-TXT</button>
+              <button className="secondary" onClick={() => { setNoticeDraft(''); setNoticeApproved(false); setNoticeSource(''); }}>Sluit concept</button>
+            </div>
+            <p>Niet automatisch verzonden. Een eerder gekopieerd of opgeslagen bestand blijft buiten de app bestaan.</p>
+          </div>}
         </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-backup-title">
