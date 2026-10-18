@@ -2371,6 +2371,25 @@ export function PrivateMovingExpenseLedger(){
   const [pendingRestore,setPendingRestore]=useState<MovingExpenseLine[]|null>(null);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'expenses',data:{lines}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[lines]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setLines(archive.expenses.lines);setEditing(null);setForm(emptyExpenseForm());setPendingBudget(null);setPendingDelete(null);setPendingRestore(null);setPendingReport(null);setClearPending(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const [clearPending,setClearPending]=useState(false);
   const planned=lines.reduce((sum,line)=>sum+line.plannedCents,0);
   const actualKnown=lines.reduce((sum,line)=>sum+(line.actualCents??0),0);
@@ -2643,6 +2662,25 @@ export function PrivateMovingQuoteComparison(){
   const [pendingOffer,setPendingOffer]=useState<MovingQuote|null>(null);
   const [clearConfirm,setClearConfirm]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'quotes',data:{quotes,selected}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[quotes,selected]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setQuotes(archive.quotes.quotes);setSelected(archive.quotes.selected);setForm(quoteBlank());setEditing(null);setPendingOffer(null);setPendingDelete(null);setPendingRestore(null);setPendingReport(null);setClearConfirm(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const sorted=[...quotes].sort((a,b)=>quoteTotal(a)-quoteTotal(b)||a.name.localeCompare(b.name,'nl-NL'));
   const best=sorted[0]||null;
   const selectedQuote=quotes.find(q=>q.id===selected)||null;
@@ -2876,6 +2914,25 @@ export function PrivateMovingCostSplit(){
   const [confirmClear,setConfirmClear]=useState(false);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'split',data:{members,total}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[members,total]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setMembers(archive.split.members);setTotal(archive.split.total);setPendingOffer(null);setPendingCount(null);setPendingBackup(null);setPendingReport(null);setConfirmClear(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
+  useEffect(()=>{
     function onOffer(event:Event){
       const value=(event as CustomEvent<unknown>).detail;
       if(!value||typeof value!=='object'||Array.isArray(value))return;
@@ -3076,6 +3133,213 @@ export function PrivateMovingCostSplit(){
       {notice&&<p role="status">{notice}</p>}
       <p>Alleen je eigen rekengegevens, niet automatisch opgeslagen of verzonden.
         Deel geen rekeningnummers of gevoelige persoonsgegevens in de labels.</p>
+    </section>
+  );
+}
+
+
+type MovingWorkspaceArchive = {
+  format: 'woonpoints-private-moving-workspace';
+  version: 1;
+  quotes: { quotes: MovingQuote[]; selected: string | null };
+  expenses: { lines: MovingExpenseLine[] };
+  split: { members: PrivateSplitMember[]; total: string };
+};
+type MovingWorkspaceSection = 'quotes' | 'expenses' | 'split';
+
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive {
+  if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const obj = raw as Record<string,unknown>;
+  if(Object.keys(obj).sort().join('|')!=='expenses|format|quotes|split|version' ||
+    obj.format !== 'woonpoints-private-moving-workspace' || obj.version !== 1)return false;
+  const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
+  if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
+    !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
+    !splitData||typeof splitData!=='object'||Array.isArray(splitData))return false;
+  const quotes=quoteData as Record<string,unknown>;
+  const expenses=expenseData as Record<string,unknown>;
+  const split=splitData as Record<string,unknown>;
+  if(Object.keys(quotes).sort().join('|')!=='quotes|selected'||
+    !Array.isArray(quotes.quotes)||quotes.quotes.length>4||
+    !quotes.quotes.every(validatePrivateQuote)||
+    !(quotes.selected===null || (typeof quotes.selected==='string'&&
+      quotes.quotes.some((q:MovingQuote)=>q.id===quotes.selected))))return false;
+  if(Object.keys(expenses).join('|')!=='lines'||
+    !Array.isArray(expenses.lines)||expenses.lines.length>30||
+    !expenses.lines.every(validExpenseLine))return false;
+  if(Object.keys(split).sort().join('|')!=='members|total'||
+    !Array.isArray(split.members)||split.members.length<2||split.members.length>4||
+    !split.members.every((person:unknown,index:number)=>privateSplitValidMember(person,index))||
+    typeof split.total!=='string'||(split.total!==''&&expenseCents(split.total)===null))return false;
+  const quoteIds=(quotes.quotes as MovingQuote[]).map(q=>q.id);
+  const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
+  return new Set(quoteIds).size===quoteIds.length &&
+    new Set(expenseIds).size===expenseIds.length;
+}
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive):string{
+  return JSON.stringify(data);
+}
+
+/**
+ * Read-only in-tab hub for the three existing user-authored moving modules.
+ * No account, vendor, backend or localStorage. Restore only after one explicit
+ * confirmation that replaces all three independent browser-only modules.
+ */
+export function PrivateMovingWorkspace() {
+  const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
+  const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
+  const [split,setSplit]=useState<MovingWorkspaceArchive['split']|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|null>(null);
+  const [pendingExport,setPendingExport]=useState<string|null>(null);
+  const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    function capture(event:Event){
+      const raw=(event as CustomEvent<unknown>).detail;
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+      const item=raw as Record<string,unknown>;
+      if(item.version!==1||!item.data||typeof item.data!=='object')return;
+      if(item.section==='quotes'){
+        const d=item.data as MovingWorkspaceArchive['quotes'];
+        if(d && Array.isArray(d.quotes)&&d.quotes.length<=4&&d.quotes.every(validatePrivateQuote))
+          setQuotes({quotes:d.quotes,selected:d.selected});
+      }else if(item.section==='expenses'){
+        const d=item.data as MovingWorkspaceArchive['expenses'];
+        if(d && Array.isArray(d.lines)&&d.lines.length<=30&&d.lines.every(validExpenseLine))
+          setExpenses({lines:d.lines});
+      }else if(item.section==='split'){
+        const d=item.data as MovingWorkspaceArchive['split'];
+        if(d && Array.isArray(d.members)&&d.members.length>=2&&d.members.length<=4&&
+          d.members.every((m,index)=>privateSplitValidMember(m,index)))
+          setSplit({members:d.members,total:d.total});
+      }
+    }
+    window.addEventListener('woonpoints:moving-workspace:snapshot',capture);
+    // A deferred request catches child module subscriptions regardless of
+    // sibling effect order, including an initially empty workspace.
+    const timer=window.setTimeout(()=>{
+      window.dispatchEvent(new Event('woonpoints:moving-workspace:request'));
+    },0);
+    return ()=>{
+      window.clearTimeout(timer);
+      window.removeEventListener('woonpoints:moving-workspace:snapshot',capture);
+    };
+  },[]);
+  const complete=quotes!==null&&expenses!==null&&split!==null;
+  const archive:MovingWorkspaceArchive|null=complete?{
+    format:'woonpoints-private-moving-workspace',version:1,
+    quotes:quotes!,expenses:expenses!,split:split!
+  }:null;
+  const signature=archive?privateMovingWorkspaceSignature(archive):'';
+  const quoteCount=quotes?.quotes.length??0;
+  const expenseCount=expenses?.lines.length??0;
+  const planned=expenses?.lines.reduce((total,item)=>total+item.plannedCents,0)??0;
+  const knownExpenses=expenses?.lines.filter(item=>item.actualCents!==null)??[];
+  const actual=knownExpenses.reduce((total,item)=>total+(item.actualCents??0),0);
+  const known=knownExpenses.length;
+  const selectedQuote=quotes?.quotes.find(q=>q.id===quotes.selected);
+  const splitAmount=split?.total?expenseCents(split.total):null;
+  const potentialMismatch=splitAmount!==null&&splitAmount!==planned;
+  function exportWorkspace(){
+    if(!archive||pendingExport!==signature){
+      setPendingExport(null);
+      setNotice('Het privé-overzicht is veranderd. Bekijk het exportvoorstel opnieuw.');
+      return;
+    }
+    const json=JSON.stringify(archive,null,2)+'\n';
+    const url=URL.createObjectURL(new Blob([json],{type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-prive-verhuiswerkmap.json';link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setPendingExport(null);
+    setNotice('Privé-werkmap lokaal aangeboden. Je gekozen opslaglocatie kan synchroniseren.');
+  }
+  async function prepareRestore(file:File|undefined){
+    setPendingRestore(null);setPendingExport(null);
+    if(!file)return;
+    if(file.size===0||file.size>32768){
+      setNotice('Werkmap afgewezen: het JSON-bestand moet kleiner dan 32 KiB zijn.');
+      return;
+    }
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!validMovingWorkspaceArchive(raw))throw new Error('schema');
+      setPendingRestore(raw);
+      setNotice('Geldige privé-werkmap gelezen. Niets vervangen totdat je expliciet bevestigt.');
+    }catch{
+      setNotice('Werkmap afgewezen: onjuiste versie, ontbrekende secties of ongeldige invoer. Bestaande gegevens behouden.');
+    }
+  }
+  function restoreWorkspace(){
+    if(!pendingRestore||!validMovingWorkspaceArchive(pendingRestore))return;
+    const imported=pendingRestore;
+    window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:restore',{
+      detail:imported
+    }));
+    setPendingRestore(null);setPendingExport(null);
+    setNotice('Alle drie privé-onderdelen zijn in dit tabblad vervangen, zonder externe broncontrole of netwerkverzoek.');
+  }
+  return (
+    <section className="panel" aria-labelledby="private-moving-workspace-heading">
+      <p className="eyebrow">VERHUISWERKMAP · LOKAAL IN ÉÉN TABBLAD</p>
+      <h2 id="private-moving-workspace-heading">Je verhuisoverzicht in één werkmap</h2>
+      <p>Hier komen je eigen offertes, verhuiskosten en gedeelde verdeling samen.
+        De werkmap leest uitsluitend de drie lokale schermen hieronder; er wordt
+        niets naar WoningNet, een leverancier, bank of cloud verstuurd.</p>
+      <dl>
+        <div><dt>Eigen offertes</dt><dd>{quotes===null?'Nog laden':quoteCount}
+          {selectedQuote?' · Eigen keuze: '+selectedQuote.name:''}</dd></div>
+        <div><dt>Kostenposten</dt><dd>{expenses===null?'Nog laden':expenseCount}</dd></div>
+        <div><dt>Totale eigen begroting</dt><dd>{expenses===null?'Onbekend':expenseAmount(planned)}</dd></div>
+        <div><dt>Zelf ingevulde werkelijke bedragen</dt><dd>
+          {expenses===null?'Onbekend':expenseAmount(actual)+' ('+known+'/'+expenseCount+' ingevuld)'}</dd></div>
+        <div><dt>Te verdelen totaal</dt><dd>{splitAmount===null?'Onbekend':expenseAmount(splitAmount)}</dd></div>
+      </dl>
+      {potentialMismatch&&<p role="status">Het eigen verdeeltotaal wijkt af van de kostenbegroting.
+        Controleer zelf wat je wilt verdelen; dit wordt niet automatisch aangepast.</p>}
+      {expenses!==null&&known<expenseCount&&<p>
+        Er ontbreken nog {expenseCount-known} werkelijke bedrag(en).
+        Het getoonde bedrag is daarom geen definitieve verhuistotaalprijs.</p>}
+      <div>
+        <a href="#private-moving-quotes-heading">Naar offertes</a>{' · '}
+        <a href="#private-moving-expenses-heading">Naar kostenboek</a>{' · '}
+        <a href="#private-cost-split-heading">Naar kosten delen</a>
+      </div>
+      <h3>Je eigen volledige werkmap bewaren</h3>
+      <p>Deze gecombineerde privé-JSON bevat ook alle zelf ingevoerde namen, notities,
+        betaalbedragen en offertes. Niets wordt op de achtergrond opgeslagen.
+        Sla alleen bewust op en controleer of je opslaglocatie synchroniseert.</p>
+      <button type="button" disabled={!complete} onClick={()=>{
+        setPendingExport(signature);setNotice('');
+      }}>Bekijk gecombineerde privé-JSON-export…</button>
+      {archive&&pendingExport===signature&&<div role="group" aria-label="Bevestig gecombineerde werkmap-export">
+        <p>Deze export bevat <strong>{quoteCount} eigen offerte(s)</strong>,
+          <strong> {expenseCount} kostenpost(en)</strong> en <strong>{split!.members.length} deelnemers</strong>.
+          Alle privé-invoer uit die drie onderdelen gaat mee. Je gegevens worden niet extern gecontroleerd.</p>
+        <button type="button" onClick={exportWorkspace}>Bevestig volledige JSON-download</button>
+        <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
+      </div>}
+      <label htmlFor="private-moving-workspace-upload">Herstel een volledige privé-werkmap (JSON, max. 32 KiB)</label>
+      <input id="private-moving-workspace-upload" type="file" accept=".json,application/json"
+        onChange={event=>{
+          const file=event.currentTarget.files?.[0];
+          event.currentTarget.value='';
+          void prepareRestore(file);
+        }} />
+      {pendingRestore&&<div role="group" aria-label="Bevestig volledige privé-werkmap herstellen">
+        <p>De ingelezen versie bevat <strong>{pendingRestore.quotes.quotes.length} offerte(s)</strong>,
+          <strong> {pendingRestore.expenses.lines.length} kostenpost(en)</strong> en
+          <strong> {pendingRestore.split.members.length} deelnemers</strong>.
+          Bevestigen <strong>vervangt alle drie bestaande werkvelden en eventuele niet-opgeslagen
+          invoer</strong> in dit tabblad. Een apart opgeslagen bestand blijft ongewijzigd.</p>
+        <button type="button" onClick={restoreWorkspace}>Bevestig complete werkmap vervangen</button>
+        <button type="button" onClick={()=>{
+          setPendingRestore(null);setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
+        }}>Annuleren</button>
+      </div>}
+      {notice&&<p role="status">{notice}</p>}
+      <p>De werkmap bevestigt geen echte betaling, contract, WoningNet-registratie
+        of verhuisafspraak. Sluiten van het tabblad wist niet-geëxporteerde wijzigingen.</p>
     </section>
   );
 }

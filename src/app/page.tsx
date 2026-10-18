@@ -1,7 +1,7 @@
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
-import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit } from './manual-month-progress';
+import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
 const cards = [
@@ -45,6 +45,7 @@ export default function HomePage() {
             ['private-plan-title', 'Planner'],
             ['private-moving-heading', 'Verhuizen'],
             ['private-moving-volume-heading', 'Verhuisvolume'],
+            ['private-moving-workspace-heading', 'Verhuiswerkmap'],
             ['private-moving-day-heading', 'Verhuisdag'],
             ['private-handover-heading', 'Sleutelrapport'],
             ['private-document-readiness-heading', 'Documenten'],
@@ -80,6 +81,7 @@ export default function HomePage() {
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
+      <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
       <PrivateMovingHandover />
       <PrivateMoveDocumentReadiness />
