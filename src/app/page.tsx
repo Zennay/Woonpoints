@@ -4109,6 +4109,64 @@ function handoverExportedReport(readings: Record<HandoverHomeKey, HandoverReadin
   return lines.join('\r\n') + '\r\n';
 }
 
+
+/** A canonical small private backup: exact keys, dates and decimal strings only. */
+function handoverBackup(readings: Record<HandoverHomeKey, HandoverReading>,
+  included: Record<HandoverMeterKey, boolean>): string {
+  return JSON.stringify({
+    kind: 'woonpoints-private-meter-handover', version: 1, readings, included
+  }, null, 2) + '\n';
+}
+function handoverRestore(raw: string): {
+  readings: Record<HandoverHomeKey, HandoverReading>;
+  included: Record<HandoverMeterKey, boolean>
+} {
+  if (new TextEncoder().encode(raw).length > 4096) throw Error('Bestand te groot.');
+  const object: unknown = JSON.parse(raw);
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const keys = (value: Record<string, unknown>, required: string[]) =>
+    Object.keys(value).sort().join('|') === [...required].sort().join('|');
+  if (!isObject(object) || !keys(object, ['kind', 'version', 'readings', 'included']) ||
+      object.kind !== 'woonpoints-private-meter-handover' || object.version !== 1 ||
+      !isObject(object.readings) || !isObject(object.included) ||
+      !keys(object.readings, ['old', 'new']) ||
+      !keys(object.included, HANDOVER_METERS.map(meter => meter.key))) {
+    throw Error('Ongeldig eigen meterstandenbestand.');
+  }
+  const included = { ...HANDOVER_EMPTY_VALUES } as unknown as Record<HandoverMeterKey, boolean>;
+  for (const meter of HANDOVER_METERS) {
+    const flag = object.included[meter.key];
+    if (typeof flag !== 'boolean') throw Error('Ongeldige meterkeuze.');
+    included[meter.key] = flag;
+  }
+  if (!HANDOVER_METERS.some(meter => included[meter.key])) throw Error('Geen gekozen meter.');
+  const readings = { old: { day: '', values: { ...HANDOVER_EMPTY_VALUES } },
+    new: { day: '', values: { ...HANDOVER_EMPTY_VALUES } } };
+  for (const home of ['old', 'new'] as HandoverHomeKey[]) {
+    const entry = object.readings[home];
+    if (!isObject(entry) || !keys(entry, ['day', 'values']) ||
+        typeof entry.day !== 'string' ||
+        (entry.day !== '' && !handoverValidDay(entry.day)) ||
+        !isObject(entry.values) ||
+        !keys(entry.values, HANDOVER_METERS.map(meter => meter.key))) {
+      throw Error('Ongeldige overdrachtsdatum of stand.');
+    }
+    readings[home].day = entry.day;
+    for (const meter of HANDOVER_METERS) {
+      const value = entry.values[meter.key];
+      if (typeof value !== 'string' || (value !== '' && !handoverValidReading(value))) {
+        throw Error('Ongeldige meterstand.');
+      }
+      readings[home].values[meter.key] = value;
+    }
+  }
+  if (handoverBackup(readings, included) !== raw) {
+    throw Error('Geen canoniek door Woonpoints aangemaakt privébestand.');
+  }
+  return { readings, included };
+}
+
 /**
  * Private moving-day worksheet; no WoningNet API, account, localStorage,
  * third-party sync, automatic supplier submission, or energy-usage inference.
@@ -4118,11 +4176,23 @@ function PrivateMeterHandover() {
   const [included, setIncluded] = useState<Record<HandoverMeterKey, boolean>>({
     powerDay: true, powerNight: false, gas: true, water: true, heat: false
   });
-  const [preview, setPreview] = useState<{ source: string; text: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    source: string; text: string; format: 'txt' | 'json'
+  } | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<{
+    baseline: string; data: ReturnType<typeof handoverRestore>
+  } | null>(null);
+  const [restoreApproved, setRestoreApproved] = useState(false);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    from: string; readings: Record<HandoverHomeKey, HandoverReading>;
+    included: Record<HandoverMeterKey, boolean>
+  } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [feedback, setFeedback] = useState('');
   const source = JSON.stringify({ readings, included });
   const previewCurrent = preview !== null && preview.source === source;
+  const restoreCurrent = pendingRestore !== null && pendingRestore.baseline === source;
+  const undoCurrent = restoreUndo !== null && restoreUndo.from === source;
   const selected = HANDOVER_METERS.filter(meter => included[meter.key]);
   const status = useMemo(() => {
     const complete = (['old', 'new'] as HandoverHomeKey[]).flatMap(home =>
@@ -4155,15 +4225,60 @@ function PrivateMeterHandover() {
       setFeedback('Controleer eerst de gekozen meters en ongeldige invoer.');
       setPreview(null); setConfirmed(false); return;
     }
-    setPreview({ source, text: handoverExportedReport(readings, included) });
+    setPreview({ source, text: handoverExportedReport(readings, included), format: 'txt' });
     setConfirmed(false); setFeedback('');
+  }
+  function backupPreview() {
+    const allValid = (['old', 'new'] as HandoverHomeKey[]).every(home =>
+      (readings[home].day === '' || handoverValidDay(readings[home].day)) &&
+      HANDOVER_METERS.every(meter => readings[home].values[meter.key] === '' ||
+        handoverValidReading(readings[home].values[meter.key])));
+    if (!selected.length || !allValid) {
+      setFeedback('Controleer ook eerder verborgen standen vóór een herstelback-up.');
+      setPreview(null); setConfirmed(false); return;
+    }
+    setPreview({ source, text: handoverBackup(readings, included), format: 'json' });
+    setConfirmed(false); setFeedback('');
+  }
+  async function chooseRestore(file: File | undefined) {
+    if (!file) return;
+    const baseline = source;
+    setPendingRestore(null); setRestoreApproved(false); setFeedback('');
+    if (file.size > 4096) {
+      setFeedback('Herstel geweigerd: meer dan 4 KiB.');
+      return;
+    }
+    try {
+      const data = handoverRestore(await file.text());
+      setPendingRestore({ baseline, data });
+    } catch {
+      setFeedback('Herstel geweigerd: geen exact geldig eigen Woonpoints-meterbestand.');
+    }
+  }
+  function confirmRestore() {
+    if (!restoreCurrent || !restoreApproved || pendingRestore === null) return;
+    const next = pendingRestore.data;
+    const newSource = JSON.stringify({ readings: next.readings, included: next.included });
+    setRestoreUndo({ from: newSource, readings, included });
+    setReadings(next.readings); setIncluded(next.included);
+    setPreview(null); setConfirmed(false);
+    setPendingRestore(null); setRestoreApproved(false);
+    setFeedback('Privébestand geladen. De vorige invoer kun je één keer herstellen zolang niets verandert.');
+  }
+  function undoRestore() {
+    if (!undoCurrent || restoreUndo === null) return;
+    setReadings(restoreUndo.readings); setIncluded(restoreUndo.included);
+    setRestoreUndo(null); setPreview(null); setConfirmed(false);
+    setFeedback('De vorige tabbladinvoer is hersteld.');
   }
   function download() {
     if (!previewCurrent || !confirmed || preview === null) return;
-    const blob = new Blob([preview.text], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([preview.text], { type: preview.format === 'json'
+      ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url; link.download = 'woonpoints-eigen-meterstanden.txt';
+    link.href = url; link.download = preview.format === 'json'
+      ? 'woonpoints-private-meterstanden.json' : 'woonpoints-eigen-meterstanden.txt';
     document.body.appendChild(link);
     link.click(); link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -4175,7 +4290,8 @@ function PrivateMeterHandover() {
       old: { day: '', values: { ...HANDOVER_EMPTY_VALUES } },
       new: { day: '', values: { ...HANDOVER_EMPTY_VALUES } }
     });
-    setPreview(null); setConfirmed(false);
+    setPreview(null); setConfirmed(false); setPendingRestore(null);
+    setRestoreApproved(false); setRestoreUndo(null);
     setFeedback('Je invoer is uitsluitend uit dit tabblad gewist.');
   }
 
@@ -4237,6 +4353,8 @@ function PrivateMeterHandover() {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
       <button type="button" disabled={!selected.length || status.invalid}
         onClick={buildPreview}>Bekijk volledig overdrachtsbestand</button>
+      <button type="button" className="secondary" disabled={!selected.length}
+        onClick={backupPreview}>Bekijk volledige privéback-up (.json)</button>
       <button type="button" className="secondary" onClick={reset}>Wis mijn invoer</button>
     </div>
     {preview !== null && <div style={{ marginTop: 16, padding: 16, border: '1px solid #91a99a',
@@ -4252,12 +4370,47 @@ function PrivateMeterHandover() {
           Ik heb dit volledige privébestand bekeken en kies bewust of en met wie ik het deel.
         </label>
         <button type="button" disabled={!confirmed} onClick={download}
-          style={{ marginTop: 12 }}>Download exact dit gecontroleerde TXT-bestand</button>
+          style={{ marginTop: 12 }}>Download exact dit gecontroleerde {preview.format.toUpperCase()}-bestand</button>
       </>}
     </div>}
+    <fieldset style={{ marginTop: 20, border: '1px solid #c4d6c9',
+      borderRadius: 12, padding: 16 }}>
+      <legend><strong>Mijn privébackup terugzetten</strong></legend>
+      <p>Kies uitsluitend je eerder met dit onderdeel gedownloade JSON. Er gebeurt
+        niets totdat je de vervanging goedkeurt. Een bestand mag maximaal 4 KiB zijn.</p>
+      <input type="file" accept=".json,application/json"
+        aria-label="Kies mijn eigen meterstanden-back-up"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void chooseRestore(file);
+        }} />
+      {pendingRestore !== null && <div style={{ marginTop: 12 }}>
+        {!restoreCurrent && <p role="alert">Je tabbladinvoer is veranderd; kies het bestand opnieuw.</p>}
+        {restoreCurrent && <>
+          <p>Dit bestand vervangt <strong>beide woningen</strong>, hun datums en de gekozen meters.
+            {''} De bestaande niet-opgeslagen invoer wordt vervangen.</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            maxHeight: 240, overflowY: 'auto' }}>
+            {handoverExportedReport(pendingRestore.data.readings, pendingRestore.data.included)}
+          </pre>
+          <label style={{ display: 'flex', gap: 9, alignItems: 'start' }}>
+            <input type="checkbox" checked={restoreApproved}
+              onChange={event => setRestoreApproved(event.target.checked)} />
+            Ik heb de vervangende standen bekeken en geef toestemming om de huidige
+            tabbladinvoer te vervangen.
+          </label>
+          <button type="button" disabled={!restoreApproved} onClick={confirmRestore}>
+            Vervang mijn invoer met dit gecontroleerde bestand
+          </button>
+        </>}
+      </div>}
+      {undoCurrent && <button type="button" className="secondary"
+        onClick={undoRestore}>Herstel mijn vorige tabbladinvoer één keer</button>}
+    </fieldset>
     <p role="status" aria-live="polite">{feedback}</p>
     <p>Alle gegevens blijven alleen in het huidige browsertabblad totdat je zelf een
-      TXT-bestand aanvraagt. Vernieuwen of sluiten wist de invoer. Een gedownload bestand
+      TXT- of JSON-bestand aanvraagt. Vernieuwen of sluiten wist de invoer. Een gedownload bestand
       kan privégegevens bevatten: bewaar en deel dit uitsluitend zelf. Geen synchronisatie,
       accountbewijs, officiële meterregistratie of koppeling aan energieleveranciers.</p>
   </section>;
