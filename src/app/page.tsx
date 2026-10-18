@@ -1016,6 +1016,7 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
     from:string;contents:string;data:PrivateMovingBundleData
   }|null>(null);
   const [bundleRestoreApproved,setBundleRestoreApproved]=useState(false);
+  const [bundleSelected,setBundleSelected]=useState<string[]>(()=>PRIVATE_MOVING_BUNDLE_PARTS.map(part=>part.key));
   const [bundleUndo,setBundleUndo]=useState<{
     expected:string;previous:PrivateMovingBundleData
   }|null>(null);
@@ -1051,6 +1052,7 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
   }
   async function importBundle(file:File|undefined){
     setBundleIncoming(null);setBundleRestoreApproved(false);setBundleMessage('');
+    setBundleSelected(PRIVATE_MOVING_BUNDLE_PARTS.map(part=>part.key));
     if(!file)return;
     if(!bundleReady){
       setBundleMessage('Niet alle bronschermen zijn geladen; herladen of herstellen niet mogelijk.');
@@ -1069,8 +1071,9 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
       setBundleMessage('Back-up geweigerd: geen exact geldig Woonpoints-combinatiebestand.');
     }
   }
-  function applyBundle(data:PrivateMovingBundleData){
+  function applyBundle(data:PrivateMovingBundleData,selected?:string[]){
     for(const part of PRIVATE_MOVING_BUNDLE_PARTS){
+      if(selected&&!selected.includes(part.key))continue;
       window.dispatchEvent(new CustomEvent<PrivateMovingRestoreMessage>(
         PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,{
           detail:{key:part.key,raw:data[part.key]}
@@ -1078,14 +1081,19 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
     }
   }
   function restoreBundle(){
-    if(!bundleIncomingFresh||!bundleRestoreApproved||!bundleIncoming)return;
+    if(!bundleIncomingFresh||!bundleRestoreApproved||!bundleIncoming||
+      !bundleSelected.length)return;
     const previous={...snapshots};
     const next=bundleIncoming.data;
-    // All four subdocuments passed exact-schema validation before *any* source state is touched.
-    applyBundle(next);
-    setBundleUndo({expected:privateMovingBundleSignature(next),previous});
+    const combined={...previous};
+    for(const part of PRIVATE_MOVING_BUNDLE_PARTS){
+      if(bundleSelected.includes(part.key))combined[part.key]=next[part.key];
+    }
+    // Every subdocument validates before any selected source is changed.
+    applyBundle(next,bundleSelected);
+    setBundleUndo({expected:privateMovingBundleSignature(combined),previous});
     setBundleIncoming(null);setBundleRestoreApproved(false);
-    setBundleMessage('Vier bronschermen teruggezet. Je vorige tabbladstatus is éénmalig herstelbaar.');
+    setBundleMessage(bundleSelected.length+' gekozen bronscherm(en) teruggezet. Je vorige tabbladstatus is éénmalig herstelbaar.');
   }
   function undoBundle(){
     if(!bundleUndoFresh||!bundleUndo)return;
@@ -1223,20 +1231,32 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
       {bundleIncoming&&<div>
         {bundleIncomingFresh?<><p>Geldig bestand: alle vier onderdelen bevatten
           exact herkende Woonpoints-gegevens. <strong>Herstellen vervangt de
-          huidige invoer in alle vier schermen</strong>; niets wordt buiten
-          dit tabblad verzonden. De afzonderlijke automatische opslaginstellingen
+          huidige invoer in de hieronder geselecteerde schermen</strong>; niets
+          wordt buiten dit tabblad verzonden. De afzonderlijke automatische opslaginstellingen
           blijven zoals ze nu staan.</p>
-          <ul>{PRIVATE_MOVING_BUNDLE_PARTS.map(part=><li key={part.key}>
-            {part.title} — wordt vervangen
-          </li>)}</ul>
+          <fieldset style={{border:'1px solid #d4dfd5',padding:14,borderRadius:10}}>
+            <legend><strong>Welke onderdelen wil je vervangen?</strong></legend>
+            {PRIVATE_MOVING_BUNDLE_PARTS.map(part=><label key={part.key}
+              style={{display:'block',minHeight:44}}>
+              <input type="checkbox" checked={bundleSelected.includes(part.key)}
+                onChange={event=>{
+                  setBundleRestoreApproved(false);
+                  setBundleSelected(previous=>event.target.checked?
+                    [...previous,part.key]:previous.filter(key=>key!==part.key));
+                }}/>
+              {' '}{part.title}
+            </label>)}
+            <p>Niet geselecteerde onderdelen blijven ongewijzigd.
+              Zonder selectie wordt niets vervangen.</p>
+          </fieldset>
           <label style={{display:'block',minHeight:44}}>
             <input type="checkbox" checked={bundleRestoreApproved}
               onChange={event=>setBundleRestoreApproved(event.target.checked)}/>
-            {' '}Ik begrijp dat mijn vier huidige formulieren worden vervangen.
+            {' '}Ik begrijp dat de geselecteerde huidige formulieren worden vervangen.
           </label>
-          <button type="button" disabled={!bundleRestoreApproved}
+          <button type="button" disabled={!bundleRestoreApproved||bundleSelected.length===0}
             style={{minHeight:44}} onClick={restoreBundle}>
-            Bevestig herstel van alle vier onderdelen</button></>:
+            Bevestig herstel van {bundleSelected.length} gekozen onderdeel(en)</button></>:
           <p role="alert">De huidige invoer is veranderd. Selecteer het bestand opnieuw.</p>}
         <button type="button" style={{minHeight:44,marginLeft:8}}
           onClick={()=>{setBundleIncoming(null);setBundleRestoreApproved(false);}}>
