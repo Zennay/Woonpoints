@@ -281,6 +281,11 @@ const statusNames: Record<JournalStatus, string> = {
   closed: 'Afgesloten', invited: 'Uitgenodigd', withdrawn: 'Ingetrokken'
 };
 
+export type PrivatePointsSnapshot = {
+  observations: number;
+  last: {month:string;points:number}|null;
+  previous: {month:string;points:number}|null;
+};
 export type PrivateMonthSnapshot = {
   month: string|null;
   count: number|null;
@@ -3224,7 +3229,9 @@ function downloadPrivatePointsArchive(rows: PrivatePointsEntry[]) {
 }
 
 /** Personal historical notes only; cannot register or verify points on a housing portal. */
-export function PrivateSearchPointsHistory() {
+export function PrivateSearchPointsHistory({onPointsSnapshot}:{
+  onPointsSnapshot?: (snapshot:PrivatePointsSnapshot)=>void;
+} = {}) {
   const [rows,setRows] = useState<PrivatePointsEntry[]>([]);
   const [month,setMonth] = useState(privateMonthToday);
   const [points,setPoints] = useState('');
@@ -3243,6 +3250,13 @@ export function PrivateSearchPointsHistory() {
   const last = sorted.at(-1);
   const previous = sorted.at(-2);
   const biggest = Math.max(1,...sorted.map(row=>row.points));
+  useEffect(() => {
+    onPointsSnapshot?.({
+      observations: sorted.length,
+      last: sorted.at(-1) ?? null,
+      previous: sorted.at(-2) ?? null
+    });
+  }, [rows,onPointsSnapshot]);
   const label = (value: string) => {
     const [year,number] = value.split('-').map(Number);
     return new Intl.DateTimeFormat('nl-NL',{month:'long',year:'numeric',timeZone:'UTC'})
@@ -3828,6 +3842,8 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const [offer,setOffer]=useState<PrivateJournalCountOffer|null>(null);
   const [month,setMonth]=useState<PrivateMonthSnapshot|null>(null);
   const [journal,setJournal]=useState<PrivateJournalSnapshot|null>(null);
+  const [pointsSnapshot,setPointsSnapshot]=useState<PrivatePointsSnapshot|null>(null);
+  const updatePoints=useCallback((value:PrivatePointsSnapshot)=>setPointsSnapshot(value),[]);
   const propose=useCallback((value:PrivateJournalCountOffer|null)=>setOffer(value),[]);
   const decide=useCallback(()=>setOffer(null),[]);
   const updateMonth=useCallback((value:PrivateMonthSnapshot)=>setMonth(value),[]);
@@ -3867,6 +3883,19 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
               (diaryTotal-diaryReacted)+' met andere status.' :
               'Alleen eigen notities uit de huidige kalendermaand worden geteld.'}</p>
           </article>
+          <article className="card">
+            <h3>Zelf genoteerde zoekpunten</h3>
+            <strong>{pointsSnapshot?.last ? pointsSnapshot.last.points+' punten' :
+              'Geen eigen stand'}</strong>
+            <p>{pointsSnapshot?.last ?
+              'Laatste handmatige maand: '+pointsSnapshot.last.month+
+              (pointsSnapshot.previous ?
+                '. Verschil met '+pointsSnapshot.previous.month+': '+
+                  (pointsSnapshot.last.points-pointsSnapshot.previous.points > 0 ? '+' : '')+
+                  (pointsSnapshot.last.points-pointsSnapshot.previous.points)+'.' :
+                '. Nog geen eerdere maand om te vergelijken.') :
+              'Geen accountkoppeling of officiële punten toegekend.'}</p>
+          </article>
         </div>
         {month?.previousNoteHeld && <p role="status">
           Je browser bevat nog een oudere of onleesbare maandnotitie. Deze wordt
@@ -3879,7 +3908,8 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
           gereageerd gemarkeerd. Ze worden niet automatisch tot het maanddoel
           teruggebracht.</p>}
         <p><a href="#manual-progress-heading">Open mijn maandplanning</a>
-          {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a></p>
+          {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a>
+          {' · '}<a href="#private-points-heading">Open mijn zoekpuntenhistorie</a></p>
         <p>Geen accounts, adressen, externe data of netwerkverzoeken worden voor
           dit overzicht gekoppeld. Er vindt geen achtergrondopslag of
           automatische correctie tussen de twee onderdelen plaats.</p>
@@ -3887,6 +3917,7 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
     </section>
     <ManualMonthProgress journalOffer={offer} onJournalDecision={decide}
       onMonthSnapshot={updateMonth} />
+    <PrivateSearchPointsHistory onPointsSnapshot={updatePoints} />
     {children}
     <ManualPositionsWorkspace onMonthCountOffer={propose}
       onJournalSnapshot={updateJournal} reportMonth={activeMonth}/>
