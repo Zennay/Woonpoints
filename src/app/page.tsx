@@ -1168,6 +1168,19 @@ function PrivateMoveAftercare() {
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
 
+  function openIssueFromInbox(id: string) {
+    // Clearing the local view first ensures the destination cannot be hidden by filters.
+    setFilter('alles');
+    setIssueSearch('');
+    setIssuePriority('alle');
+    setIssueRoom('alle');
+    requestAnimationFrame(() => {
+      const target = document.getElementById('nazorg-punt-' + id);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
   function createFromInspection(requests: Draft[]): { added: number; skipped: number; error?: string } {
     if (requests.length === 0) return { added: 0, skipped: 0 };
     const existing = new Set(items.filter(item => item.status !== 'afgerond')
@@ -1712,6 +1725,10 @@ function PrivateMoveAftercare() {
               {followUpInbox.slice(0, showAllFollowUps ? 80 : 16).map(entry => <li key={entry.item.id} className="aftercare-item">
                 <strong>{entry.item.room}: {entry.item.title}</strong>
                 <p>{entry.reason}</p>
+                <button type="button" className="secondary"
+                  onClick={() => openIssueFromInbox(entry.item.id)}>
+                  Bekijk dit punt in mijn dossier ↓
+                </button>
                 <p>Eigen prioriteit: {entry.item.priority} · Status: {entry.item.status}
                   {entry.item.due ? ' · Eigen datum: ' + entry.item.due : ' · Geen datum'}
                   {entry.ownContact ? ' · Laatst zelf genoteerd verzonden: ' + entry.ownContact.day : ''}
@@ -1843,7 +1860,8 @@ function PrivateMoveAftercare() {
         <div>
           {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave. Wis de filters om alles terug te zien.</p> :
             <ul className="aftercare-list">{shown.map(item =>
-              <li className="aftercare-item" key={item.id}>
+              <li className="aftercare-item" key={item.id}
+                id={'nazorg-punt-' + item.id} tabIndex={-1}>
                 <strong>{item.title}</strong>
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
