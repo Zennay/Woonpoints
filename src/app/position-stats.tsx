@@ -307,6 +307,7 @@ export function ManualReactionJournal({
 
   function add() {
     setMessage('');
+    setConfirmClearAll(false);
     if (!date || entries.length >= 100 ||
         (rankInput === '') !== (totalInput === '') ||
         (rankInput !== '' && (!/^[1-9][0-9]{0,5}$/.test(rankInput) ||
@@ -369,6 +370,7 @@ export function ManualReactionJournal({
     try {
       summarizeManualReactionJournal(candidate);
       setEntries(candidate);setEditingId(null);
+      setConfirmClearAll(false);
       setMonthFilter('all'); // Reveal the corrected row if its date moved outside the old filter.
       setMessage('Je eigen datum, status en eindpositie zijn bijgewerkt. Dit verandert geen officiële woningreactie.');
     } catch {
@@ -381,6 +383,7 @@ export function ManualReactionJournal({
     const index=entries.findIndex(row=>row.id===item.id);
     if (index<0) return;
     setRecentlyRemoved({item:{...item},index});
+    setConfirmClearAll(false);
     setEntries(current=>current.filter(row=>row.id!==item.id));
     if (editingId===item.id) setEditingId(null);
     setMessage('Alleen deze eigen notitie verwijderd. Je kunt de laatste verwijdering hieronder herstellen.');
@@ -403,6 +406,7 @@ export function ManualReactionJournal({
   function updateState(id: number, state: JournalStatus) {
     if (!Object.hasOwn(statusNames, state)) return;
     setEntries(old => old.map(row => row.id === id ? { ...row, status: state } : row));
+    setConfirmClearAll(false);
     setMessage('Eigen status aangepast; dit is geen officiële registratiestatus.');
   }
 
@@ -441,6 +445,7 @@ export function ManualReactionJournal({
   async function prepareImport(file?: File) {
     setPendingImport(null);
     setEditingId(null);
+    setConfirmClearAll(false);
     if (!file) return;
     if (!file.size || file.size > 12_000) {
       setMessage('Import geweigerd: kies een CSV kleiner dan 12 KB.');
