@@ -4481,6 +4481,7 @@ export function PrivateMovingPackingInventory(){
           imported.version!==5&&imported.version!==6))return;
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
+      pendingArchiveSequence.current++;
       setPendingRestore(null);setPendingLabels(null);
       setRestoreUndo(null);setPendingRestoreSource(null);
       setTransport(imported.version===4||imported.version===5||imported.version===6?
@@ -4893,24 +4894,42 @@ export function PrivateMovingPackingInventory(){
         event.currentTarget.value='';void readArchive(file);
       }}/>
     {pendingRestore&&<div role="group" aria-label="Bevestig huidige paklijst vervangen">
-      <p>Back-up bevat {pendingRestore.items.length} eigen regels in
-        { ' '+new Set(pendingRestore.items.map(item=>item.room)).size} kamer(s).
-        Bevestigen vervangt de huidige {items.length} regels, inclusief onbewaarde wijzigingen.
-        {pendingRestore.version===2?
-          ' Ook de eigen laad-/aflevermarkeringen uit deze back-up worden hersteld.':
-          ' Oudere v1 bevat geen laad-/aflevermarkeringen; deze worden leeggemaakt.'}
-        Er wordt niets met WoningNet gecontroleerd.</p>
+      <h3>Herstel bewust één eigen bestand</h3>
+      <p>Gekozen back-up: <strong>{pendingRestore.items.length}</strong> eigen regels in
+        {' '+new Set(pendingRestore.items.map(item=>item.room)).size} kamer(s).
+        Je huidige tabblad heeft <strong>{items.length}</strong> regels en
+        <strong> {transportEntries.length}</strong> eigen doosvervoer-markeringen.
+        Bevestigen vervangt ze allebei, inclusief nog niet bewaarde wijzigingen.</p>
+      <p>{pendingRestore.version===2?
+          'Versie 2 herstelt ook de eigen laad- en aflevermarkeringen uit de gekozen back-up.':
+          'Versie 1 heeft geen transportmarkeringen: de huidige markeringen worden gewist.'}
+        Er wordt geen WoningNet-, vervoerder- of externe accountinformatie geraadpleegd.</p>
+      {!canApplyRestore&&<p role="alert">Je paklijst of transportstatus veranderde
+        sinds het kiezen van het bestand. Annuleer en kies het bestand opnieuw.
+        De oude importtoestemming is ongeldig; er wordt niets vervangen.</p>}
+      <button type="button" disabled={!canApplyRestore} onClick={applyPackingRestore}>
+        Ja, vervang volledige paklijst en bewaar tijdelijk herstelpunt
+      </button>
       <button type="button" onClick={()=>{
-        setItems(pendingRestore.items);
-        setTransport(pendingRestore.version===2?
-          packingRestoreTransport(pendingRestore.items,pendingRestore.transport):{});
-        setPendingManifest(null);setPendingRestore(null);setPendingExport(null);
-        setPendingDelete(null);setEditing(null);setForm(blank());
-        setNotice(pendingRestore.version===2?
-          'Privé-paklijst en eigen transportstatus hersteld; geen externe controle.':
-          'Oudere privé-paklijst hersteld; transportstatus leeggemaakt.');
-      }}>Ja, vervang volledige paklijst</button>
-      <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
+        setPendingRestore(null);setPendingRestoreSource(null);
+        setNotice('Privé-import geannuleerd; bestaande paklijst behouden.');
+      }}>Annuleer zonder wijzigingen</button>
+    </div>}
+    {restoreUndo&&<div role="group" aria-label="Vorige paklijst veilig terugzetten">
+      <h3>Vorige tabblad-paklijst herstellen</h3>
+      <p>Vóór je laatste JSON-import stonden er <strong>{restoreUndo.previousItems.length}</strong>
+        eigen pakregels. Dit tijdelijk herstelpunt kan de vorige paklijst én
+        transportmarkeringen één keer terugzetten zolang na de import niets is gewijzigd.</p>
+      {!canUndoRestore&&<p role="status">Je paklijst of laad-/afleverstatus is na de
+        import aangepast. Automatisch terugdraaien is uitgeschakeld, zodat nieuwe
+        invoer niet stilzwijgend wordt overschreven.</p>}
+      <button type="button" disabled={!canUndoRestore||Boolean(pendingRestore)}
+        onClick={undoPackingRestore}>Herstel vorige tabbladgegevens</button>
+      <button type="button" onClick={()=>{
+        setRestoreUndo(null);setNotice('Tijdelijke terugzetmogelijkheid gewist; huidige paklijst behouden.');
+      }}>Verwerp herstelpunt</button>
+      <p>Dit herstelpunt blijft uitsluitend in het RAM van dit browsertabblad.
+        Sluiten wist het. Gedownloade privé-JSON-bestanden worden niet gewijzigd.</p>
     </div>}
     {!confirmClear?<button type="button" onClick={()=>setConfirmClear(true)}>
       Wis eigen paklijst…</button>:<div role="group" aria-label="Bevestig paklijst wissen">
