@@ -2592,3 +2592,255 @@ export function PrivateMovingExpenseLedger(){
     </section>
   );
 }
+
+
+type MovingQuoteService = 'Alleen bus' | 'Bus met chauffeur' | 'Bus en verhuishulp';
+type MovingQuote = {
+  id:string; name:string; service:MovingQuoteService; quoteDate:string;
+  baseCents:number; travelCents:number; materialCents:number; notes:string;
+};
+const QUOTE_SERVICES:MovingQuoteService[]=['Alleen bus','Bus met chauffeur','Bus en verhuishulp'];
+const quoteBlank=()=>({
+  name:'',service:'Alleen bus' as MovingQuoteService, quoteDate:'',
+  base:'',travel:'0',materials:'0',notes:''
+});
+function quoteTotal(quote:MovingQuote):number{
+  return quote.baseCents+quote.travelCents+quote.materialCents;
+}
+function validatePrivateQuote(row:unknown):row is MovingQuote{
+  if(!row||typeof row!=='object'||Array.isArray(row))return false;
+  const q=row as Record<string,unknown>;
+  return Object.keys(q).length===8 &&
+    typeof q.id==='string'&&/^private-quote-[0-9]+-[0-9]+$/.test(q.id)&&
+    typeof q.name==='string'&&q.name.length>0&&q.name.length<=60&&q.name.trim()===q.name&&
+    !/[\\u0000-\\u001f\\u007f]/.test(q.name)&&
+    QUOTE_SERVICES.includes(q.service as MovingQuoteService)&&
+    typeof q.quoteDate==='string'&&(q.quoteDate===''||dateOnly(q.quoteDate)!==null)&&
+    (['baseCents','travelCents','materialCents'] as const).every(k=>
+      typeof q[k]==='number'&&Number.isSafeInteger(q[k])&&(q[k] as number)>=0&&(q[k] as number)<=9999999
+    )&&
+    (q.baseCents as number)+(q.travelCents as number)+(q.materialCents as number)<=9999999&&
+    typeof q.notes==='string'&&q.notes.length<=400&&!/[\\u0000-\\u001f\\u007f]/.test(q.notes);
+}
+
+/** Private manual quote estimates only: not verified vendors, bookings or financial advice. */
+export function PrivateMovingQuoteComparison(){
+  const [quotes,setQuotes]=useState<MovingQuote[]>([]);
+  const [form,setForm]=useState(quoteBlank);
+  const [editing,setEditing]=useState<string|null>(null);
+  const [selected,setSelected]=useState<string|null>(null);
+  const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<{quotes:MovingQuote[];selected:string|null}|null>(null);
+  const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [pendingOffer,setPendingOffer]=useState<MovingQuote|null>(null);
+  const [clearConfirm,setClearConfirm]=useState(false);
+  const [notice,setNotice]=useState('');
+  const sorted=[...quotes].sort((a,b)=>quoteTotal(a)-quoteTotal(b)||a.name.localeCompare(b.name,'nl-NL'));
+  const best=sorted[0]||null;
+  const selectedQuote=quotes.find(q=>q.id===selected)||null;
+  const snapshot=JSON.stringify({quotes,selected});
+  const report=[
+    'Woonpoints · eigen offertevergelijking voor verhuizing',
+    'Eigen invoer. Geen geverifieerde leveranciers, officiële offerte, bindende prijs of reservering.',
+    ...sorted.map(q=>
+      `${q.name} | ${q.service} | Eigen datum ${q.quoteDate||'onbekend'} | `+
+      `Basis ${expenseAmount(q.baseCents)} | Reis ${expenseAmount(q.travelCents)} | `+
+      `Materiaal ${expenseAmount(q.materialCents)} | Geraamd totaal ${expenseAmount(quoteTotal(q))}`+
+      (q.id===selected?' | Eigen voorkeur':'')+
+      (q.notes?` | Notities: ${q.notes.replace(/\\r?\\n/g,' ')}`:'')
+    ),
+    best?`Laagste van de ingevulde ramingen: ${best.name} · ${expenseAmount(quoteTotal(best))}`:
+      'Nog geen eigen ramingen',
+    selectedQuote?`Gekozen voorkeur: ${selectedQuote.name} · ${expenseAmount(quoteTotal(selectedQuote))}`:
+      'Nog geen eigen voorkeur gekozen',
+    'Controleer voorwaarden, verzekeringen, annuleringskosten en definitieve prijzen zelf.'
+  ].join('\\n')+'\\n';
+  function invalidate(){
+    setPendingDelete(null);setPendingRestore(null);setPendingReport(null);
+    setPendingOffer(null);setClearConfirm(false);setNotice('');
+  }
+  function saveQuote(){
+    const name=form.name.trim().replace(/[\\u0000-\\u001f\\u007f]/g,' ');
+    const base=expenseCents(form.base),travel=expenseCents(form.travel),materials=expenseCents(form.materials);
+    if(!name||name.length>60||base===null||travel===null||materials===null||
+      base+travel+materials>9999999||form.notes.length>400||
+      !QUOTE_SERVICES.includes(form.service)||(form.quoteDate&&!dateOnly(form.quoteDate))||
+      (!editing&&quotes.length>=4)){
+      setNotice('Ongeldige offerte: maximaal vier eigen offertes, € 99.999,99 totaal, 60 tekens naam en 400 tekens notities.');
+      return;
+    }
+    if(editing&&!quotes.some(q=>q.id===editing)){
+      setNotice('Offerte bestaat niet meer; bewerken is geannuleerd.');setEditing(null);return;
+    }
+    const item:MovingQuote={
+      id:editing??`private-quote-${Date.now()}-${quotes.length}`,name,service:form.service,
+      quoteDate:form.quoteDate,baseCents:base,travelCents:travel,materialCents:materials,notes:form.notes
+    };
+    setQuotes(old=>editing?old.map(q=>q.id===editing?item:q):[...old,item]);
+    setForm(quoteBlank());setEditing(null);invalidate();
+    setNotice('Eigen offerte in dit tabblad vastgelegd; geen prijs extern bevestigd.');
+  }
+  async function restoreJson(file:File|undefined){
+    setPendingRestore(null);setPendingReport(null);
+    if(!file)return;
+    if(!file.size||file.size>8192){setNotice('Back-up geweigerd: maximaal 8 KiB.');return;}
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('root');
+      const data=raw as Record<string,unknown>;
+      if(data.format!=='woonpoints-private-moving-quotes'||data.version!==1||
+        !Array.isArray(data.quotes)||data.quotes.length>4||
+        !data.quotes.every(validatePrivateQuote))throw Error('format');
+      const rows=data.quotes as MovingQuote[];
+      if(new Set(rows.map(q=>q.id)).size!==rows.length ||
+        !(data.selected===null||(typeof data.selected==='string'&&rows.some(q=>q.id===data.selected))))
+        throw Error('selection');
+      setPendingRestore({quotes:rows,selected:data.selected as string|null});
+      setNotice('Geldige eigen offerteback-up gelezen. Bevestig voordat bestaande offertes worden vervangen.');
+    }catch{
+      setNotice('Back-up geweigerd: ongeldige versie, bedragen of velden; huidige offertes blijven staan.');
+    }
+  }
+  return(
+    <section className="panel" aria-labelledby="private-moving-quotes-heading">
+      <p className="eyebrow">VERHUIZEN · EIGEN OFFERTES NAAST ELKAAR</p>
+      <h2 id="private-moving-quotes-heading">Vergelijk je eigen verhuisoffertes</h2>
+      <p>Voer zelf maximaal vier prijsindicaties in. De tool berekent alleen basisbedrag,
+        reis-/toeslagkosten en materiaal samen. Dit zijn geen live offertes of reserveringen;
+        onbekende of verborgen kosten zijn niet meegenomen.</p>
+      <form onSubmit={event=>{event.preventDefault();saveQuote();}}>
+        <fieldset>
+          <legend>{editing?'Bewerk eigen offerte':'Nieuwe eigen offerte'}</legend>
+          <label htmlFor="quote-name">Zelfgekozen label (geen persoonlijke contactgegevens)</label>
+          <input id="quote-name" type="text" autoComplete="off" maxLength={60} value={form.name}
+            onChange={event=>{setForm(old=>({...old,name:event.target.value}));invalidate();}} />
+          <label htmlFor="quote-service">Soort service volgens je eigen inschatting</label>
+          <select id="quote-service" value={form.service} onChange={event=>{
+            setForm(old=>({...old,service:event.target.value as MovingQuoteService}));invalidate();
+          }}>{QUOTE_SERVICES.map(k=><option key={k}>{k}</option>)}</select>
+          <label htmlFor="quote-date">Datum prijsindicatie (optioneel)</label>
+          <input id="quote-date" type="date" min="2000-01-01" max="2099-12-31" value={form.quoteDate}
+            onChange={event=>{setForm(old=>({...old,quoteDate:event.target.value}));invalidate();}} />
+          {([['base','Basisprijs'],['travel','Reis / toeslagen'],['materials','Materialen']] as const).map(([key,label])=>
+            <div key={key}>
+              <label htmlFor={`quote-${key}`}>{label} (€; vul 0 in als je zelf geen kosten verwacht)</label>
+              <input id={`quote-${key}`} type="text" inputMode="decimal" maxLength={10}
+                value={form[key]} onChange={event=>{
+                  setForm(old=>({...old,[key]:event.target.value}));invalidate();
+                }} />
+            </div>
+          )}
+          <label htmlFor="quote-notes">Eigen aandachtspunten, bijvoorbeeld uitsluitingen (max. 400 tekens)</label>
+          <textarea id="quote-notes" rows={3} maxLength={400} value={form.notes}
+            onChange={event=>{setForm(old=>({...old,notes:event.target.value}));invalidate();}} />
+          <button type="submit">{editing?'Sla wijzigingen op':'Voeg eigen offerte toe'}</button>
+          {editing&&<button type="button" onClick={()=>{setEditing(null);setForm(quoteBlank());invalidate();}}>
+            Annuleren</button>}
+        </fieldset>
+      </form>
+      {best&&<p><strong>Laagste van jouw ingevulde ramingen:</strong> {best.name} ·
+        {expenseAmount(quoteTotal(best))}. Niet per se de beste keuze;
+        kwaliteit, dekkingsvoorwaarden en prijswijzigingen zijn niet beoordeeld.</p>}
+      {selectedQuote&&best&&<p><strong>Jouw voorkeur:</strong> {selectedQuote.name} ·
+        {expenseAmount(quoteTotal(selectedQuote))} ·
+        {expenseAmount(quoteTotal(selectedQuote)-quoteTotal(best))} boven de laagste eigen raming.</p>}
+      <h3>Eigen prijsindicaties</h3>
+      {!quotes.length&&<p>Geen offertes ingevoerd. Noteer een eerste eigen prijsindicatie.</p>}
+      <ul>{sorted.map(q=><li key={q.id}>
+        <strong>{q.name}</strong> · {q.service}<br />
+        {q.quoteDate||'Geen datum'} · Totaal {expenseAmount(quoteTotal(q))}<br />
+        Basis {expenseAmount(q.baseCents)}, reis {expenseAmount(q.travelCents)},
+        materiaal {expenseAmount(q.materialCents)}
+        {q.notes&&<p>Eigen aandachtspunten: {q.notes}</p>}
+        <div>
+          <button type="button" aria-pressed={selected===q.id} onClick={()=>{
+            setSelected(q.id);invalidate();setNotice('Dit is alleen je eigen voorkeursraming.');
+          }}>Kies als voorkeur</button>
+          <button type="button" onClick={()=>{
+            setEditing(q.id);setForm({name:q.name,service:q.service,quoteDate:q.quoteDate,
+              base:expenseFormAmount(q.baseCents),travel:expenseFormAmount(q.travelCents),
+              materials:expenseFormAmount(q.materialCents),notes:q.notes});
+            invalidate();document.getElementById('private-moving-quotes-heading')?.scrollIntoView({block:'start'});
+          }}>Bewerken</button>
+          <button type="button" onClick={()=>{setPendingDelete(q.id);setPendingReport(null);}}>Verwijderen…</button>
+          {pendingDelete===q.id&&<div role="group" aria-label="Bevestig offerte verwijderen">
+            <p>Deze eigen offerte verdwijnt uit je vergelijking.</p>
+            <button type="button" onClick={()=>{
+              setQuotes(old=>old.filter(item=>item.id!==q.id));
+              if(selected===q.id)setSelected(null);
+              if(editing===q.id){setEditing(null);setForm(quoteBlank());}
+              invalidate();setNotice('Eigen offerte verwijderd.');
+            }}>Bevestig verwijderen</button>
+            <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
+          </div>}
+        </div>
+      </li>)}</ul>
+      {selectedQuote&&<button type="button" onClick={()=>{
+        setPendingOffer(selectedQuote);setNotice('Controleer of je de eigen prijsindicatie wilt aanbieden.');
+      }}>Bied gekozen raming aan het privé-kostenboek aan…</button>}
+      {pendingOffer&&<div role="group" aria-label="Bevestig kostenboek voorstel">
+        <p>Alleen eigen label <strong>{pendingOffer.name}</strong> en
+          de volledige eigen prijsindicatie <strong>{expenseAmount(quoteTotal(pendingOffer))}</strong>
+          gaan als onbetaalde, begrote vervoerspost naar het kostenboek. Je moet het daar
+          nog apart accepteren. Werkelijk bedrag blijft onbekend.</p>
+        <button type="button" onClick={()=>{
+          const cost=quoteTotal(pendingOffer);
+          window.dispatchEvent(new CustomEvent('woonpoints:moving-budget-offer',{
+            detail:{format:'woonpoints-moving-quote-offer',version:1,
+              offer:[{label:'Gekozen offerte: '+pendingOffer.name.slice(0,50),
+                category:'Vervoer',plannedCents:cost}]}
+          }));
+          setPendingOffer(null);setNotice('Eigen offerte als concept aan kostenboek aangeboden; nog niet overgenomen.');
+          document.getElementById('private-moving-expenses-heading')?.scrollIntoView({block:'start',behavior:'smooth'});
+        }}>Bevestig aanbieden</button>
+        <button type="button" onClick={()=>setPendingOffer(null)}>Annuleren</button>
+      </div>}
+      <button type="button" disabled={!quotes.length} onClick={()=>{
+        exportFile('woonpoints-prive-verhuisoffertes.json',
+          JSON.stringify({format:'woonpoints-private-moving-quotes',version:1,quotes,selected},null,2),
+          'application/json;charset=utf-8');
+        setNotice('Eigen JSON aangeboden voor bewuste opslag; je opslaglocatie kan synchroniseren.');
+      }}>Bewaar eigen offertes als privé-JSON…</button>
+      <label htmlFor="quote-restore">Lees eerder bewaarde eigen offertes (JSON, max. 8 KiB)</label>
+      <input id="quote-restore" type="file" accept=".json,application/json" onChange={event=>{
+        const f=event.currentTarget.files?.[0];event.currentTarget.value='';void restoreJson(f);
+      }} />
+      {pendingRestore&&<div role="group" aria-label="Bevestig offertes herstellen">
+        <p>{pendingRestore.quotes.length} geldige privé-offertes; bevestigen vervangt
+          alle huidige eigen offertes én je gekozen voorkeur. Niet extern geverifieerd.</p>
+        <button type="button" onClick={()=>{
+          setQuotes(pendingRestore.quotes);setSelected(pendingRestore.selected);
+          setPendingRestore(null);setEditing(null);setForm(quoteBlank());invalidate();
+          setNotice('Eigen offertes hersteld, alleen in dit tabblad.');
+        }}>Bevestig vervangen</button>
+        <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
+      </div>}
+      {quotes.length>0&&pendingReport!==snapshot&&<button type="button" onClick={()=>{
+        setPendingReport(snapshot);setNotice('');
+      }}>Bekijk volledig privé-offerteoverzicht voor TXT-export…</button>}
+      {quotes.length>0&&pendingReport===snapshot&&<div role="group" aria-label="Bevestig offerte TXT-export">
+        <p>Controleer alle eigen labels en notities voordat je het bestand opslaat.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report}</pre>
+        <button type="button" onClick={()=>{
+          if(pendingReport!==JSON.stringify({quotes,selected}))return;
+          exportFile('woonpoints-prive-verhuisoffertes.txt',report,'text/plain;charset=utf-8');
+          setPendingReport(null);setNotice('Privé-TXT na je bevestiging aangeboden.');
+        }}>Bevestig TXT-download</button>
+        <button type="button" onClick={()=>setPendingReport(null)}>Annuleren</button>
+      </div>}
+      {quotes.length>0&&!clearConfirm&&<button type="button" onClick={()=>setClearConfirm(true)}>
+        Wis alle offertes…</button>}
+      {clearConfirm&&<div role="group" aria-label="Bevestig alle offertes verwijderen">
+        <p>Dit wist alle eigen ramingen en notities uit dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setQuotes([]);setSelected(null);setForm(quoteBlank());setEditing(null);
+          invalidate();setNotice('Alle offertes uit dit tabblad gewist.');
+        }}>Bevestig alles wissen</button>
+        <button type="button" onClick={()=>setClearConfirm(false)}>Annuleren</button>
+      </div>}
+      {notice&&<p role="status">{notice}</p>}
+      <p>Geen offerteaanvragen, betalingen, contacten, opslag of tracking. Deze momentopnamen
+        verdwijnen zonder eigen export bij sluiten van het tabblad.</p>
+    </section>
+  );
+}
