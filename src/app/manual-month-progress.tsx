@@ -829,9 +829,14 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
       setMessage('Geen geldig eigen maandvoorstel of nog een openstaand herstelbestand.');
       return;
     }
-    if(rows.some(value=>value.month===row.month) || rows.length>=PRIVATE_HISTORY_MAX) {
+    const exists=rows.some(value=>value.month===row.month);
+    if(!exists && rows.length>=PRIVATE_HISTORY_MAX) {
+      setMessage('Maximaal 36 eigen maanden: verwijder eerst bewust een eerdere notitie.');
+      return;
+    }
+    if(exists) {
       setPendingRow(row);
-      setMessage('Deze maand bestaat al of het archief is vol. Controleer het voorstel vóór vervangen.');
+      setMessage('Deze eigen maand bestaat al. Controleer het voorstel vóór vervangen.');
       return;
     }
     setRows(current=>[...current,row]);setPendingDelete(null);
