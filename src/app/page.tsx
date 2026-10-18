@@ -6,6 +6,7 @@ import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteCompariso
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
+import { PrivateDepositLedger } from './private-deposit-ledger';
 
 type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
 const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
@@ -38,6 +39,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
   {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
   {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
+  {id:'private-deposit-heading',title:'Mijn borgboek',category:'verhuizen'},
   {id:'position-stats-heading',title:'Posities',category:'inzichten'},
   {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
   {id:'nazorg-weekplan-title',title:'Mijn nazorgweekplan',category:'verhuizen'},
@@ -571,6 +573,7 @@ export default function HomePage() {
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
       <PrivateMovingCostSplit />
+      <PrivateDepositLedger />
       <PrivateMoveAftercare />
 
       <section className="panel" aria-labelledby="nazorg-link-heading">
