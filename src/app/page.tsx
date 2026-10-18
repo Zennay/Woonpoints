@@ -591,7 +591,7 @@ const defaultMovingFallbacks=():MovingFallbackEntry[]=>MOVING_FALLBACKS.map(row=
 }));
 function validMovingFallbackDay(day:string):boolean{
   if(day==='')return true;
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(day))return false;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return false;
   const date=new Date(day+'T00:00:00.000Z');
   return Number.isFinite(date.valueOf())&&date.toISOString().slice(0,10)===day &&
     day>='2000-01-01'&&day<='2099-12-31';
@@ -602,7 +602,7 @@ function movingFallbackEntryValid(raw:unknown):raw is MovingFallbackEntry{
   if(Object.keys(row).sort().join(',')!=='action,contact,day,done,id')return false;
   const id=MOVING_FALLBACKS.find(item=>item.id===row.id);
   const safeText=(value:unknown,max:number)=>typeof value==='string'&&
-    value.length<=max&&!/[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]/u.test(value);
+    value.length<=max&&!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value);
   return Boolean(id)&&safeText(row.action,200)&&safeText(row.contact,60)&&
     typeof row.day==='string'&&validMovingFallbackDay(row.day)&&typeof row.done==='boolean';
 }
@@ -636,7 +636,7 @@ function PrivateMovingFallbackPlan(){
   const today=(()=>{const now=new Date();const pad=(n:number)=>String(n).padStart(2,'0');
     return now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());})();
   const dated=entries.filter(row=>row.day&&row.day<=today&&!row.done);
-  const backup=JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries},null,2)+'\\n';
+  const backup=JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries},null,2)+'\n';
   const printable=[
     'WOONPOINTS · MIJN PRIVÉ VERHUISDAG PLAN B',
     'Zelf ingevulde plannen. Geen bevestigde reserveringen of officiële afspraken.',
@@ -647,7 +647,7 @@ function PrivateMovingFallbackPlan(){
       'Zelf te benaderen: '+(row.contact.trim()||'(niet ingevuld)'),
       'Zelf gekozen controledatum: '+(row.day||'(geen datum)'),''
     ])
-  ].join('\\r\\n')+'\\r\\n';
+  ].join('\r\n')+'\r\n';
   const update=(id:MovingFallbackId,patch:Partial<MovingFallbackEntry>)=>{
     setEntries(previous=>previous.map(row=>row.id===id?{...row,...patch}:row));
     setPreview(null);setIncoming(null);setUndo(null);setConfirmReset(false);setNotice('');
