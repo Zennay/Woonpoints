@@ -1561,3 +1561,29 @@ niet-identificerend React-aggregaat door aan het bestaande startscherm.
 Er worden geen vrije teksten, namen, accounttokens, adressen,
 wachtwoorden, brondocumenten of externe API's doorgegeven. Er is geen
 nieuwe opslag, cookie, eventbus, cross-tab sync of serverwijziging.
+
+
+## Privé-zoekpunten: bekijk, importeer en herstel gecontroleerd
+
+De bestaande handmatige maandelijkse zoekpuntenhistorie laat voortaan
+de **volledige exacte inhoud** van een eigen CSV- of JSON-back-up zien
+voordat je vrijwillig op downloaden klikt. Je bevestigt de actuele
+privé-inhoud apart; na wijzigen van een puntenregel geldt het vorige
+akkoord niet meer. De export bevat uitsluitend jaar-maand en een
+zelf genoteerd geheel puntenaantal, geen accountgegevens.
+
+Een eigen CSV of JSON selecteren vervangt niet direct de huidige data.
+De interface toont hoeveel maanden nieuw, gewijzigd of verwijderd
+zouden worden en specificeert de vergelijking per maand. Een import is
+gebonden aan de volledige nog ongewijzigde tabbladbron. Vertraagde
+bestandslezingen en later gewijzigde invoer kunnen geen eerdere
+bevestiging alsnog geldig maken. Na bevestigde import is de vorige
+puntenhistorie tijdelijk **éénmalig herstelbaar**, mits de volledige
+nieuwe data sindsdien exact gelijk zijn gebleven. Anders weigert de
+herstelactie te overschrijven. Sluiten van het tabblad wist dit RAM-only
+herstelpunt.
+
+De bestaande grenzen blijven gelden: maximaal 36 eigen maanden,
+JSON maximaal 16 KiB, CSV maximaal 4 KiB. De bron wordt niet online
+gecontroleerd. Waarden blijven persoonlijke observaties en nooit bewijs
+van officieel verkregen zoekpunten of WoningNet/MijnDak-reacties.
