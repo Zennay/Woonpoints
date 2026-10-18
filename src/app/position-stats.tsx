@@ -4903,3 +4903,328 @@ export function PrivateCommuteComparison() {
       WoningNet-koppeling.</p>
   </section>;
 }
+
+
+// Locally-authored moving assistance, separate from any housing-portal action.
+type PrivateMovingHelperTask='Inpakken'|'Laden'|'Vervoer'|'Uitpakken'|'Overig';
+type PrivateMovingHelperState='Nog vragen'|'Bevestigd'|'Afgerond';
+type PrivateMovingHelper={
+  id:string;alias:string;task:PrivateMovingHelperTask;
+  date:string;start:string;end:string;state:PrivateMovingHelperState;note:string;
+};
+type PrivateMovingHelperArchive={
+  format:'woonpoints-private-moving-helpers';version:1;helpers:PrivateMovingHelper[];
+};
+const PRIVATE_HELPER_TASKS:PrivateMovingHelperTask[]=[
+  'Inpakken','Laden','Vervoer','Uitpakken','Overig'
+];
+const PRIVATE_HELPER_STATES:PrivateMovingHelperState[]=['Nog vragen','Bevestigd','Afgerond'];
+type PrivateMovingHelperForm={
+  alias:string;task:PrivateMovingHelperTask;date:string;start:string;end:string;
+  state:PrivateMovingHelperState;note:string;
+};
+const privateHelperBlank=():PrivateMovingHelperForm=>({
+  alias:'',task:'Laden',date:'',start:'',end:'',state:'Nog vragen',note:''
+});
+function privateHelperDay(raw:string):boolean{
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(raw))return false;
+  const [year,month,day]=raw.split('-').map(Number);
+  if(year<2000||year>2099||month<1||month>12||day<1||day>31)return false;
+  const date=new Date(Date.UTC(year,month-1,day));
+  return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&
+    date.getUTCDate()===day;
+}
+function privateHelperClock(raw:string):boolean{
+  return /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(raw);
+}
+function privateHelperPlain(raw:string,max:number):boolean{
+  return typeof raw==='string'&&raw===raw.trim()&&raw.length<=max&&
+    !/[\u0000-\u001f\u007f]/.test(raw);
+}
+function privateHelperValid(row:unknown):row is PrivateMovingHelper{
+  if(!row||typeof row!=='object'||Array.isArray(row))return false;
+  const r=row as Record<string,unknown>;
+  if(Object.keys(r).sort().join('|')!=='alias|date|end|id|note|start|state|task')return false;
+  if(typeof r.id!=='string'||!/^assist-[0-9]+-[0-9]+$/.test(r.id)||
+    typeof r.alias!=='string'||!r.alias||!privateHelperPlain(r.alias,32)||
+    typeof r.note!=='string'||!privateHelperPlain(r.note,120)||
+    !PRIVATE_HELPER_TASKS.includes(r.task as PrivateMovingHelperTask)||
+    !PRIVATE_HELPER_STATES.includes(r.state as PrivateMovingHelperState)||
+    typeof r.date!=='string'||typeof r.start!=='string'||typeof r.end!=='string')
+    return false;
+  if(!r.date)return r.start===''&&r.end===''&&r.state!=='Afgerond';
+  if(!privateHelperDay(r.date))return false;
+  if(!r.start&&!r.end)return r.state!=='Afgerond';
+  return privateHelperClock(r.start)&&privateHelperClock(r.end)&&
+    r.start<r.end;
+}
+function privateHelperValidArchive(raw:unknown):raw is PrivateMovingHelperArchive{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const a=raw as Record<string,unknown>;
+  if(Object.keys(a).sort().join('|')!=='format|helpers|version'||
+    a.format!=='woonpoints-private-moving-helpers'||a.version!==1||
+    !Array.isArray(a.helpers)||a.helpers.length>12||!a.helpers.every(privateHelperValid))
+    return false;
+  return new Set(a.helpers.map((row:PrivateMovingHelper)=>row.id)).size===a.helpers.length;
+}
+function privateHelperCalendarEscape(raw:string):string{
+  return raw.replace(/\\/g,'\\\\').replace(/\r|\n/g,' ')
+    .replace(/,/g,'\\,').replace(/;/g,'\\;');
+}
+function privateHelperDownload(name:string,body:string,type:string){
+  const url=URL.createObjectURL(new Blob([body],{type}));
+  const a=document.createElement('a');
+  a.href=url;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function privateHelperIcs(rows:PrivateMovingHelper[]):string{
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const events=rows.map(row=>{
+    const day=row.date.replace(/-/g,''),start=row.start.replace(':','');
+    const end=row.end.replace(':','');
+    return [
+      'BEGIN:VEVENT',
+      'UID:woonpoints-helper-'+row.id+'-'+day+'@local',
+      'DTSTAMP:'+stamp,
+      'DTSTART:'+day+'T'+start+'00',
+      'DTEND:'+day+'T'+end+'00',
+      'SUMMARY:'+privateHelperCalendarEscape('Eigen hulpplanning: '+row.task+' ('+row.alias+')'),
+      'DESCRIPTION:'+privateHelperCalendarEscape('Zelf ingevuld en niet onafhankelijk geverifieerd.'+
+        (row.note?' Eigen notitie: '+row.note:'')),
+      'END:VEVENT'
+    ].join('\r\n');
+  });
+  return ['BEGIN:VCALENDAR','VERSION:2.0',
+    'PRODID:-//Woonpoints//Prive Verhuishulp//NL','CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',...events,'END:VCALENDAR',''].join('\r\n');
+}
+
+/** Human-scheduled helpers, never messages, invites or online bookings. */
+export function PrivateMovingHelperRoster(){
+  const [helpers,setHelpers]=useState<PrivateMovingHelper[]>([]);
+  const [draft,setDraft]=useState<PrivateMovingHelperForm>(privateHelperBlank);
+  const [editing,setEditing]=useState<string|null>(null);
+  const [filter,setFilter]=useState<PrivateMovingHelperTask|'Alle taken'>('Alle taken');
+  const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [pendingBackup,setPendingBackup]=useState<string|null>(null);
+  const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<PrivateMovingHelperArchive|null>(null);
+  const [confirmReset,setConfirmReset]=useState(false);
+  const [notice,setNotice]=useState('');
+  const counter=useRef(0);
+  const signature=JSON.stringify(helpers);
+  const confirmed=helpers.filter(row=>row.state==='Bevestigd').length;
+  const scheduled=helpers.filter(row=>row.date&&row.start&&row.end);
+  const calendarRows=scheduled.filter(row=>row.state==='Bevestigd');
+  const calendarSignature=JSON.stringify(calendarRows);
+  const upcoming=helpers.slice().sort((a,b)=>
+    (a.date||'9999').localeCompare(b.date||'9999')||
+    (a.start||'99:99').localeCompare(b.start||'99:99')||
+    a.alias.localeCompare(b.alias,'nl-NL'));
+  const visible=upcoming.filter(row=>filter==='Alle taken'||row.task===filter);
+  const resetPending=()=>{
+    setPendingDelete(null);setPendingCalendar(null);setPendingBackup(null);
+    setPendingRestore(null);setConfirmReset(false);setNotice('');
+  };
+  function save(){
+    const alias=draft.alias.trim(),note=draft.note.trim();
+    const candidate:PrivateMovingHelper={id:editing||'assist-'+Date.now()+'-'+(++counter.current),
+      alias,task:draft.task,date:draft.date,start:draft.start,end:draft.end,
+      state:draft.state,note};
+    if(!privateHelperValid(candidate)){
+      setNotice('Controleer het alias (maximaal 32 tekens), de opmerking (120 tekens),'+
+        ' een echte datum en een eindtijd na de begintijd. Een afgeronde taak vereist een tijdvak.');
+      return;
+    }
+    if(!editing&&helpers.length>=12){
+      setNotice('Maximaal twaalf eigen hulpafspraken.');
+      return;
+    }
+    if(editing&&!helpers.some(row=>row.id===editing)){
+      setEditing(null);setNotice('De eerdere afspraak bestaat niet meer.');return;
+    }
+    setHelpers(old=>editing?old.map(row=>row.id===editing?candidate:row):[...old,candidate]);
+    setDraft(privateHelperBlank());setEditing(null);resetPending();
+    setNotice(editing?'Hulpafspraak bijgewerkt.':'Eigen hulpafspraak toegevoegd.');
+  }
+  function updateState(id:string,next:PrivateMovingHelperState){
+    setHelpers(old=>old.map(row=>{
+      if(row.id!==id)return row;
+      if(next==='Afgerond'&&!(row.date&&row.start&&row.end))return row;
+      return {...row,state:next};
+    }));
+    resetPending();
+    setNotice('Persoonlijke status aangepast. Niemand is automatisch op de hoogte gebracht.');
+  }
+  async function load(file:File|undefined){
+    setPendingRestore(null);setPendingBackup(null);setPendingCalendar(null);
+    if(!file)return;
+    if(file.size<1||file.size>16384){setNotice('Gebruik een privé-JSON van maximaal 16 KiB.');return;}
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!privateHelperValidArchive(raw))throw new Error('invalid archive');
+      setPendingRestore(raw);setNotice('Eigen back-up gelezen; nog niets vervangen.');
+    }catch{setNotice('Privé-back-up geweigerd. Bestaande invoer blijft behouden.');}
+  }
+  function saveArchive(){
+    if(pendingBackup!==signature){setPendingBackup(null);setNotice('De afspraakgegevens zijn gewijzigd.');return;}
+    const archive:PrivateMovingHelperArchive={
+      format:'woonpoints-private-moving-helpers',version:1,helpers
+    };
+    privateHelperDownload('woonpoints-prive-verhuishulp.json',
+      JSON.stringify(archive,null,2)+'\n','application/json;charset=utf-8');
+    setPendingBackup(null);setNotice('Privé-back-up lokaal aangeboden; controleer je opslaglocatie.');
+  }
+  function saveCalendar(){
+    if(pendingCalendar!==calendarSignature||!calendarRows.length){
+      setPendingCalendar(null);setNotice('De bevestigde tijdvakken zijn gewijzigd.');return;
+    }
+    privateHelperDownload('woonpoints-eigen-verhuishulp.ics',
+      privateHelperIcs(calendarRows),'text/calendar;charset=utf-8');
+    setPendingCalendar(null);setNotice('Eigen agenda aangeboden. Niemand is uitgenodigd of gewaarschuwd.');
+  }
+  return <section className="panel" aria-labelledby="private-moving-helpers-heading">
+    <p className="eyebrow">VERHUIZEN · EIGEN HULPPLANNING</p>
+    <h2 id="private-moving-helpers-heading">Wie helpt wanneer?</h2>
+    <p>Maak in dit tabblad een privéplanning met maximaal twaalf eigen
+      hulpafspraken. Gebruik liever een roepnaam dan echte persoonsgegevens.
+      Je verstuurt hiermee nooit uitnodigingen, berichten of WoningNet-reacties.</p>
+    <dl>
+      <div><dt>Eigen afspraken</dt><dd>{helpers.length} / 12</dd></div>
+      <div><dt>Zelf als bevestigd gemarkeerd</dt><dd>{confirmed}</dd></div>
+      <div><dt>Volledige tijdvakken</dt><dd>{scheduled.length}</dd></div>
+      <div><dt>Nog te vragen</dt><dd>{helpers.filter(row=>row.state==='Nog vragen').length}</dd></div>
+    </dl>
+    <h3>{editing?'Bewerk mijn hulpafspraak':'Nieuwe eigen hulpafspraak'}</h3>
+    <label htmlFor="private-helper-alias">Roepnaam of eigen alias</label>
+    <input id="private-helper-alias" autoComplete="off" maxLength={32}
+      value={draft.alias} onChange={event=>setDraft(old=>({...old,alias:event.target.value}))}/>
+    <label htmlFor="private-helper-task">Wat wil je zelf afspreken?</label>
+    <select id="private-helper-task" value={draft.task}
+      onChange={event=>setDraft(old=>({...old,task:event.target.value as PrivateMovingHelperTask}))}>
+      {PRIVATE_HELPER_TASKS.map(task=><option key={task}>{task}</option>)}
+    </select>
+    <label htmlFor="private-helper-date">Eigen datum (optioneel)</label>
+    <input id="private-helper-date" type="date" min="2000-01-01" max="2099-12-31"
+      value={draft.date} onChange={event=>setDraft(old=>({
+        ...old,date:event.target.value,
+        ...(event.target.value?{}:{start:'',end:''})
+      }))}/>
+    <label htmlFor="private-helper-start">Begintijd (optioneel bij lege datum)</label>
+    <input id="private-helper-start" type="time" value={draft.start}
+      onChange={event=>setDraft(old=>({...old,start:event.target.value}))}/>
+    <label htmlFor="private-helper-end">Eindtijd (later op dezelfde dag)</label>
+    <input id="private-helper-end" type="time" value={draft.end}
+      onChange={event=>setDraft(old=>({...old,end:event.target.value}))}/>
+    <label htmlFor="private-helper-state">Jouw eigen status</label>
+    <select id="private-helper-state" value={draft.state}
+      onChange={event=>setDraft(old=>({
+        ...old,state:event.target.value as PrivateMovingHelperState
+      }))}>
+      {PRIVATE_HELPER_STATES.map(status=><option key={status}>{status}</option>)}
+    </select>
+    <label htmlFor="private-helper-note">Eigen taaknotitie (geen telefoonnummers)</label>
+    <input id="private-helper-note" maxLength={120} autoComplete="off"
+      value={draft.note} onChange={event=>setDraft(old=>({...old,note:event.target.value}))}/>
+    <button type="button" onClick={save}>{editing?'Bewaar wijziging':'Voeg hulpafspraak toe'}</button>
+    {editing&&<button type="button" onClick={()=>{
+      setEditing(null);setDraft(privateHelperBlank());resetPending();
+    }}>Annuleer bewerken</button>}
+    <h3>Mijn geplande hulp</h3>
+    <label htmlFor="private-helper-filter">Toon taken</label>
+    <select id="private-helper-filter" value={filter}
+      onChange={event=>setFilter(event.target.value as PrivateMovingHelperTask|'Alle taken')}>
+      <option>Alle taken</option>
+      {PRIVATE_HELPER_TASKS.map(task=><option key={task}>{task}</option>)}
+    </select>
+    <p>{visible.length} van {helpers.length} eigen afspraken zichtbaar.</p>
+    {helpers.length===0&&<p>Nog geen eigen verhuishelpers genoteerd.</p>}
+    <ol>{visible.map(row=><li key={row.id}>
+      <strong>{row.alias} · {row.task}</strong>
+      {' · '}{row.date||'nog geen datum'}
+      {row.start&&row.end?' · '+row.start+'–'+row.end:''}
+      <p>Jouw status: {row.state}{row.note?' · '+row.note:''}</p>
+      {row.state!=='Bevestigd'&&<button type="button"
+        onClick={()=>updateState(row.id,'Bevestigd')}>Markeer als bevestigd</button>}
+      {row.state!=='Afgerond'&&!!row.start&&!!row.end&&<button type="button"
+        onClick={()=>updateState(row.id,'Afgerond')}>Markeer als afgerond</button>}
+      {row.state!=='Nog vragen'&&<button type="button"
+        onClick={()=>updateState(row.id,'Nog vragen')}>Zet terug op nog vragen</button>}
+      <button type="button" onClick={()=>{
+        setEditing(row.id);setDraft({alias:row.alias,task:row.task,
+          date:row.date,start:row.start,end:row.end,state:row.state,note:row.note});
+        resetPending();
+      }}>Bewerk</button>
+      <button type="button" onClick={()=>setPendingDelete(row.id)}>Verwijder…</button>
+      {pendingDelete===row.id&&<div role="group" aria-label="Bevestig eigen hulpafspraak verwijderen">
+        <p>Verwijder de eigen hulpafspraak voor {row.alias}? Externe afspraken worden niet gewijzigd.</p>
+        <button type="button" onClick={()=>{
+          setHelpers(old=>old.filter(item=>item.id!==row.id));
+          if(editing===row.id){setEditing(null);setDraft(privateHelperBlank());}
+          resetPending();setNotice('Eigen afspraak verwijderd.');
+        }}>Ja, verwijder</button>
+        <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
+      </div>}
+    </li>)}</ol>
+    <h3>Bewaar of herstel bewust</h3>
+    <p>Een privé-JSON bevat eigen roepnamen, taaknotities en tijdvakken.
+      Het bijbehorende agenda-bestand bevat alleen werkelijk door jou als
+      bevestigd gemarkeerde afspraken met een volledig tijdvak.
+      Dit zijn geen echte uitnodigingen.</p>
+    <button type="button" onClick={()=>{
+      setPendingBackup(signature);setPendingCalendar(null);setNotice('');
+    }}>Bekijk privé-JSON-back-up…</button>
+    {pendingBackup===signature&&<div role="group" aria-label="Bevestig eigen helpersback-up">
+      <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'20rem',
+        overflowY:'auto'}}>{JSON.stringify({
+          format:'woonpoints-private-moving-helpers',version:1,helpers
+        },null,2)}</pre>
+      <button type="button" onClick={saveArchive}>Bevestig privé-JSON-download</button>
+      <button type="button" onClick={()=>setPendingBackup(null)}>Annuleren</button>
+    </div>}
+    <button type="button" disabled={!calendarRows.length} onClick={()=>{
+      setPendingCalendar(calendarSignature);setPendingBackup(null);setNotice('');
+    }}>Bekijk eigen agenda voor {calendarRows.length} bevestigde tijdvak(ken)…</button>
+    {pendingCalendar===calendarSignature&&calendarRows.length>0&&
+      <div role="group" aria-label="Bevestig lokale helpers-agenda">
+        <p>Deze gegevens kunnen bij opslag in je agenda synchroniseren.
+          Er wordt in Woonpoints geen andere persoon uitgenodigd.</p>
+        <ul>{calendarRows.map(row=><li key={row.id}>
+          {row.date} {row.start}–{row.end} · {row.task} · {row.alias}
+          {row.note?' · '+row.note:''}
+        </li>)}</ul>
+        <button type="button" onClick={saveCalendar}>Bevestig privé-agenda (.ics)</button>
+        <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
+      </div>}
+    <label htmlFor="private-helper-import">Herstel een eigen helpersback-up (JSON, max. 16 KiB)</label>
+    <input id="private-helper-import" type="file" accept=".json,application/json"
+      onChange={event=>{
+        const file=event.currentTarget.files?.[0];event.currentTarget.value='';
+        void load(file);
+      }}/>
+    {pendingRestore&&<div role="group" aria-label="Bevestig hulpplanning vervangen">
+      <p>Je oude back-up bevat {pendingRestore.helpers.length} afspraken.
+        Bevestigen vervangt alle {helpers.length} huidige eigen afspraken,
+        inclusief onbewaarde bewerkingen. Annuleren behoudt de huidige invoer.</p>
+      <button type="button" onClick={()=>{
+        setHelpers(pendingRestore.helpers);setDraft(privateHelperBlank());setEditing(null);
+        setPendingRestore(null);setPendingBackup(null);setPendingCalendar(null);
+        setNotice('Eigen privé-hulpplanning hersteld; niemand is automatisch benaderd.');
+      }}>Ja, vervang alle eigen hulpafspraken</button>
+      <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
+    </div>}
+    {!confirmReset?<button type="button" onClick={()=>setConfirmReset(true)}>
+      Wis eigen hulpplanning…</button>:<div role="group" aria-label="Bevestig hulpplanning wissen">
+      <p>Wis alle eigen afspraken in dit tabblad? Reeds gemaakte bestanden blijven bestaan.</p>
+      <button type="button" onClick={()=>{
+        setHelpers([]);setDraft(privateHelperBlank());setEditing(null);resetPending();
+        setNotice('Eigen hulpplanning gewist.');
+      }}>Ja, wis alles</button>
+      <button type="button" onClick={()=>setConfirmReset(false)}>Annuleren</button>
+    </div>}
+    {notice&&<p role="status">{notice}</p>}
+    <p>Alles blijft alleen in het geheugen van dit tabblad tot een bewuste
+      export. Geen berichtendienst, account, telefoonnummer, notificatie of
+      automatische opslag. Controleer afspraken altijd rechtstreeks met de betrokkenen.</p>
+  </section>;
+}
