@@ -1070,6 +1070,9 @@ function PrivateMoveAftercare() {
   const [aftercareImportUndo, setAftercareImportUndo] = useState<{
     previous: AftercareBackup; importedSignature: string
   } | null>(null);
+  const [removalUndo, setRemovalUndo] = useState<{
+    previous: AftercareBackup; resultingSignature: string; label: string
+  } | null>(null);
   const [message, setMessage] = useState('');
   const [pendingJsonExport, setPendingJsonExport] = useState<{
     source: string; contents: string; itemsCount: number; historyCount: number; bytes: number
@@ -1222,6 +1225,8 @@ function PrivateMoveAftercare() {
   const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
   const aftercareUndoCurrent = aftercareImportUndo !== null &&
     aftercareImportUndo.importedSignature === aftercareImportSignature;
+  const removalUndoCurrent = removalUndo !== null &&
+    removalUndo.resultingSignature === aftercareImportSignature;
   const incomingImpact = incoming === null ? null : (() => {
     const itemsRows = (data: AftercareBackup): PrivateImportRows => data.items.map(row => ({
       id: row.id, label: row.room + ' — ' + row.title,
@@ -1427,10 +1432,51 @@ function PrivateMoveAftercare() {
     setHistoryDeletePending(null);
     setMessage('Contactmoment alleen in dit tabblad opgeslagen; niet extern geverifieerd of verzonden.');
   }
-  function removeFollowUp(id: string) {
-    setHistory(prev => prev.filter(event => event.id !== id));
+  function rememberRemoval(nextItems: Item[], nextHistory: FollowUp[], label: string) {
+    setRemovalUndo({
+      previous: {items: items.map(item => ({...item})),
+        history: history.map(event => ({...event}))},
+      resultingSignature: JSON.stringify({items: nextItems, history: nextHistory}),
+      label
+    });
+    setItems(nextItems);
+    setHistory(nextHistory);
+    setPendingDelete(null);
     setHistoryDeletePending(null);
-    setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
+    setHistoryTarget(null);
+    setMessage(label + ' uit dit tabblad verwijderd. Eénmalig herstel mogelijk zolang er niets wijzigt.');
+  }
+  function removeFollowUp(id: string) {
+    const event = history.find(entry => entry.id === id);
+    if (!event) return;
+    const nextHistory = history.filter(entry => entry.id !== id);
+    rememberRemoval(items, nextHistory, 'Eigen contactmoment');
+  }
+  function removeAftercarePoint(id: string) {
+    const item = items.find(entry => entry.id === id);
+    if (!item) return;
+    const nextItems = items.filter(entry => entry.id !== id);
+    const nextHistory = history.filter(entry => entry.issueId !== id);
+    rememberRemoval(nextItems, nextHistory, 'Nazorgpunt en gekoppelde contactmomenten');
+    if (editing === id) { setEditing(null); setDraft(EMPTY); }
+  }
+  function undoLastRemoval() {
+    if (!removalUndo || !removalUndoCurrent) {
+      setRemovalUndo(null);
+      setMessage('Terugzetten geweigerd: het nazorgdossier is intussen gewijzigd.');
+      return;
+    }
+    setItems(removalUndo.previous.items);
+    setHistory(removalUndo.previous.history);
+    setRemovalUndo(null);
+    setIncoming(null);
+    setIncomingSource('');
+    setIncomingRiskApproved(false);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setPendingDelete(null);
+    setHistoryDeletePending(null);
+    setMessage('De eerder verwijderde eigen gegevens staan weer in dit tabblad.');
   }
 
   function previewCompleteSummary() {
