@@ -1574,7 +1574,6 @@ export function PrivateMovingVolume() {
 
 
 // Private moving-day planning: all user state remains tab-local; no portal action.
-import { useState } from 'react';
 
 type ChecklistTask = { id: string; title: string; offset: number; group: string };
 type ExtraTask = ChecklistTask & { group: 'Eigen taak' };
