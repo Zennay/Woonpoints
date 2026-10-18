@@ -1539,3 +1539,25 @@ Een zelf gekozen bestemming kan buiten Woonpoints synchroniseren; de
 app bewaart de gegenereerde ICS uitsluitend in het huidige browsertabblad
 tot aan de bevestigde download. Raadpleeg de daadwerkelijke instantie
 voor echte afspraken en wettelijke/contractuele termijnen.
+
+
+## Actuele statuskaart zonder live accountverbinding
+
+Het startscherm toont de daadwerkelijk **eigen** maandteller, eigen
+reactiedagboeknotities en laatste handmatig afgelezen zoekpunten
+in plaats van de statische placeholder `Onbekend`. De kaart noemt
+de kalendermaand en de precieze oorsprong van iedere waarde.
+
+- Een maandteller is `x/4 zelf genoteerd`, nooit `x/4 geldige reacties`.
+- Dagboekregels zijn persoonlijke waarnemingen en geen portaalstatus.
+- Een puntenwaarde noemt altijd de maand waarin die zelf is vastgelegd.
+- Een verschil tussen maandteller en dagboek verschijnt meteen als
+  controlepunt met rechtstreekse navigatie naar het bestaande maandrapport.
+- Bij mislukte browseropslag blijft de teller expliciet **tijdelijk**.
+- Workerstatus blijft `Dry-run`; een officiële accountkoppeling ontbreekt.
+
+De bestaande reactieworkflow geeft alleen een klein, begrensd en
+niet-identificerend React-aggregaat door aan het bestaande startscherm.
+Er worden geen vrije teksten, namen, accounttokens, adressen,
+wachtwoorden, brondocumenten of externe API's doorgegeven. Er is geen
+nieuwe opslag, cookie, eventbus, cross-tab sync of serverwijziging.
