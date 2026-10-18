@@ -1458,11 +1458,11 @@ export function ManualHousingDecisionWorkspace() {
         onViewingPrefill={selected => setViewingOffer([selected[0].label, selected[1].label])} />
       <ManualHousingCostComparison handoff={handoff}
         onLongTermOffer={offer => setLongTermOffer(offer)} />
-      <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
       <PrivateLongTermHousingCosts offer={longTermOffer}
         onOfferHandled={() => setLongTermOffer(null)} />
       <PrivateHousingViewingChecklist offer={viewingOffer}
         onOfferHandled={() => setViewingOffer(null)} />
+      <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
     </>
   );
 }
@@ -2323,7 +2323,7 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled}: {
             <button type="button" onClick={() => {
               setEntries(newPrivateViewingAnswers());
               setPendingRestore(null);
-              setSourceLabels([...offer]);
+              setSourceLabels([offer[0],offer[1]]);
               setMessage('Eigen woninglabels overgenomen en alle eerdere beoordelingen gewist; geen WoningNet-bewijs.');
               onOfferHandled?.();
             }}>Gebruik selectie en wis oude beoordelingen</button>
