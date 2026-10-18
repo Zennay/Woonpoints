@@ -2463,11 +2463,41 @@ function PrivateMoveAftercare() {
           <div className="aftercare-actions">
             <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
             <button className="secondary" disabled={!items.length} onClick={exportCsv}>Download CSV</button>
-            <button className="secondary" disabled={!shown.length} onClick={exportText}>Download TXT van {shown.length} zichtbare punten</button>
+            <button className="secondary" disabled={!shown.length} onClick={exportText}>Controleer TXT van {shown.length} zichtbare punten…</button>
           </div>
-          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen de TXT-download
-            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters. Controleer privénotities
-            vóór je een gekozen bestand ergens anders opslaat of deelt.</p>
+          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen een TXT-overzicht
+            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters, na
+            voorafgaande volledige preview en aparte bevestiging.</p>
+          <label className="aftercare-check" htmlFor="nazorg-txt-private-notes">
+            <input id="nazorg-txt-private-notes" type="checkbox"
+              checked={includePrivateTxtNotes}
+              onChange={event => {
+                setIncludePrivateTxtNotes(event.target.checked);
+                setPendingTextExport(null);
+              }}/>
+            Voeg mijn privénotities bewust toe aan de TXT (standaard uit)
+          </label>
+          {pendingTextExport !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Privé-TXT controleren vóór de download">
+            <h3>Controleer je volledige TXT vóór bewaren</h3>
+            {textExportCurrent ? <p>{pendingTextExport.count} zichtbare punten in deze
+              momentopname. Privénotities zijn {includePrivateTxtNotes ? 'bewust opgenomen' : 'verborgen'}.
+              Controleer hieronder alle regels en bepaal zelf waar het bestand wordt bewaard.</p>
+              : <p className="aftercare-warning" role="status">
+                Je dossier of de zichtbare selectie is veranderd. Oude toestemming is ongeldig.
+                Maak een nieuw TXT-voorbeeld.</p>}
+            {textExportCurrent && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:360,overflowY:'auto',padding:12,background:'#fff',
+              border:'1px solid #b6c7ba',borderRadius:8}}>{pendingTextExport.preview}</pre>}
+            <div className="aftercare-actions">
+              <button type="button" disabled={!textExportCurrent}
+                onClick={confirmTextExport}>Ja, download dit exacte TXT-bestand</button>
+              <button type="button" className="secondary"
+                onClick={() => {setPendingTextExport(null);setMessage('TXT-download geannuleerd.');}}>
+                Annuleer TXT
+              </button>
+            </div>
+          </div>}
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
