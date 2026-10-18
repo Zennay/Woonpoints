@@ -61,6 +61,7 @@ export default function HomePage() {
           ] as const).map(([id, title]) =>
             <li key={id}><a href={'#'+id}>{title}</a></li>
           )}
+          <li><a href="/nazorg">Nazorg &amp; gebreken ↗</a></li>
         </ul>
       </nav>
 
@@ -95,6 +96,17 @@ export default function HomePage() {
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
       <PrivateMovingCostSplit />
+
+      <section className="panel" aria-labelledby="nazorg-link-heading">
+        <div>
+          <p className="eyebrow">NA DE VERHUIZING</p>
+          <h2 id="nazorg-link-heading">Gebreken en open punten bijhouden</h2>
+        </div>
+        <div>
+          <p>Maak een privé-overzicht met eigen prioriteiten, streefdatums en opvolgstatussen. Bewaar op verzoek JSON, CSV of een leesbaar dossier. Er wordt niets naar een verhuurder of woningportaal verstuurd.</p>
+          <p><a href="/nazorg">Open mijn privé-nazorgdossier →</a></p>
+        </div>
+      </section>
 
       <section className="panel">
         <div>
