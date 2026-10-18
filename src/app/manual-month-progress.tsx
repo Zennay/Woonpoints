@@ -30,6 +30,7 @@ export default function ManualMonthProgress() {
   const [transientDiscarded, setTransientDiscarded] = useState(false);
   const [reminderDates, setReminderDates] = useState<string[]>(['', '', '', '']);
   const [reminderMessage, setReminderMessage] = useState('');
+  const [suggestedDates, setSuggestedDates] = useState<string[] | null>(null);
   const reminderMonth = useRef<string | null>(null);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
@@ -47,6 +48,7 @@ export default function ManualMonthProgress() {
       if (reminderMonth.current !== current) {
         reminderMonth.current = current;
         setReminderDates(['', '', '', '']);
+        setSuggestedDates(null);
         setReminderMessage('');
       }
       setMonth(current);
@@ -259,6 +261,52 @@ export default function ManualMonthProgress() {
     return check.getUTCFullYear() === year && check.getUTCMonth() === monthPart-1 &&
       check.getUTCDate() === calendarDay;
   }
+  function suggestRemainingDates() {
+    const now = new Date();
+    const currentMonth = localMonthKey(now);
+    if (!month || currentMonth !== month || !remainingPersonalPlans ||
+        count === null || opaqueStoredNote) {
+      setSuggestedDates(null);
+      setReminderMessage('Geen actuele, open eigen planning om over deze maand te verdelen.');
+      return;
+    }
+    // Civil calendar days, not UTC milliseconds: DST does not skip/repeat a date.
+    const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+    const available = lastDay-now.getDate()+1;
+    if (available < remainingPersonalPlans) {
+      setSuggestedDates(null);
+      setReminderMessage('Er zijn nog maar '+available+
+        ' kalenderdagen over voor '+remainingPersonalPlans+
+        ' unieke momenten. Kies zelf een passend alternatief; nooit dubbele of volgende-maanddatums.');
+      return;
+    }
+    const proposals = Array.from({length:remainingPersonalPlans},(_,index) => {
+      const offset = Math.floor((index+.5)*available/remainingPersonalPlans);
+      const day = String(now.getDate()+offset).padStart(2,'0');
+      return currentMonth+'-'+day;
+    });
+    if (new Set(proposals).size !== proposals.length ||
+        proposals.some(day => !validLocalReminderDay(day,currentMonth))) {
+      setSuggestedDates(null);
+      setReminderMessage('Veilige datumverdeling niet mogelijk; vul je eigen datums in.');
+      return;
+    }
+    setSuggestedDates(proposals);
+    setReminderMessage('Voorstel gereed. Je huidige datums blijven ongewijzigd totdat je uitdrukkelijk bevestigt.');
+  }
+  function applySuggestedDates() {
+    if (!suggestedDates || !month || month !== localMonthKey(new Date()) ||
+        suggestedDates.length !== remainingPersonalPlans ||
+        suggestedDates.some(day => !validLocalReminderDay(day,month)) ||
+        new Set(suggestedDates).size !== suggestedDates.length) {
+      setSuggestedDates(null);
+      setReminderMessage('Voorstel verlopen of achterhaald; maak opnieuw een verdeling.');
+      return;
+    }
+    setReminderDates(Array.from({length:MANUAL_MONTHLY_GOAL},(_,index) => suggestedDates[index] ?? ''));
+    setSuggestedDates(null);
+    setReminderMessage('Voorgestelde eigen datums ingevuld. Controleer en wijzig ze gerust; er is nog geen kalenderbestand gemaakt.');
+  }
   function exportPersonalCalendar() {
     const currentMonth = localMonthKey(new Date());
     if (!month || month !== currentMonth || !remainingPersonalPlans) {
@@ -349,15 +397,38 @@ export default function ManualMonthProgress() {
                         const next = [...reminderDates];
                         next[index] = e.target.value;
                         setReminderDates(next);
+                        setSuggestedDates(null);
                         setReminderMessage('');
                       }} />
                   </label>
                 )}
+                <div className="manual-reminder-suggest">
+                  <p><strong>Handige verdeling:</strong> maak een voorstel om
+                    alle nog open persoonlijke momenten gelijkmatig over de
+                    resterende kalenderdagen van deze maand te spreiden. Dit
+                    is geen WoningNet-deadline, boeking of automatische herinnering.</p>
+                  <button type="button" onClick={suggestRemainingDates}>
+                    Stel gelijkmatig verspreide datums voor…
+                  </button>
+                  {suggestedDates && <div role="group"
+                    aria-label="Bevestig eigen voorstel voor kalenderdatums">
+                    <p>Voorstel: <strong>{suggestedDates.join(' · ')}</strong>.
+                      Hiermee worden alleen de hierboven gekozen, tijdelijke
+                      datums vervangen. Je eigen reactie-aantal wordt niet gewijzigd.</p>
+                    <button type="button" onClick={applySuggestedDates}>
+                      Ja, vul deze datums in</button>
+                    <button type="button" className="manual-erase" onClick={()=>{
+                      setSuggestedDates(null);
+                      setReminderMessage('Voorstel geannuleerd; bestaande datums behouden.');
+                    }}>Behoud mijn huidige datums</button>
+                  </div>}
+                </div>
                 <button type="button" onClick={exportPersonalCalendar}>
                   Bewaar {remainingPersonalPlans} privémomenten als agenda-ICS…
                 </button>
                 <button type="button" className="manual-erase" onClick={() => {
                   setReminderDates(['','','','']);
+                  setSuggestedDates(null);
                   setReminderMessage('Alleen de tijdelijk gekozen agendadagen gewist.');
                 }}>Wis gekozen agendadagen</button>
               </>

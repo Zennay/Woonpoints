@@ -496,3 +496,23 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) {
   .private-points-chart, .private-points-table-wrap { scroll-behavior: auto; }
 }
+
+
+/* Local date proposal is deliberately opt-in and never schedules an alarm. */
+.manual-reminder-suggest {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #b9d1be;
+  border-radius: 12px;
+  background: #f2f7f3;
+}
+.manual-reminder-suggest p { line-height: 1.55; overflow-wrap: anywhere; }
+.manual-reminder-suggest [role="group"] {
+  margin-top: 14px;
+  padding: 12px;
+  border: 2px solid #416b4d;
+  border-radius: 10px;
+  background: #fff;
+}
+.manual-reminder-suggest button { margin: 6px 8px 6px 0; min-height: 44px; }
+.manual-reminder-suggest button:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
