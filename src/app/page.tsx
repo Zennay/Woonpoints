@@ -1,3 +1,4 @@
+import PrivateMovingDayTimeline from './private-moving-day';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
 import { PrivateMovingVolume } from './manual-month-progress';
@@ -44,6 +45,7 @@ export default function HomePage() {
             ['private-plan-title', 'Planner'],
             ['private-moving-heading', 'Verhuizen'],
             ['private-moving-volume-heading', 'Verhuisvolume'],
+            ['private-moving-day-heading', 'Verhuisdag'],
             ['position-stats-heading', 'Posities'],
             ['monthly-positions-heading', 'Maandtrend']
           ] as const).map(([id, title]) =>
@@ -73,6 +75,7 @@ export default function HomePage() {
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
+      <PrivateMovingDayTimeline />
 
       <section className="panel">
         <div>
