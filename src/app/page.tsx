@@ -1167,6 +1167,27 @@ function PrivateMoveAftercare() {
     setMessage('Je eigen afspraaknotities zijn als ICS opgeslagen; er is niets gepland of geverifieerd bij derden.');
   }
 
+  function openNoticeFromInbox(id: string, mode: 'eerste-melding' | 'opvolging') {
+    if (!active.some(item => item.id === id)) return;
+    setChosenIssueIds(previous => {
+      // Remove choices that are no longer open; don't allow a stale choice to consume a slot.
+      const stillActive = previous.filter(key => active.some(item => item.id === key));
+      return stillActive.includes(id) || stillActive.length >= 12 ? stillActive : [...stillActive, id];
+    });
+    setNoticeMode(mode);
+    setNoticeSubject(current => {
+      if (mode === 'opvolging' && current === 'Open aandachtspunten na mijn verhuizing') {
+        return 'Navraag over open aandachtspunten na mijn verhuizing';
+      }
+      if (mode === 'eerste-melding' && current === 'Navraag over open aandachtspunten na mijn verhuizing') {
+        return 'Open aandachtspunten na mijn verhuizing';
+      }
+      return current;
+    });
+    setNoticeApproved(false);
+    document.getElementById('nazorg-notice-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function toggleNoticeItem(id: string) {
     setChosenIssueIds(prev => prev.includes(id)
       ? prev.filter(existing => existing !== id)
@@ -1345,13 +1366,15 @@ function PrivateMoveAftercare() {
                 </p>
                 <button type="button" className="secondary"
                   disabled={!chosenIssueIds.includes(entry.item.id) && chosenIssueIds.length >= 12}
-                  onClick={() => {
-                    setChosenIssueIds(previous => previous.includes(entry.item.id) ? previous : [...previous, entry.item.id]);
-                    setNoticeApproved(false);
-                    document.getElementById('nazorg-notice-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}>
+                  onClick={() => openNoticeFromInbox(entry.item.id, 'eerste-melding')}>
                   {chosenIssueIds.includes(entry.item.id) ? 'Bekijk mijn conceptselectie ↓' : 'Neem op in eigen concept ↓'}
                 </button>
+                {(entry.ownContact || entry.item.status === 'gemeld') &&
+                  <button type="button" className="secondary"
+                    disabled={!chosenIssueIds.includes(entry.item.id) && noticeItems.length >= 12}
+                    onClick={() => openNoticeFromInbox(entry.item.id, 'opvolging')}>
+                    Maak een eigen opvolgconcept ↓
+                  </button>}
               </li>)}
             </ol>}
           {followUpInbox.length > 16 && <p>Je ziet de eerste 16 van {followUpInbox.length} open punten. De rest staat in het volledige nazorgdossier.</p>}
@@ -1526,7 +1549,12 @@ function PrivateMoveAftercare() {
           </fieldset>
           <label htmlFor="nazorg-notice-mode">Type eigen concept</label>
           <select id="nazorg-notice-mode" value={noticeMode} onChange={e => {
-            setNoticeMode(e.target.value as 'eerste-melding' | 'opvolging');
+            const mode = e.target.value as 'eerste-melding' | 'opvolging';
+            setNoticeMode(mode);
+            setNoticeSubject(current => mode === 'opvolging' && current === 'Open aandachtspunten na mijn verhuizing'
+              ? 'Navraag over open aandachtspunten na mijn verhuizing'
+              : mode === 'eerste-melding' && current === 'Navraag over open aandachtspunten na mijn verhuizing'
+                ? 'Open aandachtspunten na mijn verhuizing' : current);
             setNoticeApproved(false);
           }}>
             <option value="eerste-melding">Eerste melding of vraag</option>
