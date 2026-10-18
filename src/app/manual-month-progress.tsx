@@ -3218,6 +3218,51 @@ type MovingWorkspaceArchiveV4=Omit<MovingWorkspaceArchiveV3,'version'|'packing'>
   version:4;
   packing:{items:PackingItem[];transport:PackingTransportRow[]};
 };
+
+type MovingHelperEntry={
+  id:string;alias:string;task:'Inpakken'|'Laden'|'Vervoer'|'Uitpakken'|'Overig';
+  date:string;start:string;end:string;
+  state:'Nog vragen'|'Bevestigd'|'Afgerond';note:string;
+};
+type MovingWorkspaceArchiveV5=Omit<MovingWorkspaceArchiveV4,'version'> & {
+  version:5;
+  helpers:{helpers:MovingHelperEntry[]};
+};
+function validMovingWorkspaceHelpers(raw:unknown):raw is MovingWorkspaceArchiveV5['helpers']{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const data=raw as Record<string,unknown>;
+  if(Object.keys(data).join('|')!=='helpers'||!Array.isArray(data.helpers)||
+    data.helpers.length>12)return false;
+  const ids:string[]=[];
+  for(const item of data.helpers){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const row=item as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='alias|date|end|id|note|start|state|task'||
+      typeof row.id!=='string'||!/^assist-[0-9]+-[0-9]+$/.test(row.id)||
+      typeof row.alias!=='string'||row.alias.length<1||row.alias.length>32||
+      row.alias!==row.alias.trim()||/[\u0000-\u001f\u007f]/.test(row.alias)||
+      typeof row.note!=='string'||row.note.length>120||
+      row.note!==row.note.trim()||/[\u0000-\u001f\u007f]/.test(row.note)||
+      !['Inpakken','Laden','Vervoer','Uitpakken','Overig'].includes(String(row.task))||
+      !['Nog vragen','Bevestigd','Afgerond'].includes(String(row.state))||
+      typeof row.date!=='string'||typeof row.start!=='string'||typeof row.end!=='string')
+      return false;
+    if(!row.date){
+      if(row.start||row.end||row.state==='Afgerond')return false;
+    }else{
+      if(!dateOnly(row.date))return false;
+      if(!row.start&&!row.end){
+        if(row.state==='Afgerond')return false;
+      }else{
+        const time=/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/;
+        if(!time.test(row.start)||!time.test(row.end)||row.start>=row.end)return false;
+      }
+    }
+    ids.push(row.id);
+  }
+  return new Set(ids).size===ids.length;
+}
+
 function validMovingWorkspacePackingV4(raw:unknown):raw is MovingWorkspaceArchiveV4['packing']{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
   const data=raw as Record<string,unknown>;
@@ -3310,16 +3355,17 @@ function validMovingWorkspaceDocuments(value:unknown):
 }
 
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 | MovingWorkspaceArchiveV4 {
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 | MovingWorkspaceArchiveV4 | MovingWorkspaceArchiveV5 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  const v2=obj.version===2,v3=obj.version===3,v4=obj.version===4;
+  const v2=obj.version===2,v3=obj.version===3,v4=obj.version===4,v5=obj.version===5;
   const keys=Object.keys(obj).sort().join('|');
-  if(keys!==((v3||v4)?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
+  if(keys!==(v5?'documents|expenses|format|handover|helpers|packing|quotes|split|timeline|version':
+    (v3||v4)?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
     v2?'documents|expenses|format|handover|quotes|split|timeline|version':
     'expenses|format|quotes|split|version') ||
     obj.format !== 'woonpoints-private-moving-workspace' ||
-    (obj.version!==1&&!v2&&!v3&&!v4))return false;
+    (obj.version!==1&&!v2&&!v3&&!v4&&!v5))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3343,13 +3389,14 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
     new Set(expenseIds).size===expenseIds.length &&
-    (!(v2||v3||v4) || (validMovingWorkspaceTimeline(obj.timeline)&&
+    (!(v2||v3||v4||v5) || (validMovingWorkspaceTimeline(obj.timeline)&&
       validMovingWorkspaceHandover(obj.handover)&&
       validMovingWorkspaceDocuments(obj.documents))) &&
     (!v3 || validMovingWorkspacePacking(obj.packing)) &&
-    (!v4 || validMovingWorkspacePackingV4(obj.packing));
+    (!(v4||v5) || validMovingWorkspacePackingV4(obj.packing)) &&
+    (!v5 || validMovingWorkspaceHelpers(obj.helpers));
 }
-function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4):string{
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5):string{
   return JSON.stringify(data);
 }
 
@@ -3399,7 +3446,7 @@ function movingReportLine(value:string):string{
   return value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,900);
 }
 function buildPrivateMovingReport(
-  archive:MovingWorkspaceArchiveV4,sections:MovingReportSection[],
+  archive:MovingWorkspaceArchiveV5,sections:MovingReportSection[],
   actions:PrivateMovingAction[],today:string|null
 ):string{
   const lines:string[]=[
