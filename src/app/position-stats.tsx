@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
+import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, summarizeManualReactionJournal, exportManualReactionJournalCsv, importManualReactionJournalCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
 /** Ephemeral local arithmetic only: not a WoningNet account connection. */
 export default function PositionStats() {
@@ -234,6 +234,239 @@ export function ManualPositionHistory() {
             </div>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+
+/**
+ * A personal, unsigned notebook for manually observed housing reactions.
+ * Neither this journal nor its counts can certify WoningNet search points.
+ */
+type JournalStatus = 'planned' | 'reacted' | 'closed' | 'invited' | 'withdrawn';
+type JournalItem = {
+  id: number; date: string; status: JournalStatus;
+  rank: number | null; total: number | null;
+};
+const statusNames: Record<JournalStatus, string> = {
+  planned: 'Van plan', reacted: 'Zelf gereageerd',
+  closed: 'Afgesloten', invited: 'Uitgenodigd', withdrawn: 'Ingetrokken'
+};
+
+export function ManualReactionJournal() {
+  const [entries, setEntries] = useState<JournalItem[]>([]);
+  const [nextId, setNextId] = useState(1);
+  const [date, setDate] = useState('');
+  const [status, setStatus] = useState<JournalStatus>('planned');
+  const [rankInput, setRankInput] = useState('');
+  const [totalInput, setTotalInput] = useState('');
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [message, setMessage] = useState('');
+  const [pendingImport, setPendingImport] = useState<JournalItem[] | null>(null);
+
+  const journal = summarizeManualReactionJournal(entries);
+  const visible = [...entries]
+    .filter(row => monthFilter === 'all' || row.date.slice(0, 7) === monthFilter)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const rowCount = journal.total;
+
+  function add() {
+    setMessage('');
+    if (!date || entries.length >= 100 ||
+        (rankInput === '') !== (totalInput === '') ||
+        (rankInput !== '' && (!/^[1-9][0-9]{0,5}$/.test(rankInput) ||
+                             !/^[1-9][0-9]{0,5}$/.test(totalInput)))) {
+      setMessage('Controleer datum en optionele eindpositie/totaal (maximaal 100 notities).');
+      return;
+    }
+    const next: JournalItem = {
+      id: nextId, date, status,
+      rank: rankInput ? Number(rankInput) : null,
+      total: totalInput ? Number(totalInput) : null
+    };
+    try {
+      summarizeManualReactionJournal([...entries, next]);
+      setEntries(old => [...old, next]);
+      setNextId(n => n + 1);
+      setRankInput('');
+      setTotalInput('');
+      setMessage('Eigen notitie toegevoegd. Niet gecontroleerd door WoningNet.');
+    } catch {
+      setMessage('Deze datum of eindpositie is ongeldig. Huidige notities zijn behouden.');
+    }
+  }
+
+  function updateState(id: number, state: JournalStatus) {
+    if (!Object.hasOwn(statusNames, state)) return;
+    setEntries(old => old.map(row => row.id === id ? { ...row, status: state } : row));
+    setMessage('Eigen status aangepast; dit is geen officiële registratiestatus.');
+  }
+
+  function download() {
+    try {
+      const csv = exportManualReactionJournalCsv(entries);
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'woonpoints-eigen-reactienotities.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMessage('CSV aangeboden. Externe bestandsopslag kan synchroniseren.');
+    } catch {
+      setMessage('Geen geldige reactienotities beschikbaar voor export.');
+    }
+  }
+
+  async function prepareImport(file?: File) {
+    setPendingImport(null);
+    if (!file) return;
+    if (!file.size || file.size > 12_000) {
+      setMessage('Import geweigerd: kies een CSV kleiner dan 12 KB.');
+      return;
+    }
+    try {
+      const restored = importManualReactionJournalCsv(await file.text());
+      setPendingImport(restored.map((row, index) => ({
+        ...row, id: index + 1, status: row.status as JournalStatus
+      })));
+      setMessage('Import gecontroleerd. Bevestig apart of je huidige notities wilt vervangen.');
+    } catch {
+      setMessage('Import geweigerd: onbekend of beschadigd CSV-bestand; invoer onveranderd.');
+    }
+  }
+
+  return (
+    <section className="panel reaction-journal" aria-labelledby="reaction-journal-title">
+      <div>
+        <p className="eyebrow">EIGEN REACTIEDAGBOEK · HANDMATIG</p>
+        <h2 id="reaction-journal-title">Houd je woningreacties bij</h2>
+        <p>Schrijf zelf op wanneer je een woning overweegt, hebt gereageerd,
+          een uitnodiging kreeg of een reactie afsloot. Het dagboek koppelt niet
+          aan een woningaanbieder en voert geen reacties uit.</p>
+        <p><strong>Alle aantallen zijn eigen notities, nooit geverifieerde zoekpunten.</strong>
+          Dit scherm weet niet welke reacties officieel meetellen voor jouw maanddoel.
+          Noteer geen adressen, persoonsgegevens, wachtwoorden of accountcodes.</p>
+        <p>Je gegevens blijven in dit tabblad zolang je het openhoudt.
+          Wil je ze bewaren? Kies zelf CSV-export. Bestanden op cloudopslag
+          kunnen buiten Woonpoints worden gesynchroniseerd.</p>
+      </div>
+      <div>
+        <fieldset className="journal-entry-form">
+          <legend>Nieuwe eigen notitie</legend>
+          <label htmlFor="journal-date">Datum van jouw notitie</label>
+          <input id="journal-date" type="date" min="2000-01-01" max="2099-12-31"
+            value={date} onChange={e => setDate(e.target.value)} />
+          <label htmlFor="journal-status">Eigen status</label>
+          <select id="journal-status" value={status}
+            onChange={e => setStatus(e.target.value as JournalStatus)}>
+            {Object.entries(statusNames).map(([value, label]) =>
+              <option key={value} value={value}>{label}</option>)}
+          </select>
+          <p>Eindpositie is optioneel en alleen bedoeld voor afgeronde, zelf geobserveerde reacties.</p>
+          <div className="journal-ranks">
+            <div>
+              <label htmlFor="journal-rank">Eindpositie (optioneel)</label>
+              <input id="journal-rank" inputMode="numeric" value={rankInput} maxLength={6}
+                onChange={e => setRankInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <label htmlFor="journal-total">Totaal reacties (optioneel)</label>
+              <input id="journal-total" inputMode="numeric" value={totalInput} maxLength={6}
+                onChange={e => setTotalInput(e.target.value)} placeholder="150" />
+            </div>
+          </div>
+          <button type="button" onClick={add} disabled={entries.length >= 100}>
+            Voeg eigen notitie toe
+          </button>
+        </fieldset>
+        <div className="journal-toolbar">
+          <button type="button" onClick={download} disabled={!entries.length}>Bewaar als CSV…</button>
+          <label htmlFor="journal-import">Importeer eigen CSV (maximaal 12 KB)</label>
+          <input id="journal-import" type="file" accept=".csv,text/csv"
+            onChange={e => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = '';
+              void prepareImport(file);
+            }} />
+        </div>
+        {pendingImport && (
+          <div className="journal-confirm" role="group" aria-label="Bevestig import">
+            <p>Je CSV bevat {pendingImport.length} eigen notities.
+              Vervangen verwijdert de huidige {entries.length} notities uit dit tabblad.</p>
+            <button type="button" onClick={() => {
+              setEntries(pendingImport);
+              setNextId(pendingImport.length + 1);
+              setPendingImport(null);
+              setMonthFilter('all');
+              setMessage('Eigen notities lokaal vervangen; niet geverifieerd door WoningNet.');
+            }}>Vervang huidige notities</button>
+            <button type="button" onClick={() => {
+              setPendingImport(null); setMessage('Import geannuleerd; notities behouden.');
+            }}>Annuleren</button>
+          </div>
+        )}
+        {message && <p role="status">{message}</p>}
+        <p><strong>{rowCount}</strong> eigen notities · <strong>{journal.recordedPositions}</strong> met
+          zelf ingevoerde eindpositie. Nul officiële reacties geverifieerd.</p>
+        {!!journal.months.length && (
+          <div className="journal-monthly">
+            <h3>Overzicht per ingevulde maand</h3>
+            <div className="month-history-table-wrap">
+              <table>
+                <caption>Persoonlijke notities, zonder officiële registratiecontrole</caption>
+                <thead><tr>
+                  <th scope="col">Maand</th><th scope="col">Totaal</th>
+                  <th scope="col">Zelf gereageerd</th><th scope="col">Uitgenodigd</th>
+                  <th scope="col">Positie bekend</th>
+                </tr></thead>
+                <tbody>{journal.months.map(row => <tr key={row.month}>
+                  <th scope="row">{row.month}</th><td>{row.total}</td>
+                  <td>{row.counts.reacted}</td><td>{row.counts.invited}</td>
+                  <td>{row.recordedPositions}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {!!entries.length && (
+          <>
+            <label htmlFor="journal-filter">Toon reacties uit maand</label>
+            <select id="journal-filter" value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}>
+              <option value="all">Alle ingevulde maanden</option>
+              {journal.months.map(row =>
+                <option key={row.month} value={row.month}>{row.month}</option>)}
+            </select>
+            <div className="journal-items">
+              {visible.map(row => <article key={row.id} className="journal-row">
+                <div><strong>Eigen notitie #{row.id}</strong> · <time dateTime={row.date}>{row.date}</time>
+                  {row.rank !== null &&
+                    <p>Zelf genoteerde eindpositie: {row.rank}/{row.total}</p>}
+                </div>
+                <label htmlFor={`journal-item-${row.id}`}>Wijzig eigen status</label>
+                <select id={`journal-item-${row.id}`} value={row.status}
+                  onChange={e => updateState(row.id, e.target.value as JournalStatus)}>
+                  {Object.entries(statusNames).map(([value, label]) =>
+                    <option key={value} value={value}>{label}</option>)}
+                </select>
+                <button type="button" onClick={() => {
+                  setEntries(old => old.filter(item => item.id !== row.id));
+                  setMessage('Eigen notitie verwijderd; geen WoningNet-reactie gewijzigd.');
+                }}>Verwijder</button>
+              </article>)}
+              {!visible.length && <p>Geen eigen notities voor deze maand.</p>}
+            </div>
+            <button type="button" onClick={() => {
+              setEntries([]);
+              setPendingImport(null);
+              setMonthFilter('all');
+              setMessage('Alle eigen notities uit dit tabblad gewist.');
+            }}>Wis alle eigen notities in dit tabblad</button>
+          </>
+        )}
       </div>
     </section>
   );

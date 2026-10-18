@@ -183,3 +183,107 @@ export function importManualPositionHistoryCsv(csv) {
   if (!summarizeManualPositionHistory(restored)) throw new TypeError(MONTH_INVALID);
   return restored;
 }
+
+
+/**
+ * Private user-entered reaction journal (M1): an unsourced personal notebook,
+ * NEVER official WoningNet registrations or qualifying point evidence.
+ * Bounded structured records only: no addresses, passwords or source URLs.
+ */
+const REACTION_STATES = Object.freeze([
+  'planned', 'reacted', 'closed', 'invited', 'withdrawn'
+]);
+const REACTION_HEADER = 'Datum;Eigen status;Eindpositie;Totaal';
+const REACTION_MAX = 100;
+const REACTION_INVALID = 'Ongeldige handmatige reactienotities';
+
+function validateReactionEntry(entry) {
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new TypeError(REACTION_INVALID);
+  }
+  const date = civilDate(entry.date);
+  const status = entry.status;
+  if (!REACTION_STATES.includes(status)) throw new TypeError(REACTION_INVALID);
+  let rank = null, total = null;
+  if (entry.rank !== null && entry.rank !== undefined && entry.rank !== '') {
+    if (typeof entry.rank !== 'number' || !Number.isSafeInteger(entry.rank)) {
+      throw new TypeError(REACTION_INVALID);
+    }
+    rank = entry.rank;
+  }
+  if (entry.total !== null && entry.total !== undefined && entry.total !== '') {
+    if (typeof entry.total !== 'number' || !Number.isSafeInteger(entry.total)) {
+      throw new TypeError(REACTION_INVALID);
+    }
+    total = entry.total;
+  }
+  if ((rank === null) !== (total === null)) throw new TypeError(REACTION_INVALID);
+  if (rank !== null) summarizePositionPairs(rank + '/' + total);
+  return { date, status, rank, total };
+}
+
+function canonicalJournal(entries) {
+  if (!Array.isArray(entries) || entries.length > REACTION_MAX) {
+    throw new RangeError(REACTION_INVALID);
+  }
+  return entries.map(validateReactionEntry);
+}
+
+export function summarizeManualReactionJournal(entries) {
+  const safe = canonicalJournal(entries);
+  const groups = new Map();
+  for (const entry of safe) {
+    const month = entry.date.slice(0, 7);
+    if (!groups.has(month)) groups.set(month, []);
+    groups.get(month).push(entry);
+  }
+  const months = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([month, items]) => {
+    const counts = Object.fromEntries(REACTION_STATES.map(state => [
+      state, items.filter(x => x.status === state).length
+    ]));
+    const completed = items.filter(x => x.rank !== null);
+    const ranks = completed.map(x => x.rank + '/' + x.total);
+    const analyses = [];
+    for (let i = 0; i < ranks.length; i += 50) {
+      analyses.push(summarizePositionPairs(ranks.slice(i, i + 50).join('\n')));
+    }
+    const averagePercentile = analyses.length
+      ? analyses.reduce((sum, part) => sum + part.averagePercentile * part.sampleCount, 0) /
+        completed.length
+      : null;
+    return { month, total: items.length, counts, recordedPositions: completed.length,
+      averagePercentile, source: 'manual-unverified' };
+  });
+  return { source: 'manual-unverified', total: safe.length, months,
+    recordedPositions: safe.filter(x => x.rank !== null).length };
+}
+
+/** Fixed four-column, formula-inert CSV; imports never trust external labels. */
+export function exportManualReactionJournalCsv(entries) {
+  const safe = canonicalJournal(entries);
+  if (!safe.length) throw new TypeError(REACTION_INVALID);
+  return [REACTION_HEADER, ...safe.map(x =>
+    [x.date, x.status, x.rank ?? '', x.total ?? ''].join(';'))].join('\r\n') + '\r\n';
+}
+
+export function importManualReactionJournalCsv(csv) {
+  if (typeof csv !== 'string' || csv.length > 12_000) throw new TypeError(REACTION_INVALID);
+  const lines = csv.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  if (lines.shift() !== REACTION_HEADER || lines.length < 1 || lines.length > REACTION_MAX) {
+    throw new TypeError(REACTION_INVALID);
+  }
+  const entries = lines.map(line => {
+    const fields = line.split(';');
+    if (fields.length !== 4 || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(fields[0]) ||
+        !REACTION_STATES.includes(fields[1]) ||
+        (fields[2] && !/^[1-9][0-9]{0,5}$/.test(fields[2])) ||
+        (fields[3] && !/^[1-9][0-9]{0,5}$/.test(fields[3]))) {
+      throw new TypeError(REACTION_INVALID);
+    }
+    return { date: fields[0], status: fields[1],
+      rank: fields[2] ? Number(fields[2]) : null,
+      total: fields[3] ? Number(fields[3]) : null };
+  });
+  return canonicalJournal(entries);
+}
