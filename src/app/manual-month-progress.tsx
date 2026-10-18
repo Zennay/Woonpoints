@@ -822,6 +822,7 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
   const [pendingDelete,setPendingDelete]=useState<string|null>(null);
   const [message,setMessage]=useState('');
   const [selectedYear,setSelectedYear]=useState(()=>String(new Date().getFullYear()));
+  const [compareYear,setCompareYear]=useState(()=>String(new Date().getFullYear()-1));
   const sorted=[...rows].sort((a,b)=>a.month.localeCompare(b.month));
   const recent=sorted.at(-1),previous=sorted.at(-2);
   const monthNow=localMonthKey(new Date());
@@ -841,6 +842,58 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
   const filledYear=yearRows.filter(row=>row.count!==null);
   const observedSum=filledYear.reduce((sum,row)=>sum+row.count!,0);
   const exactFour=filledYear.filter(row=>row.count===MANUAL_MONTHLY_GOAL).length;
+
+  const comparedYear=Number(compareYear);
+  const canCompare=yearIsValid && /^20\d{2}$/.test(compareYear) &&
+    comparedYear>=2000 && comparedYear<=currentYear && compareYear!==selectedYear;
+  const comparableRows=Array.from({length:12},(_,i)=>{
+    const suffix='-'+String(i+1).padStart(2,'0');
+    const firstMonth=selectedYear+suffix, otherMonth=compareYear+suffix;
+    const first=canCompare && firstMonth<=monthNow
+      ? sorted.find(row=>row.month===firstMonth)?.count ?? null : null;
+    const other=canCompare && otherMonth<=monthNow
+      ? sorted.find(row=>row.month===otherMonth)?.count ?? null : null;
+    return { index:i+1, first, other,
+      difference:first===null || other===null ? null : first-other };
+  });
+  const matchedMonths=comparableRows.filter(row=>row.difference!==null);
+  const firstMatchedTotal=matchedMonths.reduce((sum,row)=>sum+row.first!,0);
+  const otherMatchedTotal=matchedMonths.reduce((sum,row)=>sum+row.other!,0);
+  const matchedDifference=firstMatchedTotal-otherMatchedTotal;
+  const formattedDifference=(value:number)=>value>0?'+'+value:String(value);
+  function savePersonalYearComparison() {
+    if(!canCompare || !matchedMonths.length || !privateHistoryValid(sorted)) {
+      setMessage('Vul voor beide gekozen jaren minimaal één overeenkomstige kalendermaand in.');
+      return;
+    }
+    const lines=[
+      'WOONPOINTS · EIGEN MAANDSTANDEN VERGELIJKEN',
+      'Zelf genoteerde, niet-geverifieerde maandstanden. Geen officiële WoningNet-reacties of zoekpunten.',
+      'Jaar A: '+selectedYear+' · Jaar B: '+compareYear,
+      'Overeenkomstig ingevulde kalendermaanden: '+matchedMonths.length+' van 12',
+      'Som alleen voor deze gemeenschappelijke maanden: A='+firstMatchedTotal+', B='+otherMatchedTotal,
+      'Verschil over dezelfde ingevulde maanden (A-B): '+formattedDifference(matchedDifference),
+      'Ontbrekende en toekomstige maanden zijn onbekend, niet nul. Geen voorspelling.',
+      '',
+      'Kalendermaand | Jaar A | Jaar B | A-B'
+    ];
+    for(const row of comparableRows) {
+      lines.push(String(row.index).padStart(2,'0')+' | '+
+        (row.first===null?'onbekend':row.first+'/4')+' | '+
+        (row.other===null?'onbekend':row.other+'/4')+' | '+
+        (row.difference===null?'geen vergelijking':formattedDifference(row.difference)));
+    }
+    const url=URL.createObjectURL(new Blob([lines.join('\n')+'\n'],{
+      type:'text/plain;charset=utf-8'
+    }));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-eigen-jaar-op-jaar-'+selectedYear+'-'+compareYear+'.txt';
+    link.rel='noopener';document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Jaarvergelijking als eigen TXT aangeboden. Een gekozen bestandslocatie kan synchroniseren.');
+  }
+
   function exportOwnYear() {
     if(!yearIsValid || !filledYear.length) {
       setMessage('Kies eerst een jaar met minimaal één eigen maandnotitie.');
@@ -1014,6 +1067,51 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
         <button type="button" onClick={exportOwnYear} disabled={!filledYear.length}>
           Bewaar persoonlijke jaarreflectie als TXT…
         </button>
+
+        <div className="month-history-table-wrap"
+          aria-labelledby="private-year-compare-heading">
+          <h5 id="private-year-compare-heading">Twee jaren eerlijk vergelijken</h5>
+          <label htmlFor="private-year-compare-select">Vergelijk {selectedYear} met</label>
+          <select id="private-year-compare-select" value={compareYear}
+            onChange={event=>setCompareYear(event.target.value)}>
+            {Array.from({length:currentYear-1999},(_,i)=>String(currentYear-i))
+              .map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+          {canCompare ? <div aria-live="polite">
+            <p><strong>{matchedMonths.length} van 12 maanden</strong> hebben in beide
+              jaren een eigen invoer. Alleen die maandparen vergelijken we.
+              {matchedMonths.length>0?' Totale verschillen A − B: '+
+                formattedDifference(matchedDifference)+'.':''}</p>
+            <p>Een niet-ingevulde maand is onbekend en draagt niets bij aan
+              het verschil. Dat beide jaren verschillende aantallen ingevulde
+              maanden hebben, maakt een volledige jaarvergelijking onbetrouwbaar.
+              Er worden geen echte reacties of officiële zoekpunten afgeleid.</p>
+            <table>
+              <caption>Eigen maandteller: {selectedYear} naast {compareYear},
+                met uitsluitend expliciet ingevulde vergelijking</caption>
+              <thead><tr>
+                <th scope="col">Kalendermaand</th>
+                <th scope="col">{selectedYear}</th>
+                <th scope="col">{compareYear}</th>
+                <th scope="col">Verschil A − B</th>
+              </tr></thead>
+              <tbody>{comparableRows.map(row=><tr key={row.index}>
+                <th scope="row">{new Intl.DateTimeFormat('nl-NL',{month:'short'})
+                  .format(new Date(2026,row.index-1,1))}</th>
+                <td>{row.first===null?'Onbekend':row.first+'/4'}</td>
+                <td>{row.other===null?'Onbekend':row.other+'/4'}</td>
+                <td>{row.difference===null?'—':formattedDifference(row.difference)}</td>
+              </tr>)}</tbody>
+            </table>
+            <button type="button" onClick={savePersonalYearComparison}
+              disabled={matchedMonths.length===0}>
+              Bewaar alleen vergelijkbare maanden als privé-TXT…
+            </button>
+            <p>Een export is altijd een aparte keuze en verandert nooit
+              je actuele maandteller of historische invoer.</p>
+          </div> : <p role="status">Kies twee verschillende jaren vanaf 2000
+            tot en met het huidige jaar.</p>}
+        </div>
         <p>Dit overzicht gebruikt alleen de historische notities in dit
           tabblad. Jaarreflectie opslaan gebeurt uitsluitend na je eigen klik.</p>
       </div>}
