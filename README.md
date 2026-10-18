@@ -1358,3 +1358,17 @@ een bestand op te slaan, af te drukken of als PDF te bewaren kan privé-inhoud
 buiten het huidige browsertabblad terechtkomen; een zelfgekozen opslagmap kan
 met een clouddienst synchroniseren. De bestaande JSON-back-up, gecombineerde
 overdracht en nazorgmodule blijven ongewijzigd. `BOT_DRY_RUN=true` blijft gelden.
+
+### Inspectie in één klik filteren
+
+Boven de ruimtechecklists staan drie knoppen: **Alle controles**,
+**Nog niet gecontroleerd** en **Mijn aandachtspunten**. Elk toont het
+aantal punten in die categorie. In de twee gerichte weergaven worden de
+relevante ruimtes direct opengeklapt en lege ruimtes niet getoond. Zo
+kun je niet-gecontroleerde controles afronden of je eigen gebreken snel
+nalopen zonder door alle zes ruimtes te zoeken.
+
+Dit zijn uitsluitend zichtfilters: ze veranderen nooit een beoordeling,
+wissen geen toelichting en beperken ook niet de afzonderlijke volledige
+JSON-, TXT- of HTML-export. Een leeg aandachtspuntenfilter is **geen**
+officiële bevestiging dat de woning goedgekeurd is.
