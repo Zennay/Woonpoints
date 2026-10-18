@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
-import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner } from './position-stats';
+import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview } from './position-stats';
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
@@ -67,14 +67,26 @@ function decodeNavPins(raw:string|null):string[]|null{
   }catch{return null;}
 }
 
-const cards = [
-  ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
-  ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
-  ['Zoekpunten', '—', 'Nog geen puntensnapshot beschikbaar'],
-  ['Worker', 'Dry-run', 'Live reageren is bewust geblokkeerd']
-];
-
 export default function HomePage() {
+  const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
+  const cards = [
+    ['Maanddoel',personalOverview?.count!=null?
+      personalOverview.count+' / 4 zelf genoteerd':'Niet genoteerd',
+      personalOverview?.storage==='temporary'?
+        'Eigen teller tijdelijk in dit tabblad: browseropslag niet bevestigd.':
+        'Je eigen maandteller, nooit bewijs van geldige officiële reacties.'],
+    ['Reactiedagboek',personalOverview?.journalReacted!=null?
+      personalOverview.journalReacted+' zelf gereageerd':'Geen eigen maandstand',
+      personalOverview?.journalTotal!=null?
+        personalOverview.journalTotal+' eigen notities deze maand; niet officieel geverifieerd.':
+        'Nog geen persoonlijke dagboekgegevens voor de actuele maand.'],
+    ['Zoekpunten',personalOverview?.points?
+      personalOverview.points.points+' zelf genoteerd':'Geen eigen puntenstand',
+      personalOverview?.points?
+        'Zelf afgelezen in '+personalOverview.points.month+'; nooit accountverificatie.':
+        'Er is nog geen handmatige puntennotitie beschikbaar.'],
+    ['Worker','Dry-run','Live reageren blijft bewust uitgeschakeld; geen WoningNet-account gekoppeld.']
+  ];
   const [navigationCategory,setNavigationCategory]=useState<
     'snel'|'favorieten'|'alles'|HomeNavCategory>('snel');
   const [pinnedNavIds,setPinnedNavIds]=useState<string[]>([]);
@@ -244,7 +256,13 @@ export default function HomePage() {
       <PrivateHousingJourney />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
-        <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
+        <h2 id="projectstatus-heading">Mijn eigen woonzoekstatus</h2>
+        <p>Actuele persoonlijke <strong>niet-geverifieerde</strong> notities uit je
+          maandteller, dagboek en zoekpuntenhistorie. Er vindt geen automatische
+          WoningNet- of accountcontrole plaats.</p>
+        {personalOverview?.month&&<p>Eigen overzicht voor <strong>{
+          personalOverview.month}</strong>. Zoeken, reageren of puntentoekenning
+          via het woningportaal gebeurt niet vanuit deze kaarten.</p>}
         <div className="grid">
           {cards.map(([label, value, detail]) => (
             <article className="card" key={label}>
@@ -254,9 +272,16 @@ export default function HomePage() {
             </article>
           ))}
         </div>
+        {personalOverview?.countsDisagree&&<p role="status">
+          Je zelf genoteerde maandteller en reactiedagboek verschillen.
+          <a href="#private-month-pulse-heading"> Bekijk de twee eigen bronnen</a>
+          {' '}en controleer echte reacties zelf bij de aanbieder.</p>}
+        <p><a href="#private-month-pulse-heading">Bekijk mijn maandrapport en bronstatus</a>
+          {' · '}<a href="#reaction-journal-title">Mijn eigen reactiedagboek</a>
+          {' · '}<a href="#private-points-heading">Mijn puntennotities</a></p>
       </section>
 
-      <PrivateReactionWorkflow>
+      <PrivateReactionWorkflow onOverview={setPersonalOverview}>
         <PositionStats />
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
