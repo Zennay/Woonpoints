@@ -4454,9 +4454,22 @@ function PrivateMonthlyCheckCalendar(){
 
 /**
  * No global event, cross-tab persistence or account bridge.
- * The only shared context is an explicitly proposed private aggregate.
+ * Only the existing, minimal, locally authored aggregate is exposed upward.
+ * Never represents a WoningNet account, verified reaction or earned point.
  */
-export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
+export type PrivateHomeOverview = {
+  month:string;
+  count:number|null;
+  storage:'browser'|'temporary'|'unknown';
+  journalReacted:number|null;
+  journalTotal:number|null;
+  points:{month:string;points:number}|null;
+  countsDisagree:boolean;
+};
+export function PrivateReactionWorkflow({children,onOverview}:{
+  children:ReactNode;
+  onOverview?:(snapshot:PrivateHomeOverview)=>void;
+}) {
   const [offer,setOffer]=useState<PrivateJournalCountOffer|null>(null);
   const [month,setMonth]=useState<PrivateMonthSnapshot|null>(null);
   const [journal,setJournal]=useState<PrivateJournalSnapshot|null>(null);
@@ -4472,6 +4485,21 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const diaryTotal=sameMonth?journal?.total??0:0;
   const monthCount=month?.month===activeMonth?month?.count??null:null;
   const discrepancy=monthCount!==null && diaryTotal>0 && diaryReacted!==monthCount;
+  // Feed only the home status cards; no browsing, network requests, shared
+  // events or additional persistence. Stable caller callback prevents loops.
+  useEffect(()=>{
+    onOverview?.({
+      month:activeMonth,count:monthCount,
+      storage:month?.storage??'unknown',
+      journalReacted:sameMonth&&journal!==null?diaryReacted:null,
+      journalTotal:sameMonth&&journal!==null?diaryTotal:null,
+      points:pointsSnapshot?.last?
+        {month:pointsSnapshot.last.month,points:pointsSnapshot.last.points}:null,
+      countsDisagree:discrepancy
+    });
+  },[onOverview,activeMonth,monthCount,month?.storage,sameMonth,
+    journal,diaryReacted,diaryTotal,pointsSnapshot?.last?.month,
+    pointsSnapshot?.last?.points,discrepancy]);
   const [reportIncludePoints,setReportIncludePoints]=useState(false);
   const [reportPreview,setReportPreview]=useState<{signature:string;text:string}|null>(null);
   const [reportApproved,setReportApproved]=useState(false);
