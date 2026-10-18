@@ -298,3 +298,10 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .private-budget-results th, .private-budget-results td { padding: 10px; border: 1px solid #d4e2d6; overflow-wrap: anywhere; }
 .private-budget-results td { font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .private-budget-grid { grid-template-columns: 1fr; } }
+
+
+/* Integrated, user-controlled housing decision dossier in the existing cost view. */
+.private-budget-provenance { margin-top: 18px; border-top: 1px solid #b9d1be; padding-top: 14px; }
+.private-budget-provenance h4 { margin: 4px 0 8px; font-size: 18px; color: #263f31; }
+.private-budget-provenance ul { margin: 8px 0 16px; padding-left: 22px; }
+.private-budget-provenance li { margin-bottom: 8px; overflow-wrap: anywhere; line-height: 1.55; }

@@ -540,7 +540,7 @@ const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: fa
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
 export function ManualHousingShortlist({onCostPrefill}: {
-  onCostPrefill?: (selected: [Home, Home]) => void;
+  onCostPrefill?: (selected: [Home, Home], preferences: Preferences) => void;
 } = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
@@ -804,7 +804,8 @@ export function ManualHousingShortlist({onCostPrefill}: {
                 const first = homes[compared[0]], second = homes[compared[1]];
                 if (!comparison || !first || !second) return;
                 // Exact user-confirmed snapshot, no unknown fields or external lookups.
-                onCostPrefill([{...first}, {...second}]);
+                if (!validPreferences) return;
+                onCostPrefill([{...first}, {...second}], {...validPreferences});
                 setNotice('Twee woningen overgenomen in de privé-kostenvergelijker. Vul aanvullende kosten zelf in.');
                 document.getElementById('private-budget-title')?.scrollIntoView({behavior:'smooth', block:'start'});
               }}>
@@ -1239,15 +1240,18 @@ function calculatePrivateCosts(input: CostDraft): CostResult | null {
     firstYear: monthly * 12 + start, followingYear: monthly * 12};
 }
 
-type CostHandoff = {selected: [Home, Home]};
+type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
 
 /** A shared in-memory workspace bridges two explicitly selected homes into costs. */
 export function ManualHousingDecisionWorkspace() {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
   return (
     <>
-      <ManualHousingShortlist onCostPrefill={selected =>
-        setHandoff({selected: [{...selected[0]}, {...selected[1]}]})} />
+      <ManualHousingShortlist onCostPrefill={(selected, preferences) =>
+        setHandoff({
+          selected: [{...selected[0]}, {...selected[1]}],
+          preferences: {...preferences}
+        })} />
       <ManualHousingCostComparison handoff={handoff} />
     </>
   );
@@ -1278,6 +1282,13 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const left = calculatePrivateCosts(a);
   const right = calculatePrivateCosts(b);
   const ready = !!left && !!right;
+  // Explicitly imported source facts are frozen. Cost edits never mutate
+  // suitability or quietly rewrite the saved shortlist snapshot.
+  const sourceRanking = handoff && fromShortlist
+    ? rankManualHomes(handoff.selected, handoff.preferences) : null;
+  const sourceRows = sourceRanking?.slice().sort(
+    (x: {index: number}, y: {index: number}) => x.index - y.index
+  ) as Array<{index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}> | undefined;
   const rows: {key: keyof CostDraft; title: string; max: number; description?: string}[] = [
     {key: 'rent', title: 'Maandhuur (€)', max: 10000},
     {key: 'service', title: 'Servicekosten per maand (€)', max: 5000},
@@ -1309,6 +1320,60 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
     ].join('\n');
     downloadPrivatePlanFile(note, 'text/plain;charset=utf-8', 'woonpoints-eigen-kostenvergelijking.txt');
     setNotice('Eigen TXT-afweging aangeboden. Je gekozen opslagprovider kan het bestand synchroniseren.');
+  }
+
+  function exportCompleteDecision() {
+    if (!left || !right || !show || !handoff || !sourceRows || sourceRows.length !== 2) return;
+    const p = handoff.preferences;
+    const details = sourceRows.flatMap((row, index) => [
+      index === 0 ? 'Woning 1 (oorspronkelijke snapshot)' : 'Woning 2 (oorspronkelijke snapshot)',
+      'Zelf gekozen label: ' + row.home.label,
+      'Zelf genoteerde huur: ' + currencyCost(row.home.rent * 100),
+      'Kamers: ' + row.home.rooms,
+      'Zelf geschatte enkele reistijd: ' + row.home.travel + ' minuten',
+      'Balkon: ' + (row.home.balcony ? 'ja' : 'nee'),
+      'Past bij de toenmalige eigen grenzen: ' + (row.suitable ? 'ja' : 'nee'),
+      ...row.reasons.map((reason: string) => '  - ' + reason),
+      ''
+    ]);
+    const costRows = [left, right].flatMap((row, index) => [
+      'Kosten-scenario ' + (index + 1) + ': ' + row.label,
+      'Huur: ' + currencyCost(row.rent),
+      'Service: ' + currencyCost(row.service),
+      'Energie: ' + currencyCost(row.energy),
+      'Vervoer: ' + currencyCost(row.travel),
+      'Eenmalige startkosten: ' + currencyCost(row.start),
+      'Som per maand: ' + currencyCost(row.monthly),
+      'Eerste twaalf maanden inclusief start: ' + currencyCost(row.firstYear),
+      'Volgende twaalf maanden zonder start: ' + currencyCost(row.followingYear),
+      ''
+    ]);
+    const content = [
+      'WOONPOINTS — VOLLEDIGE EIGEN WONINGAFWEGING',
+      'Persoonlijke niet-geverifieerde snapshot; geen portalgegevens of toewijzingskans.',
+      '',
+      'OORSPRONKELIJKE PERSOONLIJKE GRENZEN',
+      'Maximale eigen huur: ' + currencyCost(p.maxRent * 100),
+      'Minimale kamers: ' + p.minRooms,
+      'Maximale eigen enkele reistijd: ' + p.maxTravel + ' minuten',
+      'Balkonvoorkeur: ' + (p.preferBalcony ? 'ja' : 'nee'),
+      '',
+      ...details,
+      'LATERE HANDMATIGE KOSTENAANNAMES (NIET AUTOMATISCH GESYNCHRONISEERD)',
+      ...costRows,
+      'Maandverschil: ' + currencyCost(Math.abs(left.monthly - right.monthly)),
+      'Verschil eerste twaalf maanden: ' + currencyCost(Math.abs(left.firstYear - right.firstYear)),
+      '',
+      'Dit bestand bevat geen WoningNet-toewijzingsbewijs of huurtoeslagadvies.',
+      'Controleer actuele huur, bijkomende kosten, regels en rechten zelf.',
+      'Geen informatie werd door Woonpoints online gecontroleerd.'
+    ].join('\n') + '\n';
+    if (new TextEncoder().encode(content).length > 8192) {
+      setNotice('Het beslisoverzicht is te groot om veilig te exporteren.');
+      return;
+    }
+    downloadPrivatePlanFile(content, 'text/plain;charset=utf-8', 'woonpoints-eigen-beslisdossier.txt');
+    setNotice('Eigen volledige beslisafweging aangeboden; gekozen bestandsproviders kunnen synchroniseren.');
   }
 
   const cheaperMonthly = left && right
@@ -1384,6 +1449,21 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
         <p>Rekensom: 12 × (huur + service + energie + vervoer) + eigen startkosten.
           Dit zegt niets over beschikbaarheid, toekomstige prijsstijging of recht op huurtoeslag.</p>
         <button type="button" onClick={saveNote}>Download eigen TXT-kostenvergelijking</button>
+        {sourceRows?.length === 2 && <div className="private-budget-provenance">
+          <h4>Hoe passen deze woningen bij je oorspronkelijke voorkeuren?</h4>
+          <p>Momentopname uit jouw woninglijst; gewijzigde kosten veranderen de oorspronkelijke
+            kamer-, reistijd- en geschiktheidsgegevens niet.</p>
+          <ul>{sourceRows.map(row =>
+            <li key={row.index}>
+              <strong>{row.home.label}</strong>: {row.home.rooms} kamers,
+              {' '}{row.home.travel} minuten, {row.home.balcony ? 'met balkon' : 'zonder balkon'}.
+              {' '}{row.suitable ? 'Past bij je eigen grenzen.' : 'Past niet bij je eigen grenzen.'}
+            </li>
+          )}</ul>
+          <button type="button" onClick={exportCompleteDecision}>
+            Download volledig beslisdossier (woning + kosten)
+          </button>
+        </div>}
       </div>}
       <p role="status" aria-live="polite">{notice}</p>
     </section>
