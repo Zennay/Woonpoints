@@ -1787,7 +1787,7 @@ export function PrivateMovingDayTimeline() {
   useEffect(()=>{
     function restore(event:Event){
       const archive=(event as CustomEvent<unknown>).detail;
-      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      if(!validMovingWorkspaceArchive(archive)||archive.version===1)return;
       setMoveDate(archive.timeline.moveDate);setCompleted(archive.timeline.completed);setExtras(archive.timeline.extras);setNewTask('');setNewOffset('-7');setPending(null);setPendingRestore(null);
       setMessage('De planning is uit de privé-werkmap hersteld na je bevestiging.');
     }
@@ -2010,7 +2010,7 @@ export function PrivateMovingHandover() {
   useEffect(()=>{
     function restore(event:Event){
       const archive=(event as CustomEvent<unknown>).detail;
-      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      if(!validMovingWorkspaceArchive(archive)||archive.version===1)return;
       setEntries(archive.handover.entries);setStage('in');setForm(handoverEmpty());setPendingSave(null);setPendingExport(null);setConfirmClear(false);
       setNotice('Sleutel- en meteropnamen zijn uit de privé-werkmap hersteld.');
     }
@@ -2194,7 +2194,7 @@ export function PrivateMoveDocumentReadiness(){
   useEffect(()=>{
     function restore(event:Event){
       const archive=(event as CustomEvent<unknown>).detail;
-      if(!validMovingWorkspaceArchive(archive)||archive.version!==2)return;
+      if(!validMovingWorkspaceArchive(archive)||archive.version===1)return;
       setExtras(archive.documents.extras);setStates(archive.documents.states);setDates(archive.documents.dates);setTitle('');setPendingBackup(null);setPendingReport(null);setPendingClear(false);
       setNotice('Documentstatussen zijn uit de privé-werkmap hersteld.');
     }
@@ -3210,6 +3210,17 @@ type MovingWorkspaceArchiveV2 = Omit<MovingWorkspaceArchive,'version'> & {
   handover: {entries:{in?:PrivateHandoverEntry;out?:PrivateHandoverEntry}};
   documents: ReadinessBackup;
 };
+type MovingWorkspaceArchiveV3 = Omit<MovingWorkspaceArchiveV2,'version'> & {
+  version:3;
+  packing:{items:PackingItem[]};
+};
+function validMovingWorkspacePacking(value:unknown):value is MovingWorkspaceArchiveV3['packing']{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const data=value as Record<string,unknown>;
+  if(Object.keys(data).join('|')!=='items'||!Array.isArray(data.items)||
+    data.items.length>80||!data.items.every(validItem))return false;
+  return new Set(data.items.map((item:PackingItem)=>item.id)).size===data.items.length;
+}
 
 function validMovingWorkspaceTimeline(value:unknown):
   value is MovingWorkspaceArchiveV2['timeline'] {
@@ -3288,15 +3299,16 @@ function validMovingWorkspaceDocuments(value:unknown):
 }
 
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 {
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  const v2=obj.version===2;
+  const v2=obj.version===2,v3=obj.version===3;
   const keys=Object.keys(obj).sort().join('|');
-  if(keys!==(v2?'documents|expenses|format|handover|quotes|split|timeline|version':
+  if(keys!==(v3?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
+    v2?'documents|expenses|format|handover|quotes|split|timeline|version':
     'expenses|format|quotes|split|version') ||
     obj.format !== 'woonpoints-private-moving-workspace' ||
-    (obj.version!==1&&!v2))return false;
+    (obj.version!==1&&!v2&&!v3))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3320,11 +3332,12 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
     new Set(expenseIds).size===expenseIds.length &&
-    (!v2 || (validMovingWorkspaceTimeline(obj.timeline)&&
+    (!(v2||v3) || (validMovingWorkspaceTimeline(obj.timeline)&&
       validMovingWorkspaceHandover(obj.handover)&&
-      validMovingWorkspaceDocuments(obj.documents)));
+      validMovingWorkspaceDocuments(obj.documents))) &&
+    (!v3 || validMovingWorkspacePacking(obj.packing));
 }
-function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2):string{
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3):string{
   return JSON.stringify(data);
 }
 
