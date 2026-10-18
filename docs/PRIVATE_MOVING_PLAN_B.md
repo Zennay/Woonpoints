@@ -22,16 +22,31 @@ afwezige verhuishulp.
    Bij import blijft je huidige plan behouden totdat je de vervanging zelf
    bevestigt. Je kunt het resultaat daarna eenmalig terugdraaien zolang je
    niets aanpast.
-5. **Wis mijn plan-B-notities** vraagt apart bevestiging en wist uitsluitend
+5. De nieuwe knop **Ja, onthoud mijn plan B bij herladen** bewaart na
+   expliciete toestemming de exacte, gecontroleerde plan-B-invoer in
+   `sessionStorage` van het huidige browsertabblad. Bij gewone invoer,
+   herstel en wissen wordt deze sessiekopie automatisch bijgewerkt.
+   **Stop bewaren en wis tabbladherstel** schakelt deze functie uit en
+   verwijdert de opgeslagen kopie, zonder huidige tabbladinvoer te wissen.
+6. **Wis mijn plan-B-notities** vraagt apart bevestiging en wist uitsluitend
    dit onderdeel.
 
 ## Gegevens en beperkingen
 
 - Niets wordt naar WoningNet, verhuurder, verzekeraar, gemeente of
   vervoerder gestuurd. Een opgeschreven alternatief is geen reservering.
-- De vier scenario's blijven **alleen in het huidige browsertabblad** en
-  verdwijnen bij herladen; er is geen automatische server-, cookie- of
-  localStorage-opslag.
+- Zonder toestemming blijven de vier scenario's uitsluitend in het huidige
+  browsertabblad en verdwijnen ze bij herladen. Met expliciete toestemming
+  herstelt `sessionStorage` ze bij herladen in datzelfde tabblad. Geen server-,
+  cookie- of `localStorage`-opslag en geen synchronisatie.
+- **Tabbladopslag is niet versleuteld.** Andere scripts op dezelfde website
+  kunnen de opgeslagen inhoud lezen. Gebruik dit niet op gedeelde apparaten;
+  schrijf geen telefoonnummers, adressen of geheime gegevens op. Browsers
+  wissen de sessie doorgaans bij het sluiten, maar sessieherstel kan langer
+  bewaren. De knop om te stoppen verwijdert de opgeslagen snapshot.
+- Ongeldige, verouderde, te grote of ontoegankelijke sessiegegevens worden
+  nooit vertrouwd of automatisch geïmporteerd. De normale bestandsimport
+  behoudt de afzonderlijke preview, bevestiging en undo.
 - TXT/JSON/ICS-export is altijd een bewuste actie. Afhankelijk van de
   gekozen downloadmap kan je eigen bestand extern worden gesynchroniseerd.
 - Noteer geen telefoonnummers, adressen, bankgegevens, toegangs- of
@@ -48,4 +63,7 @@ De component is ingebed in `src/app/page.tsx` omdat de productiecontainer
 een gesloten allowlist van appbronbestanden heeft. De route is
 `#private-moving-plan-b-heading`. Alle verwerking gebeurt in React state.
 Er zijn geen nieuwe dependencies, API-routes, betaalproviders,
-privileged workflows of automatische acties toegevoegd.
+privileged workflows of automatische externe acties toegevoegd.
+Het herstelschema deelt de exacte versie- en data-admissie van de
+bestaande JSON-back-up. Alle opslag is uitgeschakeld totdat de gebruiker
+uitdrukkelijk kiest om bij herladen te onthouden.
