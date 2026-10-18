@@ -30,6 +30,8 @@ export default function ManualMonthProgress() {
   const [transientDiscarded, setTransientDiscarded] = useState(false);
   const [reminderDates, setReminderDates] = useState<string[]>(['', '', '', '']);
   const [reminderMessage, setReminderMessage] = useState('');
+  const [pendingTransfer, setPendingTransfer] = useState<{month:string;count:number}|null>(null);
+  const [transferMessage, setTransferMessage] = useState('');
   const [suggestedDates, setSuggestedDates] = useState<string[] | null>(null);
   const [reminderTimes, setReminderTimes] = useState(['09:00','09:00','09:00','09:00']);
   const [reminderDuration, setReminderDuration] = useState<15 | 30 | 60>(15);
@@ -54,6 +56,8 @@ export default function ManualMonthProgress() {
         setReminderDuration(15);
         setSuggestedDates(null);
         setReminderMessage('');
+        setPendingTransfer(null);
+        setTransferMessage('');
       }
       setMonth(current);
       setObservedAt(observed);
@@ -114,6 +118,7 @@ export default function ManualMonthProgress() {
   }, []);
 
   function save(next: number) {
+    setPendingTransfer(null);
     const observed = new Date();
     const current = localMonthKey(observed);
     setObservedAt(observed);
@@ -200,6 +205,7 @@ export default function ManualMonthProgress() {
   }
 
   function erase() {
+    setPendingTransfer(null);
     // An old tab cannot erase a newer replacement without first displaying it.
     try {
       const result = eraseManualProgressIfUnchanged(window.localStorage, lastObservedRaw.current);
@@ -234,6 +240,56 @@ export default function ManualMonthProgress() {
       writeUnverified.current = true;
       setStorageWorks(false);
       setDeleteError(true);
+    }
+  }
+
+
+  // User-initiated portable record; only the current, self-reported monthly number.
+  // Keep this independent of persistence so browsers blocking localStorage may
+  // still export a visibly temporary note without implying it was stored.
+  function exportPersonalProgress() {
+    if (!month || month !== localMonthKey(new Date()) ||
+        count === null || opaqueStoredNote || count < 0 ||
+        count > MANUAL_MONTHLY_GOAL) {
+      setTransferMessage('Geen actuele eigen maandnotitie beschikbaar om te bewaren.');
+      return;
+    }
+    const content = 'month,count\\r\\n'+month+','+String(count)+'\\r\\n';
+    const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-eigen-maandstand-'+month+'.csv';
+    link.rel='noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setTransferMessage((hasUnsaved ?
+      'Tijdelijke maandstand aangeboden als CSV; de browser kon deze stand niet blijvend opslaan. ' :
+      'Eigen maandstand aangeboden als CSV. ')+
+      'De gekozen opslaglocatie kan extern synchroniseren.');
+  }
+  async function preparePersonalProgressImport(file: File|undefined) {
+    setPendingTransfer(null);
+    if (!file) return;
+    if (!month || file.size < 1 || file.size > 128) {
+      setTransferMessage('Alleen een eigen klein CSV-bestand (maximaal 128 bytes) uit deze maand is toegestaan.');
+      return;
+    }
+    try {
+      const raw=await file.text();
+      const normalized=raw.replace(/\\r\\n/g,'\\n');
+      // Strict ASCII numeric two-column CSV: no injected spreadsheet cells or
+      // unbounded/unknown account data; previous-month files cannot overwrite now.
+      const match=/^month,count\\n(20\\d{2}-(?:0[1-9]|1[0-2])),(0|[1-9]\\d?)\\n?$/.exec(normalized);
+      const current=localMonthKey(new Date());
+      if (!match || match[1] !== current || match[1] !== month ||
+          Number(match[2]) > MANUAL_MONTHLY_GOAL ||
+          opaqueStoredNote || /[^\\x0A\\x20-\\x7E]/.test(normalized)) throw new Error('invalid');
+      setPendingTransfer({month:match[1],count:Number(match[2])});
+      setTransferMessage('Eigen CSV ingelezen. Er is nog niets overschreven; bevestig afzonderlijk.');
+    } catch {
+      setTransferMessage('Bestand geweigerd: alleen month,count met een geldige stand uit de huidige maand. Huidige notitie behouden.');
     }
   }
 
@@ -487,6 +543,54 @@ export default function ManualMonthProgress() {
               Geen automatische melding vanuit Woonpoints,
               geen accounttoegang en geen geplaatste reactie.</p>
             {reminderMessage && <p role="status">{reminderMessage}</p>}
+          </div>
+        )}
+
+        {month !== null && (
+          <div className="manual-reminder" style={{marginTop:16}}>
+            <h3>Neem je eigen maandstand mee</h3>
+            <p>Bewaar alleen de twee velden <code>month,count</code> in een lokaal
+              CSV-bestand. Dit is jouw eigen notitie, geen bewijs van vier
+              geregistreerde WoningNet-reacties of zoekpunten. Er worden
+              geen accountgegevens, adressen of officiële statussen geëxporteerd.</p>
+            <button type="button" onClick={exportPersonalProgress}
+              disabled={count===null || opaqueStoredNote}>
+              Bewaar eigen maandstand als CSV…
+            </button>
+            <label htmlFor="manual-progress-transfer">Open eigen maandstand (CSV, maximaal 128 bytes)</label>
+            <input id="manual-progress-transfer" type="file" accept=".csv,text/csv"
+              onChange={event=>{
+                const file=event.currentTarget.files?.[0];
+                event.currentTarget.value='';
+                void preparePersonalProgressImport(file);
+              }} />
+            {pendingTransfer && (
+              <div className="month-csv-confirm" role="group" aria-label="Bevestig eigen maandstand importeren">
+                <p>Het bestand bevat voor {pendingTransfer.month} zelf genoteerd:
+                  <strong> {pendingTransfer.count} / {MANUAL_MONTHLY_GOAL}</strong>.
+                  Importeren vervangt jouw huidige maandstand, maar alleen als
+                  deze sinds de laatste waarneming niet door een ander tabblad
+                  is gewijzigd. De bestaande conflictbeveiliging blijft actief.</p>
+                <button type="button" onClick={()=>{
+                  const proposed=pendingTransfer;
+                  setPendingTransfer(null);
+                  if (proposed.month !== localMonthKey(new Date()) || proposed.month !== month) {
+                    setTransferMessage('De kalendermaand is gewijzigd. Het oude bestand is niet toegepast.');
+                    return;
+                  }
+                  save(proposed.count);
+                  setTransferMessage('Vervanging aangevraagd; controleer de melding over eventuele opslagfouten of wijzigingen door andere tabbladen.');
+                }}>Vervang mijn maandstand</button>
+                <button type="button" onClick={()=>{
+                  setPendingTransfer(null);
+                  setTransferMessage('Import geannuleerd; jouw maandstand is behouden.');
+                }}>Behoud mijn huidige maandstand</button>
+              </div>
+            )}
+            {transferMessage && <p role="status">{transferMessage}</p>}
+            <p>Een bestand uit een vorige maand wordt altijd geweigerd.
+              Geen automatische import, opslag in een externe dienst of
+              wijziging van de officiële WoningNet-reactiestand.</p>
           </div>
         )}
         {month !== null && (
