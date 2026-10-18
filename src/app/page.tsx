@@ -2997,13 +2997,44 @@ function PrivateMoveAftercare() {
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && incomingImpact !== null &&
             <div className="aftercare-confirm" role="group" aria-label="Gevolgen nazorgimport beoordelen">
-              <h3>Bekijk welke eigen gegevens worden vervangen</h3>
+              <h3>Kies hoe je dit eigen bestand verwerkt</h3>
+              <div className="aftercare-actions" role="group" aria-label="Manier van eigen nazorgimport">
+                <button type="button" className={incomingMode === 'replace' ? '' : 'secondary'}
+                  aria-pressed={incomingMode === 'replace'} onClick={() => {
+                    setIncomingMode('replace'); setIncomingRiskApproved(false);
+                  }}>Bestaande gegevens vervangen</button>
+                <button type="button" className={incomingMode === 'merge' ? '' : 'secondary'}
+                  aria-pressed={incomingMode === 'merge'} onClick={() => {
+                    setIncomingMode('merge'); setIncomingRiskApproved(false);
+                  }}>Alleen nieuwe gegevens veilig samenvoegen</button>
+              </div>
               <p>Gecontroleerd bestand: {incoming.items.length} punten en {incoming.history.length}
                 {' '}contactmomenten. Huidige tab: {items.length} punten en {history.length}
                 {' '}contactmomenten. Niets wordt gewijzigd vóór je aparte bevestiging.</p>
-              <p>Dit overzicht toont namen, eigen statuswijzigingen en aantallen. Vrije
-                privénotities worden niet weergegeven, maar hun wijzigingen tellen wel mee.</p>
-              {([
+              {incomingMode === 'replace' && <p>Deze vervangende import verwijdert huidige
+                eigen regels die ontbreken in de back-up. Het overzicht toont wijzigingen,
+                inclusief wijzigingen aan verborgen notities, maar nooit hun vrije tekst.</p>}
+              {incomingMode === 'merge' && incomingMerge && <div className="aftercare-history"
+                role="status" aria-live="polite">
+                <h4>Voorbeeld veilig samenvoegen (zonder overschrijven)</h4>
+                <p><strong>{incomingMerge.newPoints} extra eigen punten</strong> en
+                  <strong> {incomingMerge.newContacts} extra contactmomenten</strong>.
+                  {' '}{incomingMerge.skippedPoints} identieke punten en
+                  {' '}{incomingMerge.skippedContacts} identieke contactmomenten blijven ongewijzigd.</p>
+                <p>Bestaande {items.length} punten en {history.length} contactnotities blijven intact.
+                  Na samenvoegen zijn er {incomingMerge.items.length} punten en
+                  {' '}{incomingMerge.history.length} contactmomenten.</p>
+                <p>{incomingMerge.conflictingPoints} conflicterende punt-ID’s en
+                  {' '}{incomingMerge.conflictingContacts} conflicterende contact-ID’s.
+                  Bij hetzelfde ID met andere velden wordt <strong>niets</strong> overschreven,
+                  ook geen verborgen privétekst of zelf genoteerde verzendstatus.</p>
+                {!incomingMerge.ready && <p className="aftercare-warning" role="alert">
+                  Samenvoegen is niet mogelijk: {incomingMerge.reason}
+                </p>}
+                <p>Per punt blijven maximaal 8 contactmomenten gelden; ook na samenvoegen
+                  moet de hele privéback-up binnen de bestaande 16 KiB passen.</p>
+              </div>}
+              {incomingMode === 'replace' && ([
                 {title:'Nazorgpunten', impact:incomingImpact.points},
                 {title:'Zelf genoteerde contactmomenten', impact:incomingImpact.contacts}
               ]).map(group => <details key={group.title} className="aftercare-history">
@@ -3027,16 +3058,24 @@ function PrivateMoveAftercare() {
               <label className="aftercare-check" htmlFor="nazorg-import-impact-ack">
                 <input type="checkbox" id="nazorg-import-impact-ack"
                   checked={incomingCurrent && incomingRiskApproved}
-                  disabled={!incomingCurrent}
+                  disabled={!incomingCurrent || (incomingMode === 'merge' && !incomingMerge?.ready)}
                   onChange={event => setIncomingRiskApproved(event.target.checked)}/>
-                Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen,
-                inclusief mogelijk verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.
+                {incomingMode === 'merge'
+                  ? 'Ik kies uitsluitend nieuwe, niet-conflicterende eigen punten en contactnotities toe te voegen. Ik heb de aantallen en grenzen gecontroleerd; mijn huidige dossier wordt niet vervangen.'
+                  : 'Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen, inclusief verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.'}
               </label>
               <div className="aftercare-actions">
-                <button type="button" disabled={!incomingCurrent || !incomingRiskApproved}
-                  onClick={confirmAftercareImport}>Ja, vervang mijn hele nazorgdossier</button>
+                <button type="button"
+                  disabled={!incomingCurrent || !incomingRiskApproved ||
+                    (incomingMode === 'merge' && !incomingMerge?.ready)}
+                  onClick={confirmAftercareImport}>
+                  {incomingMode === 'merge'
+                    ? 'Ja, voeg uitsluitend deze nieuwe eigen gegevens toe'
+                    : 'Ja, vervang mijn hele nazorgdossier'}
+                </button>
                 <button type="button" className="secondary" onClick={() => {
-                  setIncoming(null); setIncomingSource(''); setIncomingRiskApproved(false);
+                  setIncoming(null); setIncomingMode('replace');
+                  setIncomingSource(''); setIncomingRiskApproved(false);
                   setMessage('Import geannuleerd; bestaande nazorgpunten en contactmomenten behouden.');
                 }}>Annuleer import</button>
               </div>
