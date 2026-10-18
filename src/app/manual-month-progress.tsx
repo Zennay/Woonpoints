@@ -3499,8 +3499,8 @@ export function PrivateMovingWorkspace() {
   const [timeline,setTimeline]=useState<MovingWorkspaceArchiveV2['timeline']|null>(null);
   const [handover,setHandover]=useState<MovingWorkspaceArchiveV2['handover']|null>(null);
   const [documents,setDocuments]=useState<MovingWorkspaceArchiveV2['documents']|null>(null);
-  const [packing,setPacking]=useState<MovingWorkspaceArchiveV3['packing']|null>(null);
-  const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|null>(null);
+  const [packing,setPacking]=useState<MovingWorkspaceArchiveV4['packing']|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|null>(null);
   const [pendingExport,setPendingExport]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   const [today,setToday]=useState<string|null>(null);
@@ -3550,7 +3550,7 @@ export function PrivateMovingWorkspace() {
       }else if(item.section==='documents'){
         if(validMovingWorkspaceDocuments(item.data))setDocuments(item.data);
       }else if(item.section==='packing'){
-        if(validMovingWorkspacePacking(item.data))setPacking(item.data);
+        if(validMovingWorkspacePackingV4(item.data))setPacking(item.data);
       }
     }
     window.addEventListener('woonpoints:moving-workspace:snapshot',capture);
@@ -3566,8 +3566,8 @@ export function PrivateMovingWorkspace() {
   },[]);
   const complete=quotes!==null&&expenses!==null&&split!==null&&
     timeline!==null&&handover!==null&&documents!==null&&packing!==null;
-  const archive:MovingWorkspaceArchiveV3|null=complete?{
-    format:'woonpoints-private-moving-workspace',version:3,
+  const archive:MovingWorkspaceArchiveV4|null=complete?{
+    format:'woonpoints-private-moving-workspace',version:4,
     quotes:quotes!,expenses:expenses!,split:split!,
     timeline:timeline!,handover:handover!,documents:documents!,packing:packing!
   }:null;
@@ -3587,6 +3587,8 @@ export function PrivateMovingWorkspace() {
   const documentItems=documents?[...READINESS_DEFAULTS,...documents.extras]:[];
   const packCount=packing?.items.length??0;
   const unfinishedPack=packing?.items.filter(item=>item.status!=='Uitgepakt').length??0;
+  const boxesLoaded=packing?.transport.filter(item=>item.stage==='geladen').length??0;
+  const boxesDelivered=packing?.transport.filter(item=>item.stage==='afgeleverd').length??0;
   const relevantDocumentItems=documentItems.filter(doc=>documents?.states[doc.id]!=='skip');
   const readyDocumentItems=relevantDocumentItems.filter(doc=>documents?.states[doc.id]==='ready');
   const actions:PrivateMovingAction[]=[];
@@ -3728,10 +3730,12 @@ export function PrivateMovingWorkspace() {
       detail:imported
     }));
     setPendingRestore(null);setPendingExport(null);
-    setNotice(imported.version===3?
-      'Alle zeven privé-onderdelen na bevestiging vervangen, inclusief paklijst; niets online verzonden.':
+    setNotice(imported.version===4?
+      'Eigen werkmap v4 hersteld: zeven modules inclusief geldige, handmatig gemarkeerde laad-/afleverstatussen.':
+      imported.version===3?
+      'Oudere werkmap v3 hersteld: zeven modules vervangen; transportstatussen zijn leeggemaakt.':
       imported.version===2?
-      'Werkmap v2 hersteld: zes oudere modules vervangen, huidige paklijst behouden.':
+      'Werkmap v2 hersteld: zes oudere modules vervangen, huidige paklijst en transportstatus behouden.':
       'Werkmap v1 hersteld: alleen offertes, kosten en verdeling vervangen; andere gegevens behouden.');
   }
   return (
@@ -3757,6 +3761,8 @@ export function PrivateMovingWorkspace() {
           readyDocumentItems.length+' van '+relevantDocumentItems.length+' toepasselijke regels'}</dd></div>
         <div><dt>Eigen paklijst</dt><dd>{packing===null?'Nog laden':
           packCount+' regels · '+unfinishedPack+' nog niet uitgepakt'}</dd></div>
+        <div><dt>Eigen verhuisrit</dt><dd>{packing===null?'Nog laden':
+          boxesLoaded+' geladen · '+boxesDelivered+' afgeleverd (zelf genoteerd)'}</dd></div>
       </dl>
       {potentialMismatch&&<p role="status">Het eigen verdeeltotaal wijkt af van de kostenbegroting.
         Controleer zelf wat je wilt verdelen; dit wordt niet automatisch aangepast.</p>}
@@ -3848,18 +3854,19 @@ export function PrivateMovingWorkspace() {
         setPendingExport(signature);setNotice('');
       }}>Bekijk gecombineerde privé-JSON-export…</button>
       {archive&&pendingExport===signature&&<div role="group" aria-label="Bevestig gecombineerde werkmap-export">
-        <p>Versie 3 bevat <strong>{quoteCount} offerte(s)</strong>,
+        <p>Versie 4 bevat <strong>{quoteCount} offerte(s)</strong>,
           <strong> {expenseCount} kostenpost(en)</strong>,
           <strong> {split!.members.length} deelnemers</strong>,
           <strong> {totalTimelineTasks} geplande taken</strong>,
           <strong> {handoverCount} opname(n)</strong> en
           <strong> {documentItems.length} documentenregels</strong> en
-          <strong> {packCount} pakregels</strong>.
+          <strong> {packCount} pakregels</strong> en
+          <strong> {boxesLoaded+boxesDelivered} handmatige transportmarkeringen</strong>.
           Ook persoonlijke notities, meterstanden en dooslabels worden mee geëxporteerd.</p>
         <button type="button" onClick={exportWorkspace}>Bevestig volledige JSON-download</button>
         <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
       </div>}
-      <label htmlFor="private-moving-workspace-upload">Herstel eigen werkmap v1, v2 of v3 (JSON, maximaal 64 KiB)</label>
+      <label htmlFor="private-moving-workspace-upload">Herstel eigen werkmap v1, v2, v3 of v4 (JSON, maximaal 64 KiB)</label>
       <input id="private-moving-workspace-upload" type="file" accept=".json,application/json"
         onChange={event=>{
           const file=event.currentTarget.files?.[0];
@@ -3871,11 +3878,15 @@ export function PrivateMovingWorkspace() {
           <strong> {pendingRestore.quotes.quotes.length} offerte(s)</strong>,
           <strong> {pendingRestore.expenses.lines.length} kostenpost(en)</strong> en
           <strong> {pendingRestore.split.members.length} deelnemers</strong>.
-          {pendingRestore.version===3?
-            ' Dit bestand bevat ook je paklijst ('+pendingRestore.packing.items.length+' regels) en alle zes oudere onderdelen; bevestigen vervangt alles inclusief onbewaarde invoer.':
+          {pendingRestore.version===4?
+            ' Deze v4-back-up vervangt zeven onderdelen, '+pendingRestore.packing.items.length+
+            ' pakregels en '+pendingRestore.packing.transport.length+
+            ' eigen laad-/aflevermarkeringen. Ook onbewaarde invoer wordt vervangen.':
+            pendingRestore.version===3?
+            ' Deze oudere v3-back-up vervangt zeven onderdelen en de paklijst; huidige transportstatussen worden gewist omdat v3 ze niet bevat.':
             pendingRestore.version===2?
-            ' Deze oudere werkmap vervangt zes onderdelen inclusief onbewaarde invoer. De huidige paklijst blijft behouden.':
-            ' Deze oudere v1-werkmap vervangt alleen deze drie onderdelen; planning, overdracht, documenten en paklijst blijven behouden.'}
+            ' Deze oudere v2-werkmap vervangt zes onderdelen inclusief onbewaarde invoer. De huidige paklijst en transportstatus blijven behouden.':
+            ' Deze oudere v1-werkmap vervangt alleen drie onderdelen; planning, overdracht, documenten, paklijst en transportstatus blijven behouden.'}
           Een eerder opgeslagen bestand blijft ongewijzigd.</p>
         <button type="button" onClick={restoreWorkspace}>Bevestig complete werkmap vervangen</button>
         <button type="button" onClick={()=>{
