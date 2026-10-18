@@ -5080,7 +5080,7 @@ export function PrivateMovingHelperRoster(){
       if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
       const envelope=raw as Record<string,unknown>;
       if(envelope.format!=='woonpoints-private-moving-workspace'||
-        envelope.version!==5||!envelope.helpers||
+        (envelope.version!==5&&envelope.version!==6)||!envelope.helpers||
         typeof envelope.helpers!=='object'||Array.isArray(envelope.helpers))return;
       const nested=envelope.helpers as Record<string,unknown>;
       if(Object.keys(nested).join('|')!=='helpers')return;
@@ -5475,6 +5475,35 @@ export function PrivateAddressChangePlanner(){
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
   const [pendingRestore,setPendingRestore]=useState<MoveAddressArchive|null>(null);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'address',data:{items}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[items]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const raw=(event as CustomEvent<unknown>).detail;
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+      const archive=raw as Record<string,unknown>;
+      if(archive.format!=='woonpoints-private-moving-workspace'||
+        archive.version!==6||!archive.address||
+        typeof archive.address!=='object'||Array.isArray(archive.address))return;
+      const nested=archive.address as Record<string,unknown>;
+      if(Object.keys(nested).join('|')!=='items')return;
+      const candidate={format:'woonpoints-private-address-checklist',
+        version:1,items:nested.items};
+      if(!moveAddressArchiveValid(candidate))return;
+      setItems(candidate.items);setLabel('');setPendingExport(null);
+      setPendingCalendar(null);setPendingRestore(null);
+      setPendingClear(false);setPendingDelete(null);
+      setNotice('Eigen adres-/contractchecklist uit werkmap v6 hersteld. Geen instantie benaderd.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
   const sequence=useRef(0);
   const signature=JSON.stringify(items);
   const today=(()=>{
