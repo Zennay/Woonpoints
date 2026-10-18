@@ -1587,3 +1587,31 @@ De bestaande grenzen blijven gelden: maximaal 36 eigen maanden,
 JSON maximaal 16 KiB, CSV maximaal 4 KiB. De bron wordt niet online
 gecontroleerd. Waarden blijven persoonlijke observaties en nooit bewijs
 van officieel verkregen zoekpunten of WoningNet/MijnDak-reacties.
+
+
+### Paklijst → printbare dozenlabels (18 oktober 2026)
+
+De bestaande privé-paklijst heeft een aparte knop om alle nog niet uitgepakte,
+van een eigen dooscode voorziene doosgroepen **eenmalig als voorbeeld** door te geven
+aan de labelstudio op `/#dozenlabels`. De knop toont altijd het werkelijke aantal
+doosgroepen. Meer dan twintig groepen worden geheel geweigerd, nooit stilzwijgend
+ingekort. Een doos die al is uitgepakt of nog geen eigen code heeft, doet bewust
+niet mee. De oude offline HTML-etikettenexport blijft beschikbaar.
+
+De studio toont eerst **alle** overgedragen kamer- en dooscodecombinaties met
+uitpakprioriteit en vraagt bevestiging voor toevoegen aan bestaande labels of
+expliciet vervangen. Er gaan geen vrij geschreven paklijstomschrijvingen mee:
+de inhoud van het studio-label wordt alleen `Dooscode: <eigen code>`. De paklijst
+heeft geen betrouwbaar breekbaarveld; de studio zet 'breekbaar' daarom bewust
+uit tot de gebruiker het zelf inschakelt. Voor toevoegen geldt twintig reeksen
+of 48 etiketten als totale harde grens. De bevestiging controleert opnieuw
+de huidige paklijst in hetzelfde tabblad; een gewijzigde bron of ontbrekende
+bron weigert de overdracht. Na import kan de vorige labelstand eenmaal
+worden hersteld zolang geen nieuwe wijziging is aangebracht. De bronpaklijst
+zelf wordt nooit aangepast of opnieuw opgeslagen.
+
+Deze overdracht gebruikt alleen tijdelijke same-page browser-events: geen
+serverrequest, account-/WoningNet-verbinding, blijvende browseropslag, nieuwe
+bestandsrechten of automatische toestemming. Een browserrefresh wist
+niet-geëxporteerde wijzigingen in beide modules. Voor bewust bewaren bestaan
+in de labelstudio de afzonderlijk goedgekeurde JSON-back-up en CSV-/PDF-acties.
