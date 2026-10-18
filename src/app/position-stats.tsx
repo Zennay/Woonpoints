@@ -60,24 +60,79 @@ export function ManualPositionHistory({
   onJournalDecision?: () => void;
 } = {}) {
   const [input, setInput] = useState('');
-  const [pendingImport, setPendingImport] = useState<{ text: string; count: number } | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    text: string; count: number; originalSource: string
+  } | null>(null);
+  const [positionImportUndo, setPositionImportUndo] = useState<{
+    original: string; imported: string; mode: 'append'|'replace'
+  } | null>(null);
+  const positionImportSequence = useRef(0);
   const [fileMessage, setFileMessage] = useState('');
+  const importSourceCurrent = pendingImport !== null &&
+    pendingImport.originalSource === input;
+  const canUndoPositionImport = positionImportUndo !== null &&
+    positionImportUndo.imported === input;
+  const importedPositionLines = pendingImport?.text.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
+  const existingPositionLines = input.split('\n').map(v=>v.trim()).filter(Boolean);
+  const samePositionLines = importedPositionLines.filter(v=>existingPositionLines.includes(v)).length;
+  const combinedPositionText = [input.trim(),pendingImport?.text.trim()??'']
+    .filter(Boolean).join('\n');
+  const canAppendPositionImport = Boolean(pendingImport && importSourceCurrent &&
+    combinedPositionText.length <= 8192 && existingPositionLines.length+importedPositionLines.length <= 120);
+
   async function selectCsv(file: File | undefined) {
-    if (!file) return;
+    const seq=++positionImportSequence.current;
+    const previous=input;
     setPendingImport(null);
     setFileMessage('');
+    if (!file) return;
     if (file.size === 0 || file.size > 16384) {
       setFileMessage('Bestand geweigerd: selecteer een kleine geldige Woonpoints-CSV.');
       return;
     }
     try {
       const restored = importManualPositionHistoryCsv(await file.text());
+      if(seq!==positionImportSequence.current)return;
       const sample = summarizeManualPositionHistory(restored);
       if (!sample) throw new TypeError('empty');
-      setPendingImport({ text: restored, count: sample.sampleCount });
+      setPendingImport({ text: restored, count: sample.sampleCount, originalSource: previous });
+      setFileMessage('Geldige eigen CSV gelezen. Kies bewust tussen toevoegen of vervangen.');
     } catch {
+      if(seq!==positionImportSequence.current)return;
       setFileMessage('Bestand geweigerd: verkeerde indeling of ongeldige gegevens. Je huidige invoer is behouden.');
     }
+  }
+  function applyPositionImport(mode:'append'|'replace') {
+    if(!pendingImport||!importSourceCurrent) {
+      setFileMessage('Je eigen maandposities zijn sinds de selectie veranderd. Kies het bestand opnieuw.');
+      return;
+    }
+    if(mode==='append'&&!canAppendPositionImport){
+      setFileMessage('Toevoegen kan niet: je eigen tekst/rijlimiet is bereikt. De huidige invoer is behouden.');
+      return;
+    }
+    const candidate=mode==='append'?combinedPositionText:pendingImport.text;
+    try {
+      if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
+        throw new Error('Not a supported month position list');
+      setPositionImportUndo({original:input,imported:candidate,mode});
+      setInput(candidate);
+      setPendingImport(null);
+      setFileMessage(mode==='append'?'CSV-posities toegevoegd; vorige tekst tijdelijk herstelbaar.':
+        'Maandposities bewust vervangen; vorige tekst tijdelijk herstelbaar.');
+    }catch{
+      setFileMessage('De combinatie voldoet niet aan de grenzen voor geldige datums, posities, 120 regels of 24 maanden. Niets aangepast.');
+    }
+  }
+  function undoPositionImport() {
+    if(!positionImportUndo||!canUndoPositionImport||pendingImport){
+      setFileMessage('Maandposities zijn sinds de import veranderd; onveilig terugzetten is geblokkeerd.');
+      return;
+    }
+    setInput(positionImportUndo.original);
+    setPositionImportUndo(null);
+    setPendingImport(null);
+    setFileMessage('Vorige maandposities uit dit tabblad teruggezet; bestaande bestanden blijven onaangetast.');
   }
   function downloadCsv() {
     try {
