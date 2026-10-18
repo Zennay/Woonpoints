@@ -824,3 +824,40 @@ achtergrondanalyse uit. Foto's met andere perspectieven en formaten
 zijn niet vanzelf vergelijkbaar; dit is geen bewijs dat afmetingen,
 kwaliteit of woningen gelijkwaardig zijn. Bij het wissen van de
 albums verdwijnen ook alle afbeeldingsvoorbeelden uit de app.
+
+
+## Woon-werkcalculator voor twee handmatige woningen
+
+In het dashboard staat bij **Woon-werk** een onafhankelijk overzicht waarin
+je twee mogelijke woningen vergelijkt op **jaarlijkse eigen woonkosten én
+woon-werkkosten**. Per woning kun je zelf een huur, overige woonkosten,
+werkweken, reisdagen per week, enkele reistijd en vervoersmiddel invoeren.
+Voor auto berekent het scherm de kosten uit retourkilometers × zelfgekozen
+alle-in kilometerschatting, plus parkeren/tol. Voor het OV geef je een
+zelf geraamd retourtarief per reisdag op; voor fiets/lopen kun je eveneens
+eventuele eigen dagkosten invullen. Een zelf geraamde werkgeversvergoeding
+wordt nooit voor meer dan de geraamde reiskosten in mindering gebracht.
+
+Het scherm toont per woning jaarlijkse reisuren, netto- en
+brutoreiskosten, gemiddelde maandlast en het **verschil B min A**
+voor totale jaarkosten en reisuren. Getallen worden begrensd en
+tegenstrijdige/ongeldige invoer wordt expliciet geweigerd; ontbreken
+van gegevens levert geen schijnzeker resultaat op. Als voorbeeld staan
+twee fictieve scenario's vooringevuld; deze zijn nooit actuele
+woningaanbiedingen of tarieven.
+
+Alle berekeningen zijn alleen voor de door de gebruiker ingevulde
+aannames. Het is **geen** routeplanner, OV-prijszoeker,
+kilometervergoedings-/belastingadvies of officieel budgetbesluit. Het
+model waardeert reistijd niet als geld, voorspelt geen tarieven, en
+houdt geen rekening met ziekte, onregelmatige diensten, toeslagen of
+variabele ritten. Werkelijke individuele vergoedingen en belastingen
+kunnen anders uitvallen.
+
+Via een afzonderlijke voorbeeld-/bevestigingsstap kan uitsluitend een
+eigen, leesbaar TXT-overzicht van de getallen worden opgeslagen.
+Bij annuleren gebeurt niets. De bron bevat geen eigen adres- of
+accountvelden, maakt geen netwerkverzoeken, slaat niets automatisch
+op en stuurt nooit gegevens naar WoningNet. Verversen/wissen verwijdert
+de invoer van het scherm. De bestaande shortlist, woningvergelijker,
+privé-notities en `BOT_DRY_RUN=true` blijven volledig onafhankelijk.
