@@ -578,6 +578,32 @@ hoeveel werk er nog resteert. Een eigen taak kan worden verwijderd.
   toestemming-, bron- en releasevoorwaarden zijn vervuld.
 
 
+## Van handmatige woning-shortlist naar privé-verhuischecklist
+
+Vanuit elke zelf ingevoerde woning kun je **Bereid verhuisplan voor deze
+woning voor** kiezen. Het scherm gaat naar de bestaande verhuischecklist,
+waar een apart bevestigingspaneel laat zien welke *eigen, ongeverifieerde*
+woningkenmerken als context worden aangeboden: huurindicatie, kamers,
+reistijd en balkon. Pas met **Ja, voeg alleen deze stappen toe** worden
+maximaal vijf nieuwe, concrete voorbereidende taken toegevoegd.
+
+- De huurindicatie, reistijd en kamers dienen uitsluitend als tekst voor
+  eigen controletaken; niets wordt beoordeeld als officiële woningaanbieding
+  of geslaagde inkomens-/contractcheck.
+- De voorgestelde taken worden toegevoegd, niet automatisch opgeslagen:
+  bestaande vinkjes, datum, zelf toegevoegde taken, kalenderexports en
+  archiefbestanden blijven ongewijzigd. Gelijknamige taken worden niet
+  dubbel toegevoegd.
+- Een lopend bestand-herstel of wisverzoek blokkeert toevoegen totdat de
+  gebruiker dat verzoek afrondt. Bij onvoldoende ruimte (maximaal 36
+  totale taken) wordt niets gedeeltelijk toegevoegd.
+- Het aangeboden woninglabel wordt alleen in het tijdelijke
+  bevestigingspaneel getoond. De nieuwe taken bevatten geen label,
+  adres, naam of link naar een account, en verdwijnen bij sluiten
+  van het tabblad zonder bewuste export.
+- **Nee, behoud mijn eigen checklist** annuleert zonder mutatie. Geen
+  WoningNet-actie, automatische woningacceptatie of netwerkverzoek.
+
 ## Privé-agendaconcept van de huidige reactiemaand bewaren
 
 De bestaande handmatige maandplanning kan nu ook **eigen agendaconcepten**
