@@ -3443,6 +3443,29 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
 function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6):string{
   return JSON.stringify(data);
 }
+/** Predict the exact v6 snapshot after a confirmed legacy or current restore. */
+function restoredMovingWorkspaceV6(
+  current:MovingWorkspaceArchiveV6,
+  imported:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|
+    MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6
+):MovingWorkspaceArchiveV6 {
+  const next:MovingWorkspaceArchiveV6={
+    ...current,
+    quotes:imported.quotes,expenses:imported.expenses,split:imported.split
+  };
+  if(imported.version>=2){
+    next.timeline=imported.timeline;
+    next.handover=imported.handover;
+    next.documents=imported.documents;
+  }
+  if(imported.version>=3){
+    next.packing=imported.version===3?
+      {items:imported.packing.items,transport:[]}:imported.packing;
+  }
+  if(imported.version>=5)next.helpers=imported.helpers;
+  if(imported.version===6)next.address=imported.address;
+  return next;
+}
 
 /**
  * Read-only in-tab hub for the three existing user-authored moving modules.
@@ -3725,7 +3748,14 @@ export function PrivateMovingWorkspace() {
   const [helpers,setHelpers]=useState<MovingWorkspaceArchiveV5['helpers']|null>(null);
   const [address,setAddress]=useState<MovingWorkspaceArchiveV6['address']|null>(null);
   const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6|null>(null);
+  const [pendingRestoreSource,setPendingRestoreSource]=useState<string|null>(null);
+  const restoreReadSequence=useRef(0);
+  const [restoreUndo,setRestoreUndo]=useState<{
+    previous:MovingWorkspaceArchiveV6;
+    restoredSignature:string;
+  }|null>(null);
   const [pendingExport,setPendingExport]=useState<string|null>(null);
+  const [exportApproved,setExportApproved]=useState(false);
   const [notice,setNotice]=useState('');
   const [today,setToday]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
@@ -3809,6 +3839,13 @@ export function PrivateMovingWorkspace() {
     packing:packing!,helpers:helpers!,address:address!
   }:null;
   const signature=archive?privateMovingWorkspaceSignature(archive):'';
+  const archiveJson=archive?JSON.stringify(archive,null,2)+'\n':'';
+  const archiveBytes=new TextEncoder().encode(archiveJson).length;
+  const archiveExportable=complete&&archiveBytes>0&&archiveBytes<=65536;
+  const canApplyWorkspaceRestore=complete&&pendingRestore!==null&&
+    pendingRestoreSource===signature;
+  const canUndoWorkspaceRestore=complete&&restoreUndo!==null&&
+    restoreUndo.restoredSignature===signature;
   const moveDaySteps=archive?buildMoveDaySteps(archive):[];
   const moveDayReport=moveDayPrivacyReport(moveDaySteps);
   const moveDaySignature=JSON.stringify({signature,moveDayReport});
@@ -4000,54 +4037,81 @@ export function PrivateMovingWorkspace() {
   }
 
   function exportWorkspace(){
-    if(!archive||pendingExport!==signature){
-      setPendingExport(null);
-      setNotice('Het privé-overzicht is veranderd. Bekijk het exportvoorstel opnieuw.');
+    if(!archiveExportable||!archive||pendingExport!==signature||!exportApproved){
+      setPendingExport(null);setExportApproved(false);
+      setNotice('Gegevens, bestandslimiet of toestemming gewijzigd. Bekijk de actuele JSON opnieuw.');
       return;
     }
-    const json=JSON.stringify(archive,null,2)+'\n';
-    const url=URL.createObjectURL(new Blob([json],{type:'application/json;charset=utf-8'}));
-    const link=document.createElement('a');
-    link.href=url;link.download='woonpoints-prive-verhuiswerkmap.json';link.rel='noopener';
-    document.body.appendChild(link);link.click();link.remove();
-    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
-    setPendingExport(null);
-    setNotice('Privé-werkmap lokaal aangeboden. Je gekozen opslaglocatie kan synchroniseren.');
+    exportFile('woonpoints-prive-verhuiswerkmap.json',
+      archiveJson,'application/json;charset=utf-8');
+    setPendingExport(null);setExportApproved(false);
+    setNotice('Exact gecontroleerde privé-werkmap lokaal aangeboden. Je opslaglocatie kan synchroniseren.');
   }
   async function prepareRestore(file:File|undefined){
-    setPendingRestore(null);setPendingExport(null);
+    const sequence=++restoreReadSequence.current;
+    const source=signature;
+    setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
     if(!file)return;
+    if(!complete||!archive){
+      setNotice('Wacht tot alle huidige werkmaponderdelen zijn geladen; huidige invoer blijft behouden.');
+      return;
+    }
     if(file.size===0||file.size>65536){
       setNotice('Werkmap afgewezen: het JSON-bestand moet maximaal 64 KiB zijn.');
       return;
     }
     try{
       const raw:unknown=JSON.parse(await file.text());
+      if(sequence!==restoreReadSequence.current)return;
       if(!validMovingWorkspaceArchive(raw))throw new Error('schema');
-      setPendingRestore(raw);
-      setNotice('Geldige privé-werkmap gelezen. Niets vervangen totdat je expliciet bevestigt.');
+      setPendingRestore(raw);setPendingRestoreSource(source);
+      setNotice('Geldige eigen werkmap gelezen. Controleer eerst welke onderdelen worden vervangen.');
     }catch{
-      setNotice('Werkmap afgewezen: onjuiste versie, ontbrekende secties of ongeldige invoer. Bestaande gegevens behouden.');
+      if(sequence!==restoreReadSequence.current)return;
+      setNotice('Werkmap geweigerd: verkeerde versie, velden of waarden. Huidige werkmap behouden.');
     }
   }
   function restoreWorkspace(){
-    if(!pendingRestore||!validMovingWorkspaceArchive(pendingRestore))return;
+    if(!archive||!pendingRestore||!canApplyWorkspaceRestore||
+      !validMovingWorkspaceArchive(pendingRestore)){
+      setPendingRestore(null);setPendingRestoreSource(null);
+      setNotice('Je huidige werkmap is na bestandsselectie gewijzigd of niet compleet. Kies opnieuw; niets vervangen.');
+      return;
+    }
     const imported=pendingRestore;
+    const next=restoredMovingWorkspaceV6(archive,imported);
+    setRestoreUndo({
+      previous:JSON.parse(JSON.stringify(archive)) as MovingWorkspaceArchiveV6,
+      restoredSignature:privateMovingWorkspaceSignature(next)
+    });
     window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:restore',{
       detail:imported
     }));
-    setPendingRestore(null);setPendingExport(null);
-    setNotice(imported.version===6?
-      'Eigen werkmap v6 hersteld: negen privé-onderdelen inclusief adreswijzigingen. Geen bericht verstuurd.':
-      imported.version===5?
-      'Oudere werkmap v5 hersteld: acht modules. Bestaande eigen adreswijzigingen behouden.':
-      imported.version===4?
-      'Oudere werkmap v4 hersteld: zeven modules. Bestaande verhuishulp behouden.':
-      imported.version===3?
-      'Oudere werkmap v3 hersteld: zeven modules vervangen; transportstatussen zijn leeggemaakt.':
-      imported.version===2?
-      'Werkmap v2 hersteld: zes oudere modules vervangen, huidige paklijst en transportstatus behouden.':
-      'Werkmap v1 hersteld: alleen offertes, kosten en verdeling vervangen; andere gegevens behouden.');
+    setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingReport(null);setPendingCalendar(null);setCalendarPreview(null);
+    setPendingMoveDay(null);
+    setNotice('Je eigen v'+imported.version+'-werkmap is na broncontrole hersteld. '+
+      'Eén tijdelijk herstel van je vorige, volledige tabbladwerkmap is beschikbaar zolang niets is gewijzigd. '+
+      'Oude formulierversies behouden hun niet-ondersteunde onderdelen. Geen externe actie uitgevoerd.');
+  }
+  function undoWorkspaceRestore(){
+    if(!restoreUndo||!canUndoWorkspaceRestore){
+      setRestoreUndo(null);
+      setNotice('Terugdraaien geweigerd: je huidige werkmap wijkt af van de net herstelde versie. '+
+        'Wijzigingen worden niet overschreven.');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:restore',{
+      detail:restoreUndo.previous
+    }));
+    setRestoreUndo(null);setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingReport(null);setPendingCalendar(null);setCalendarPreview(null);
+    setPendingMoveDay(null);
+    setNotice('Vorige privé-werkmap eenmalig hersteld voor alle negen onderdelen. '+
+      'Eventuele eerder gedownloade bestanden blijven onaangetast.');
   }
   return (
     <section className="panel" aria-labelledby="private-moving-workspace-heading">
