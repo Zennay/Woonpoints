@@ -1444,6 +1444,10 @@ function PrivateMoveAftercare() {
     setPendingDelete(null);
     setHistoryDeletePending(null);
     setHistoryTarget(null);
+    setPendingJsonExport(null);
+    setJsonExportApproved(false);
+    setPendingCsvExport(null);
+    setPendingTextExport(null);
     setMessage(label + ' uit dit tabblad verwijderd. Eénmalig herstel mogelijk zolang er niets wijzigt.');
   }
   function removeFollowUp(id: string) {
@@ -1906,6 +1910,7 @@ function PrivateMoveAftercare() {
     setBulkSelectedIds([]);
     setPendingBulk(null);
     setBulkUndo(null);
+    setRemovalUndo(null);
     setPendingTextExport(null);
     setPendingCsvExport(null);
     setPendingJsonExport(null);
@@ -2250,6 +2255,25 @@ function PrivateMoveAftercare() {
           <p>Deze filters werken alleen in dit tabblad. De privé-JSON-back-up blijft volledig en ongewijzigd.</p>
         </div>
         <div>
+          {removalUndo !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Laatste individuele verwijdering ongedaan maken">
+            <h3>Laatste verwijdering terugzetten</h3>
+            {removalUndoCurrent ? <p>Laatste actie: {removalUndo.label}.
+              Je kunt de vorige eigen punten en contactmomenten één keer terugzetten,
+              uitsluitend zolang er na de verwijdering niets is gewijzigd.</p> :
+              <p className="aftercare-warning" role="status">
+                Na deze verwijdering zijn eigen dossiergegevens veranderd.
+                Het oude herstelpunt mag nieuwe invoer niet overschrijven.
+              </p>}
+            <div className="aftercare-actions">
+              <button type="button" className="secondary"
+                disabled={!removalUndoCurrent} onClick={undoLastRemoval}>
+                Herstel de laatst verwijderde gegevens
+              </button>
+              <button type="button" className="secondary"
+                onClick={() => setRemovalUndo(null)}>Vernietig tijdelijk herstelpunt</button>
+            </div>
+          </div>}
           <div className="aftercare-item" role="group" aria-label="Meerdere eigen nazorgpunten beheren">
             <h3>Meerdere punten tegelijk bijwerken</h3>
             <p>Selecteer hieronder uitsluitend de eigen punten die je zelf hebt gecontroleerd.
@@ -2384,7 +2408,9 @@ function PrivateMoveAftercare() {
                 {pendingDelete === item.id && <div className="aftercare-confirm" role="group" aria-label="Verwijderen bevestigen">
                   <p>Dit aandachtspunt uit het tabblad verwijderen?</p>
                   <div className="aftercare-actions">
-                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setHistory(prev => prev.filter(entry => entry.issueId !== item.id)); setHistoryTarget(null); setHistoryDeletePending(null); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
+                    <button type="button" onClick={() => removeAftercarePoint(item.id)}>
+                      Ja, verwijder inclusief eigen contactnotities
+                    </button>
                     <button className="secondary" onClick={() => setPendingDelete(null)}>Behoud</button>
                   </div>
                 </div>}
@@ -2859,7 +2885,7 @@ function PrivateMoveAftercare() {
           {clearPending && <div className="aftercare-confirm">
             <p>Alle huidige aandachtspunten definitief uit dit tabblad verwijderen? Een eerder gedownloade back-up blijft bestaan.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
+              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setRemovalUndo(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
               <button className="secondary" onClick={() => setClearPending(false)}>Behoud punten</button>
             </div>
           </div>}
