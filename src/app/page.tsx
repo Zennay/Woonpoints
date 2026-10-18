@@ -415,15 +415,41 @@ function parseInspectionBackup(source: string): InspectionBackup {
   return { grades, notes, custom, count: used.size };
 }
 
+
+const COMPLETE_HANDOVER_KIND = 'woonpoints-private-complete-handover';
+const COMPLETE_HANDOVER_MAX_BYTES = 40 * 1024;
+type CompleteHandover = {
+  inspection: InspectionBackup;
+  aftercare: AftercareBackup;
+};
+function readCompleteHandover(source: string): CompleteHandover {
+  if (new TextEncoder().encode(source).length > COMPLETE_HANDOVER_MAX_BYTES)
+    throw Error('Complete overdracht is groter dan 40 KiB.');
+  const data: unknown = JSON.parse(source);
+  if (!isRecord(data) || !exactKeys(data, ['kind', 'schema', 'inspection', 'aftercare']) ||
+      data.kind !== COMPLETE_HANDOVER_KIND || data.schema !== 1 ||
+      !isRecord(data.inspection) || !isRecord(data.aftercare)) {
+    throw Error('Dit is geen geldig compleet Woonpoints-overdrachtsbestand.');
+  }
+  // Both existing strict standalone importers remain the sole admission contract.
+  // Do not mutate either module until the entire combined file is admitted.
+  const inspection = parseInspectionBackup(JSON.stringify(data.inspection));
+  const aftercare = readBackup(JSON.stringify(data.aftercare));
+  return { inspection, aftercare };
+}
+
 function PrivateArrivalInspection({
-  items, onTransfer
+  items, onTransfer, grades, setGrades, notes, setNotes, customChecks, setCustomChecks
 }: {
   items: Item[];
   onTransfer: (requests: Draft[]) => { added: number; skipped: number; error?: string };
+  grades: Record<string, InspectionGrade | undefined>;
+  setGrades: (value: Record<string, InspectionGrade | undefined> | ((previous: Record<string, InspectionGrade | undefined>) => Record<string, InspectionGrade | undefined>)) => void;
+  notes: Record<string, string>;
+  setNotes: (value: Record<string, string> | ((previous: Record<string, string>) => Record<string, string>)) => void;
+  customChecks: PrivateCustomInspectionCheck[];
+  setCustomChecks: (value: PrivateCustomInspectionCheck[] | ((previous: PrivateCustomInspectionCheck[]) => PrivateCustomInspectionCheck[])) => void;
 }) {
-  const [grades, setGrades] = useState<Record<string, InspectionGrade | undefined>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [customChecks, setCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
   const [customTitle, setCustomTitle] = useState('');
   const [customRoom, setCustomRoom] = useState<string>('Overig');
   const [customPriority, setCustomPriority] = useState<Priority>('normaal');
@@ -703,6 +729,12 @@ function PrivateArrivalInspection({
 }
 
 function PrivateMoveAftercare() {
+  const [inspectionGrades, setInspectionGrades] = useState<Record<string, InspectionGrade | undefined>>({});
+  const [inspectionNotes, setInspectionNotes] = useState<Record<string, string>>({});
+  const [inspectionCustomChecks, setInspectionCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
+  const [inspectionVersion, setInspectionVersion] = useState(0);
+  const [pendingCompleteImport, setPendingCompleteImport] = useState<CompleteHandover | null>(null);
+  const [completeMessage, setCompleteMessage] = useState('');
   const [items, setItems] = useState<Item[]>([]);
   const [history, setHistory] = useState<FollowUp[]>([]);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
@@ -842,6 +874,67 @@ function PrivateMoveAftercare() {
     setHistory(prev => prev.filter(event => event.id !== id));
     setHistoryDeletePending(null);
     setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
+  }
+
+  function exportCompleteHandover() {
+    const inspection = JSON.parse(inspectionBackupContents(
+      inspectionGrades, inspectionNotes, inspectionCustomChecks));
+    const aftercare = { kind: KIND, schema: 2, items, history };
+    // Continue honoring each existing module's independent 16 KiB limit.
+    if (new TextEncoder().encode(JSON.stringify(inspection)).length > INSPECTION_BACKUP_BYTES ||
+        new TextEncoder().encode(JSON.stringify(aftercare)).length > MAX_BYTES) {
+      setCompleteMessage('Een onderdeel overschrijdt zijn eigen 16 KiB-back-uplimiet. Verkort notities eerst.');
+      return;
+    }
+    const data = JSON.stringify({
+      kind: COMPLETE_HANDOVER_KIND, schema: 1, inspection, aftercare
+    }, null, 2);
+    if (new TextEncoder().encode(data).length > COMPLETE_HANDOVER_MAX_BYTES) {
+      setCompleteMessage('Het complete bestand overschrijdt 40 KiB; export geweigerd.');
+      return;
+    }
+    download('woonpoints-volledige-prive-overdracht.json', data, 'application/json;charset=utf-8');
+    setCompleteMessage('Complete privé-back-up gedownload. Bewaar dit bestand zelf op een veilige plek.');
+  }
+  async function importCompleteHandover(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    setPendingCompleteImport(null);
+    if (!file) return;
+    if (file.size > COMPLETE_HANDOVER_MAX_BYTES) {
+      setCompleteMessage('Import geweigerd: maximaal 40 KiB.'); return;
+    }
+    try {
+      const data = readCompleteHandover(await file.text());
+      setPendingCompleteImport(data);
+      setCompleteMessage('Volledige back-up ingelezen en gecontroleerd. Bevestig het vervangen van beide onderdelen.');
+    } catch (error) {
+      setCompleteMessage(error instanceof Error ? error.message : 'Volledig back-upbestand kon niet worden geopend.');
+    }
+  }
+  function confirmCompleteImport() {
+    if (pendingCompleteImport === null) return;
+    const { inspection, aftercare } = pendingCompleteImport;
+    setInspectionGrades(inspection.grades);
+    setInspectionNotes(inspection.notes);
+    setInspectionCustomChecks(inspection.custom);
+    setInspectionVersion(value => value + 1);
+    setItems(aftercare.items);
+    setHistory(aftercare.history);
+    setPendingCompleteImport(null);
+    setIncoming(null);
+    setHistoryTarget(null);
+    setHistoryDeletePending(null);
+    setDraft(EMPTY);
+    setEditing(null);
+    setPendingDelete(null);
+    setClearPending(false);
+    setChosenIssueIds([]);
+    setNoticeDraft('');
+    setNoticeSource('');
+    setNoticeApproved(false);
+    setCompleteMessage('Beide privé-onderdelen bewust hersteld. Geen externe melding verstuurd.');
+    setMessage('Volledige inspectie en nazorg handmatig uit back-up hersteld.');
   }
 
   function exportJson() {
@@ -995,7 +1088,11 @@ function PrivateMoveAftercare() {
         <h2>Gebreken en open punten op één plek.</h2>
         <p className="lede">Leg zelf vast wat je na de sleuteloverdracht wilt controleren, melden of opvolgen. Alles blijft in dit tabblad totdat je bewust een bestand opslaat.</p>
       </header>
-      <PrivateArrivalInspection items={items} onTransfer={createFromInspection} />
+      <PrivateArrivalInspection key={inspectionVersion}
+        items={items} onTransfer={createFromInspection}
+        grades={inspectionGrades} setGrades={setInspectionGrades}
+        notes={inspectionNotes} setNotes={setInspectionNotes}
+        customChecks={inspectionCustomChecks} setCustomChecks={setInspectionCustomChecks} />
       <section className="panel" aria-labelledby="nazorg-status">
         <div>
           <h2 id="nazorg-status">Je eigen overzicht</h2>
@@ -1184,6 +1281,53 @@ function PrivateMoveAftercare() {
             </div>
             <p>Niet automatisch verzonden. Een eerder gekopieerd of opgeslagen bestand blijft buiten de app bestaan.</p>
           </div>}
+        </div>
+      </section>
+      <section className="panel" aria-labelledby="complete-handover-title">
+        <div>
+          <p className="eyebrow">ÉÉN BESTAND · ZELF BEWAREN</p>
+          <h2 id="complete-handover-title">Complete privé-overdrachtsback-up</h2>
+          <p>Bewaar je volledige zelf beoordeelde startinspectie (ook eigen controles) én alle nazorgpunten
+            met contactnotities in één lokaal JSON-bestand. Geen automatische opslag, verhuurdercontact,
+            accountkoppeling of officiële status. Je gekozen bestandsprovider kan dit privébestand extern synchroniseren.</p>
+          <p>Dit gecombineerde bestand staat los van de bestaande afzonderlijke inspectie- en nazorgback-ups.
+            Gebruik die afzonderlijke importknoppen nog steeds voor een gedeeltelijk herstel.</p>
+        </div>
+        <div>
+          <div className="aftercare-actions">
+            <button type="button" onClick={exportCompleteHandover}
+              disabled={items.length === 0 && history.length === 0 &&
+                inspectionCustomChecks.length === 0 &&
+                !Object.values(inspectionGrades).some(value => value === 'goed' || value === 'aandacht')}>
+              Download complete privé-JSON
+            </button>
+          </div>
+          <label htmlFor="complete-handover-import">Open complete Woonpoints-back-up (max. 40 KiB)</label>
+          <input type="file" id="complete-handover-import" accept=".json,application/json"
+            onChange={importCompleteHandover} />
+          {pendingCompleteImport !== null && (
+            <div className="aftercare-confirm" role="group" aria-label="Complete import bevestigen">
+              <p><strong>Vervang alle tijdelijke inspectie- én nazorggegevens?</strong></p>
+              <p>Nieuwe back-up: {pendingCompleteImport.inspection.count} beoordeelde controles,
+                {' '}{pendingCompleteImport.inspection.custom.length} eigen controles,
+                {' '}{pendingCompleteImport.aftercare.items.length} nazorgpunten en
+                {' '}{pendingCompleteImport.aftercare.history.length} contactnotities.</p>
+              <p>Huidige sessie: {Object.values(inspectionGrades).filter(value =>
+                value === 'goed' || value === 'aandacht').length} beoordelingen,
+                {' '}{inspectionCustomChecks.length} eigen controles,
+                {' '}{items.length} nazorgpunten en {history.length} contactnotities.
+                Deze worden pas na bevestiging vervangen; download desgewenst eerst je huidige privébestand.
+                Reeds gedownloade bestanden en extern verzonden berichten blijven uiteraard onaangetast.</p>
+              <div className="aftercare-actions">
+                <button type="button" onClick={confirmCompleteImport}>Ja, herstel beide onderdelen</button>
+                <button type="button" className="secondary" onClick={() => {
+                  setPendingCompleteImport(null);
+                  setCompleteMessage('Complete import geannuleerd; inspectie en nazorg blijven onaangetast.');
+                }}>Annuleer import</button>
+              </div>
+            </div>
+          )}
+          <p role="status" aria-live="polite">{completeMessage}</p>
         </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-backup-title">
