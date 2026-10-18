@@ -932,3 +932,32 @@ concept. **De apart op te slaan JSON-inventaris bevat bewust geen
 kostenbudget**; wie ook een begroting wil bewaren kiest
 de aparte TXT-export. Geen browseropslag, upload, automatische
 afspraken of wijzigingen aan andere Woonpoints-onderdelen.
+
+### Woon-werk: bereken de financiële omslaggrens van extra huur
+
+De **Woon-werkcalculator** toont nu expliciet hoeveel extra **maandelijkse
+woonlasten** woning B financieel kan hebben voordat de eigen
+**netto-reiskostenbesparing ten opzichte van A** is opgebruikt.
+De maandelijkse reisbesparing is
+`(netto reiskosten A per jaar - netto reiskosten B per jaar) / 12`.
+De werkelijke extra woonlasten van B (inclusief eigen andere vaste
+woonkosten) worden hiervan afgetrokken. De resterende financiële marge
+is precies de tegengestelde richting van het jaarkostenverschil gedeeld
+door twaalf. Een negatieve grens betekent dat B juist lagere woonlasten
+nodig heeft om financieel gelijk te komen. Reisuren worden daarnaast
+afzonderlijk getoond, niet stilzwijgend als geld behandeld.
+
+Wie dat expliciet wil kan zelf een **subjectieve waarde per reisuur**
+van €0 tot €100 kiezen. Dan volgt een **afzonderlijke persoonlijke
+weging** van het B-min-A jaarverschil:
+`verschil woon- en reiskosten + verschil reisuren × eigen uurvoorkeur`.
+Deze tijdwaarde is geen loon, betaalde uitgave, fiscale aftrek,
+marktconforme waarde, of vervanging van de echte kostenvergelijking.
+Een waarde van nul houdt de analyse puur financieel.
+
+Alle parameters blijven privé in het browsertabblad. De eigen
+TXT-samenvatting bevat beide scenario's, de financiële omslaggrens,
+netto maandmarge en alleen na bewuste keuze de persoonlijke tijdweging.
+Verversen/wissen maakt de eigen invoer ongedaan. Er worden geen
+aanbiedingen, routes, externe OV-tarieven of werkgevergegevens opgehaald
+of bijgehouden en `BOT_DRY_RUN=true` blijft intact.
