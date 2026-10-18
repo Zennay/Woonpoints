@@ -577,6 +577,7 @@ export function ManualReactionJournal({
     .filter(row => (monthFilter === 'all' || row.date.slice(0, 7) === monthFilter) &&
       (journalCalendarDay === null || row.date === journalCalendarDay))
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const quickStatsRows=visible.filter(item=>item.rank!==null&&item.total!==null);
   const rowCount = journal.total;
   const currentJournalSignature = JSON.stringify(entries);
   const importStillCurrent = pendingImport !== null &&
@@ -833,6 +834,27 @@ export function ManualReactionJournal({
     }
   }
 
+  function proposeQuickStats(){
+    if(quickStatsRows.length<1){
+      setMessage('Geen geldige eindposities in de huidige dagboekselectie.');return;
+    }
+    if(quickStatsRows.length>50){
+      setMessage('Meer dan 50 eindposities geselecteerd. Filter eerst op maand of dag; niets wordt overgenomen.');
+      return;
+    }
+    const pairs=quickStatsRows.map(row=>row.rank+'/'+row.total).join('\n');
+    try{
+      const result=summarizePositionPairs(pairs);
+      if(!result||result.sampleCount!==quickStatsRows.length)throw Error('invalid');
+      window.dispatchEvent(new CustomEvent<PrivateJournalQuickStatsOffer>(
+        PRIVATE_JOURNAL_QUICK_STATS_EVENT,{
+          detail:{pairs,count:quickStatsRows.length}
+        }));
+      setMessage(quickStatsRows.length+' zelf genoteerde eindposities aangeboden aan de snelle statistiek. Bevestig daar zelf.');
+    }catch{
+      setMessage('Overdracht geblokkeerd door ongeldige eigen posities. Het statistiekscherm is ongewijzigd.');
+    }
+  }
   function download() {
     try {
       const csv = exportManualReactionJournalCsv(entries);
@@ -1069,6 +1091,17 @@ export function ManualReactionJournal({
             Toon genoteerde eindposities in maandgrafiek
           </button>
         )}
+        {journal.recordedPositions>0&&<div style={{marginTop:12}}>
+          <button type="button" onClick={proposeQuickStats}
+            disabled={quickStatsRows.length<1||quickStatsRows.length>50}>
+            Bied {quickStatsRows.length} eindpositie(s) aan de snelle statistiek aan ↑
+          </button>
+          <p>Alleen positie/totaal-paren uit de momenteel zichtbare
+            dagboekselectie (maand-/dagfilter), maximaal 50.
+            Geen datums, adressen, accountgegevens of statusbesluiten worden
+            overgezet; het statistiekscherm vraagt opnieuw je toestemming.
+            {quickStatsRows.length>50?' Filter eerst op maand of dag.':''}</p>
+        </div>}
         <section className="journal-monthly" aria-labelledby="journal-daily-heading"
           style={{border:'1px solid #c7d7ce',borderRadius:12,padding:14,marginTop:16}}>
           <h3 id="journal-daily-heading">Mijn dagelijkse reactieoverzicht</h3>
