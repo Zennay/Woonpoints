@@ -455,6 +455,29 @@ notities ongemoeid. De officiële dashboardkaart blijft **Zoekpunten onbekend**
 tot geautoriseerde read-only brondata beschikbaar zijn.
 
 
+### Drie hypothetische meerjaren-kostenstressscenario's
+
+Binnen **Meerjarenkosten** staan nu drie transparante vergelijkingen voor
+dezelfde twee zelf ingevoerde woningen: jouw bestaande basisraming, een
+extra huurstijging voor beide woningen, en een gecombineerde variant waarin
+ook de overige maandelijkse woonlasten jaarlijks stijgen. De gebruiker kiest
+beide stresspercentages zelf (0–20%). Jaarlijks samengestelde huur- en
+kostenstijgingen en eenmalige verhuiskosten in jaar één zijn zichtbaar in
+de vergelijking van de cumulatieve totale kosten over 1–10 jaar. De
+app meldt wanneer de goedkoopste woning verandert tussen basis- en
+gecombineerd scenario; dit is uitsluitend een gevoeligheidssignaal,
+geen aanbeveling of voorspelling van toegestane huurverhoging.
+
+**Bewaar de drie scenario's als eigen numerieke CSV** exporteert alleen
+vaste scenario-identificaties en bedragen (geen formules, persoonsgegevens
+of woninglabels). De volledige opt-in privé JSON-back-up is naar **v2**
+opgewaardeerd en bevat nu ook de twee eigen stressinstellingen. Een
+bestaand v1-bestand kan nog steeds worden hersteld, met vooraf verklaarde
+standaardstress van 3/4% wanneer die velden ontbreken. Bij import blijven
+huidige aannames intact tot de gebruiker de volledige vervanging apart
+bevestigt. Geen automatische opslag, externe accounts of WoningNet-acties.
+
+
 ### Eigen maandmomenten gelijkmatig voorstellen
 
 Als je in de **Maanddoel**-sectie nog eigen reacties wilt plannen, kun je
