@@ -306,3 +306,22 @@ Voor een **verhuis-spaarplan** kun je daarnaast een termijn van 1–36 maanden e
 In de woningkostenvergelijker staat een eigen **Bewaar complete privévergelijking als JSON…**-actie zodra de twee woning- en bufferberekeningen geldig zijn. De browser geeft uitsluitend na die klik een lokaal te bewaren versie-1-bestand met beide handmatige kostenramingen, netto inkomen, overige vaste lasten, beschikbaar spaargeld, gekozen tegenslagpercentages, spaarhorizon en reserveperiode. Er is geen automatische opslag, accountkoppeling of serveroverdracht. Het bestand bevat gevoelige privébedragen; gekozen bestandsproviders kunnen de opslag synchroniseren.
 
 Een eerder geëxporteerd bestand kan óók bij een leeg formulier worden geselecteerd. De import accepteert uitsluitend exact bekende versie-1-velden met stringwaarden, alle bestaande invoergrenzen, twee geldige scenario's en een bestand van maximaal 16 KiB. Foute, gewijzigde of te grote bestanden worden geweigerd zonder de huidige invoer aan te passen. Na succesvolle controle volgt een **apart annuleerbaar bevestigingsmoment** vóórdat beide bestaande scenario's, de financiële aannames en het spaarplan in het huidige tabblad worden vervangen. Een eigen JSON-herstelbestand bewijst geen WoningNet-bron of officiële woninggegevens; eerder uit een woninglijst overgenomen provenance wordt na restore bewust niet geclaimd. Bestanden verdwijnen niet van schijf als het tabblad wordt gewist.
+
+
+## Eigen meerjarenkosten voor twee woningen (privé, geen WoningNet-data)
+
+Via **Meerjarenkosten** op de homepage kun je twee hypothetische woningen over 1–10 jaar
+vergelijken. Voer per woning eigen maandhuur, overige maandelijkse woonlasten,
+eenmalige verhuis-/startkosten en een zelf gekozen jaarlijkse huurstijging in.
+De simulatie verhoogt uitsluitend de huur ieder jaar samengesteld; overige
+maandlasten blijven in deze aanname gelijk. In het overzicht staan de huur per
+maand, lasten per jaar en cumulatieve uitgaven inclusief de startkosten; bij
+verschillen verschijnt het gunstigste scenario en, als dat verandert, het eerste
+jaar van omslag. Een bewuste CSV-download bevat uitsluitend vaste numerieke
+kolommen, zonder labels uit gebruikersinvoer. Wissen maakt beide scenario's leeg.
+
+Dit is **geen voorspelling**, geen beoordeling van wettelijke huurverhogingen en
+geen financieel advies. Er worden geen WoningNet-gegevens gelezen, geen
+toeslagen berekend, geen account gekoppeld en geen gegevens automatisch
+opgeslagen of verzonden. Kies een bestandslocatie zelf; die locatie kan elders
+synchroniseren. De WoningNet-worker blijft BOT_DRY_RUN=true.
