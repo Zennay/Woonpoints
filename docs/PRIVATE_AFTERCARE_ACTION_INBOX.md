@@ -89,3 +89,9 @@ Naast bewust bevestigde bulk- en importacties kan nu ook de laatste losse verwij
 De volledige vorige eigen items/contacthistorie wordt uitsluitend in het geopende browsertabblad bewaard. Terugdraaien is alleen toegestaan als het huidige volledige dossier na de verwijdering exact hetzelfde is gebleven; elke volgende toevoeging, bewerking, import of contactwijziging invalideert de oude herstelactie. Een nieuwe individuele verwijdering vervangt het vorige herstelpunt, geen onbeperkte undo-stack. Het bewust wissen van alle tabbladpunten vernietigt de tijdelijke individuele verwijdering-undo. Ook eerder voorbereide downloadpreviews/toestemmingen vervallen bij verwijdering.
 
 Er komt geen automatische opslag, kopie, verzonden bericht, WoningNet-handeling of restore van bestanden buiten het tabblad bij kijken. De eigen herstel-JSON blijft de enige bewuste duurzame back-up.
+
+## Complete privé-nazorg wissen met tijdelijke terugzetmogelijkheid
+
+**Wis alle tabbladpunten** noemt nu vóór de bestaande afzonderlijke menselijke bevestiging het volledige aantal eigen nazorgpunten én alle gekoppelde zelf genoteerde contactmomenten dat tegelijk verdwijnt. Bevestigen wist die twee tijdelijke datasets, trekt oude export- en conceptgoedkeuringen in en bewaart precies één vorige volledige privéstatus in het nog geopende tabbladgeheugen.
+
+Met **Herstel mijn vorige volledige tabbladstatus** kunnen de oude punten/contactmomenten samen één keer worden teruggezet, maar alleen zolang de actuele gegevens exact overeenkomen met de direct na het wissen lege status. Zodra iemand nieuwe punten of contactmomenten toevoegt of weer wijzigt, wordt het oude herstelpunt geblokkeerd om nieuwe invoer te beschermen. Een nieuw bevestigd volledig wissen vervangt het vorige herstelpunt; bewust vernietigen kan ook. Het gaat alleen om tabbladstatus, niet om een bestand, cloud-back-up, verhuurdermelding of WoningNet-actie. Tabblad sluiten wist ook het tijdelijke herstelpunt.
