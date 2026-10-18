@@ -1,7 +1,7 @@
 import ManualMonthProgress from './manual-month-progress';
 import PositionStats from './position-stats';
 import { ManualPositionsWorkspace } from './position-stats';
-import { ManualHousingDecisionWorkspace, PrivateLongTermHousingCosts } from './position-stats';
+import { ManualHousingDecisionWorkspace, PrivateLongTermHousingCosts, PrivateHousingViewingChecklist } from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -36,6 +36,7 @@ export default function HomePage() {
             ['housing-shortlist-heading', 'Woningen'],
             ['private-budget-title', 'Woonkosten'],
             ['private-longterm-title', 'Meerjarenkosten'],
+            ['private-viewing-title', 'Bezichtiging'],
             ['private-plan-title', 'Planner'],
             ['position-stats-heading', 'Posities'],
             ['monthly-positions-heading', 'Maandtrend']
@@ -63,6 +64,7 @@ export default function HomePage() {
       <ManualPositionsWorkspace />
       <ManualHousingDecisionWorkspace />
       <PrivateLongTermHousingCosts />
+      <PrivateHousingViewingChecklist />
 
       <section className="panel">
         <div>
