@@ -3899,15 +3899,35 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
       </div>}
       <div className="private-points-actions">
         <button type="button" disabled={!rows.length} onClick={()=>{
-          downloadPrivatePointsArchive(sorted);
-          setMessage('Privé-JSON aangeboden om zelf op te slaan; de gekozen map kan synchroniseren.');
-        }}>Bewaar eigen maandstanden als JSON…</button>
+          setPendingExport({kind:'json',source:signature});setExportApproved(false);setMessage('');
+        }}>Bekijk complete privé-JSON…</button>
         <button type="button" disabled={!rows.length} onClick={()=>{
-          downloadPrivatePointsCsv(sorted);
-          setMessage('Eigen numerieke CSV aangeboden. Controleer de gekozen bestandslocatie.');
-        }}>Bewaar eigen maandstanden als CSV…</button>
+          setPendingExport({kind:'csv',source:signature});setExportApproved(false);setMessage('');
+        }}>Bekijk volledige numerieke CSV…</button>
         <button type="button" className="secondary" disabled={!rows.length}
           onClick={()=>setConfirmClear(true)}>Wis alle maandstanden…</button>
+      </div>
+      {pendingExport&&<div className="private-points-confirm" role="group"
+        aria-label="Controleer exacte privé-puntenexport">
+        {!exportStillCurrent&&<p role="alert">Je eigen punten zijn na de voorvertoning
+          gewijzigd. Bekijk de actuele inhoud opnieuw voordat je downloadt.</p>}
+        <p>Dit is de volledige huidige {pendingExport.kind.toUpperCase()}.
+          Alleen eigen maanden en punten; nooit een officieel woningportaalbewijs.
+          De gekozen opslaglocatie kan synchroniseren.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflow:'auto'}}>
+          {exportStillCurrent?exportText:'Eerdere preview niet meer actueel.'}
+        </pre>
+        <label htmlFor="private-points-export-approval" style={{display:'flex',alignItems:'center',gap:8}}>
+          <input id="private-points-export-approval" type="checkbox"
+            checked={exportApproved} disabled={!exportStillCurrent}
+            onChange={event=>setExportApproved(event.target.checked)}/>
+          Ik heb de exacte inhoud bekeken en wil zelf dit bestand bewaren
+        </label>
+        <button type="button" disabled={!exportStillCurrent||!exportApproved}
+          onClick={downloadPreviewedPoints}>Download gecontroleerd privébestand</button>
+        <button type="button" className="secondary" onClick={()=>{
+          setPendingExport(null);setExportApproved(false);
+        }}>Annuleren</button>
       </div>
       {confirmClear && <div className="private-points-confirm" role="group" aria-label="Bevestig alle notities wissen">
         <p>Alle {rows.length} eigen maandstanden uit dit tabblad verwijderen?</p>
