@@ -55,6 +55,34 @@ met de voorgaande **ingevulde** maand.
   brongeverifieerde read-only WoningNet-invoer echt beschikbaar is.
   Het beïnvloedt zoekpunten, reacties en `BOT_DRY_RUN` niet.
 
+
+## Persoonlijk reactiedagboek — handmatig en privé
+
+De homepage bevat nu een los, niet-geverifieerd **reactiedagboek**.
+Je kunt zelf een datum en persoonlijke status (`van plan`, `zelf gereageerd`,
+`afgesloten`, `uitgenodigd`, `ingetrokken`) vastleggen en optioneel
+een afgeronde positie/totaal noteren. Tot 100 notities worden op het scherm
+chronologisch weergegeven, zijn achteraf qua **eigen status** wijzigbaar,
+per maand filterbaar, afzonderlijk verwijderbaar en per ingevulde maand
+samengevat. Er is geen adres- of accountveld en er wordt geen officiële
+WoningNet-reactie geregistreerd, geverifieerd of verstuurd.
+
+**Bewaar als CSV** maakt op eigen verzoek een klein vast vierkolomsbestand
+zonder dynamische spreadsheetinhoud. Import van een eerder bewaarde CSV
+weigert onbekende kolommen, datums, toestanden, positie/totaal-combinaties
+en meer dan 100 notities; de oorspronkelijke notities blijven behouden
+totdat **Vervang huidige notities** expliciet is gekozen. Alles staat
+standaard alleen in de React-geheugenstatus van het browsertabblad. Sluiten
+zonder export wist deze notities. Opslaan op een cloudgesynchroniseerde
+locatie kan buiten de app een kopie veroorzaken.
+
+Maandtotalen hier zijn **eigen observaties**, nooit bewijs van een
+WoningNet-registratie, geldige maandreactie, toegekend zoekpunt of
+automatisch gegarandeerde selectie. Deze M1-interface verandert geen
+authenticatie, accounttoestemming, backend, browserworker of
+`BOT_DRY_RUN=true`. Geverifieerde read-only brondata en afzonderlijke
+live-capability ontbreken nog.
+
 ## Repository layout
 
 - `src/app/` — Next.js dashboard shell.
