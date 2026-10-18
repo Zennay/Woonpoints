@@ -1508,13 +1508,6 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const sourceRows = sourceRanking?.slice().sort(
     (x: {index: number}, y: {index: number}) => x.index - y.index
   ) as Array<{index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}> | undefined;
-  // Explicitly imported source facts are frozen. Cost edits never mutate
-  // suitability or quietly rewrite the saved shortlist snapshot.
-  const sourceRanking = handoff && fromShortlist
-    ? rankManualHomes(handoff.selected, handoff.preferences) : null;
-  const sourceRows = sourceRanking?.slice().sort(
-    (x: {index: number}, y: {index: number}) => x.index - y.index
-  ) as Array<{index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}> | undefined;
   const rows: {key: keyof CostDraft; title: string; max: number; description?: string}[] = [
     {key: 'rent', title: 'Maandhuur (€)', max: 10000},
     {key: 'service', title: 'Servicekosten per maand (€)', max: 5000},
