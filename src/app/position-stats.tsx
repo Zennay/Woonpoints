@@ -1195,3 +1195,147 @@ export function ManualDeadlinePlanner() {
     </section>
   );
 }
+
+
+/** Two self-entered, browser-session-only cost scenarios, never official property prices. */
+type CostDraft = {label: string; rent: string; service: string; energy: string; travel: string; start: string};
+type CostResult = {label: string; rent: number; service: number; energy: number; travel: number; start: number; monthly: number; firstYear: number; followingYear: number};
+const blankCosts = (label: string): CostDraft =>
+  ({label, rent: '', service: '0', energy: '0', travel: '0', start: '0'});
+const currencyCost = (amount: number) =>
+  new Intl.NumberFormat('nl-NL', {style: 'currency', currency: 'EUR'}).format(amount / 100);
+
+function readCostCents(raw: string, minimum: number, maximum: number): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d{1,5}(?:\.\d{1,2})?$/.test(trimmed)) return null;
+  const number = Number(trimmed);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) return null;
+  return Math.round(number * 100);
+}
+function calculatePrivateCosts(input: CostDraft): CostResult | null {
+  const label = input.label.trim();
+  if (!label || label.length > 64 || /[\u0000-\u001f\u007f]/.test(label)) return null;
+  const rent = readCostCents(input.rent, 100, 10000);
+  const service = readCostCents(input.service, 0, 5000);
+  const energy = readCostCents(input.energy, 0, 5000);
+  const travel = readCostCents(input.travel, 0, 5000);
+  const start = readCostCents(input.start, 0, 20000);
+  if (rent === null || service === null || energy === null || travel === null || start === null) return null;
+  const monthly = rent + service + energy + travel;
+  return {label, rent, service, energy, travel, start, monthly,
+    firstYear: monthly * 12 + start, followingYear: monthly * 12};
+}
+
+export function ManualHousingCostComparison() {
+  const [a, setA] = useState<CostDraft>(() => blankCosts('Woning A'));
+  const [b, setB] = useState<CostDraft>(() => blankCosts('Woning B'));
+  const [show, setShow] = useState(false);
+  const [notice, setNotice] = useState('');
+  const left = calculatePrivateCosts(a);
+  const right = calculatePrivateCosts(b);
+  const ready = !!left && !!right;
+  const rows: {key: keyof CostDraft; title: string; max: number; description?: string}[] = [
+    {key: 'rent', title: 'Maandhuur (€)', max: 10000},
+    {key: 'service', title: 'Servicekosten per maand (€)', max: 5000},
+    {key: 'energy', title: 'Energie-inschatting per maand (€)', max: 5000},
+    {key: 'travel', title: 'Reiskosten per maand (€)', max: 5000},
+    {key: 'start', title: 'Eenmalige start-/verhuiskosten (€)', max: 20000}
+  ];
+
+  function saveNote() {
+    if (!left || !right || !show) return;
+    const render = (result: CostResult) =>
+      [result.label,
+       'Eigen kale huur per maand: '+currencyCost(result.rent),
+       'Eigen service-inschatting: '+currencyCost(result.service),
+       'Eigen energie-inschatting: '+currencyCost(result.energy),
+       'Eigen reiskosten-inschatting: '+currencyCost(result.travel),
+       'Eigen eenmalige startkosten: '+currencyCost(result.start),
+       'Maandbedrag: '+currencyCost(result.monthly),
+       'Eerste 12 maanden inclusief start: '+currencyCost(result.firstYear),
+       'Volgende 12 maanden zonder start: '+currencyCost(result.followingYear)].join('\n');
+    const note = [
+      'Woonpoints · eigen woningkostenvergelijking',
+      'Zelf genoteerde bedragen, niet geverifieerd; geen huurtoeslag, kostenprognose of toelatingstoets.',
+      '',
+      render(left), '', render(right), '',
+      'Verschil per maand: '+currencyCost(Math.abs(left.monthly - right.monthly)),
+      'Verschil eerste jaar: '+currencyCost(Math.abs(left.firstYear - right.firstYear)),
+      'De werkelijke kosten kunnen afwijken. Controleer huurprijs en contract zelf.'
+    ].join('\n');
+    downloadPrivatePlanFile(note, 'text/plain;charset=utf-8', 'woonpoints-eigen-kostenvergelijking.txt');
+    setNotice('Eigen TXT-afweging aangeboden. Je gekozen opslagprovider kan het bestand synchroniseren.');
+  }
+
+  const cheaperMonthly = left && right
+    ? left.monthly === right.monthly ? null : left.monthly < right.monthly ? left.label : right.label : null;
+  const cheaperFirst = left && right
+    ? left.firstYear === right.firstYear ? null : left.firstYear < right.firstYear ? left.label : right.label : null;
+
+  return (
+    <section className="panel private-budget" aria-labelledby="private-budget-title">
+      <div>
+        <p className="eyebrow">PERSOONLIJKE WONINGAFWEGING · PRIVÉ IN DIT TABBLAD</p>
+        <h2 id="private-budget-title">Wat kost wonen je écht per maand?</h2>
+        <p>Vergelijk twee zelf ingevulde scenario&apos;s, inclusief service, energie, vervoer
+          en eenmalige startkosten. Je ziet het maandverschil, het eerste jaar en een
+          volgend jaar zonder de eenmalige startkosten.</p>
+        <p><strong>Dit is geen controle van WoningNet of officiële betaalbaarheidsberekening.</strong>
+          De bedragen zijn jouw aannames: geen echte woningprijs, huurtoeslag, inkomenstoets,
+          jaarlijkse prijsverhoging of verborgen kosten zijn geverifieerd.
+          Gebruik labels zoals Woning A, nooit adressen, naam of accountgegevens.
+          Er wordt niets opgeslagen of verstuurd.</p>
+      </div>
+      <div className="private-budget-grid">
+        {([{data:a, setter:setA, id:'a'}, {data:b, setter:setB, id:'b'}] as const).map(({data,setter,id}) =>
+          <fieldset key={id}>
+            <legend>{id === 'a' ? 'Scenario A' : 'Scenario B'}</legend>
+            <label htmlFor={'cost-'+id+'-label'}>Anoniem label</label>
+            <input id={'cost-'+id+'-label'} maxLength={64} autoComplete="off"
+              value={data.label} onChange={event => setter(current => ({...current, label:event.target.value}))} />
+            {rows.map(field => (
+              <div key={field.key}>
+                <label htmlFor={'cost-'+id+'-'+field.key}>{field.title}</label>
+                <input id={'cost-'+id+'-'+field.key} type="number" min={field.key === 'rent' ? 100 : 0}
+                  max={field.max} step="0.01" inputMode="decimal" value={data[field.key]}
+                  onChange={event => setter(current => ({...current, [field.key]:event.target.value}))} />
+              </div>
+            ))}
+          </fieldset>
+        )}
+      </div>
+      <div className="private-budget-buttons">
+        <button type="button" onClick={() => {
+          setShow(true); setNotice(ready ? 'Berekend met uitsluitend je eigen invoer.' :
+            'Vul een anoniem label, huur €100–€10.000 en geldige overige kosten €0–€20.000 in.');
+        }}>Vergelijk mijn bedragen</button>
+        <button type="button" className="secondary" onClick={() => {
+          setA(blankCosts('Woning A')); setB(blankCosts('Woning B'));
+          setShow(false); setNotice('Alle bedragen uit dit tabblad gewist.');
+        }}>Wis beide scenario&apos;s</button>
+      </div>
+      {show && ready && left && right && <div className="private-budget-results" aria-live="polite">
+        <h3>Eigen kostenoverzicht</h3>
+        <div className="private-budget-table-wrap">
+          <table>
+            <caption>Handmatig ingevulde maandbedragen en 12-maandschattingen</caption>
+            <thead><tr><th scope="col">Periode</th><th scope="col">{left.label}</th><th scope="col">{right.label}</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Totaal per maand</th><td>{currencyCost(left.monthly)}</td><td>{currencyCost(right.monthly)}</td></tr>
+              <tr><th scope="row">Eerste 12 maanden incl. start</th><td>{currencyCost(left.firstYear)}</td><td>{currencyCost(right.firstYear)}</td></tr>
+              <tr><th scope="row">Daaropvolgende 12 maanden</th><td>{currencyCost(left.followingYear)}</td><td>{currencyCost(right.followingYear)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Maandverschil: {currencyCost(Math.abs(left.monthly-right.monthly))}.</strong>
+          {' '}{cheaperMonthly ? cheaperMonthly+' is goedkoper op basis van deze invoer.' : 'Even hoog in deze berekening.'}</p>
+        <p><strong>Verschil eerste jaar: {currencyCost(Math.abs(left.firstYear-right.firstYear))}.</strong>
+          {' '}{cheaperFirst ? cheaperFirst+' is goedkoper in het eerste jaar.' : 'Even hoog in het eerste jaar.'}</p>
+        <p>Rekensom: 12 × (huur + service + energie + vervoer) + eigen startkosten.
+          Dit zegt niets over beschikbaarheid, toekomstige prijsstijging of recht op huurtoeslag.</p>
+        <button type="button" onClick={saveNote}>Download eigen TXT-kostenvergelijking</button>
+      </div>}
+      <p role="status" aria-live="polite">{notice}</p>
+    </section>
+  );
+}
