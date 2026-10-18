@@ -67,26 +67,36 @@ function decodeNavPins(raw:string|null):string[]|null{
   }catch{return null;}
 }
 
+// These unknown-by-default values are an explicit safety contract for users
+// who have not entered a private observation or linked a real account.
+const initialCards = [
+  ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
+  ['Actieve reacties', 'Onbekend', 'Nog geen account gekoppeld; actuele gegevens ontbreken'],
+  ['Zoekpunten', '—', 'Nog geen puntensnapshot beschikbaar'],
+  ['Worker', 'Dry-run', 'Live reageren is bewust geblokkeerd']
+];
+
 export default function HomePage() {
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
-  const cards = [
-    ['Maanddoel',personalOverview?.count!=null?
-      personalOverview.count+' / 4 zelf genoteerd':'Niet genoteerd',
-      personalOverview?.storage==='temporary'?
-        'Eigen teller tijdelijk in dit tabblad: browseropslag niet bevestigd.':
-        'Je eigen maandteller, nooit bewijs van geldige officiële reacties.'],
-    ['Reactiedagboek',personalOverview?.journalReacted!=null?
-      personalOverview.journalReacted+' zelf gereageerd':'Geen eigen maandstand',
-      personalOverview?.journalTotal!=null?
-        personalOverview.journalTotal+' eigen notities deze maand; niet officieel geverifieerd.':
-        'Nog geen persoonlijke dagboekgegevens voor de actuele maand.'],
-    ['Zoekpunten',personalOverview?.points?
-      personalOverview.points.points+' zelf genoteerd':'Geen eigen puntenstand',
-      personalOverview?.points?
-        'Zelf afgelezen in '+personalOverview.points.month+'; nooit accountverificatie.':
-        'Er is nog geen handmatige puntennotitie beschikbaar.'],
-    ['Worker','Dry-run','Live reageren blijft bewust uitgeschakeld; geen WoningNet-account gekoppeld.']
-  ];
+  const cards = initialCards.map(([label,value,detail])=>{
+    if(label==='Maanddoel' && personalOverview?.count!=null) return [
+      label,personalOverview.count+' / 4 zelf genoteerd',
+      personalOverview.storage==='temporary'?
+        'Tijdelijke eigen teller; browseropslag niet bevestigd, niet officieel geldig.':
+        'Eigen maandteller, nooit officieel bevestigde geldige reacties.'
+    ];
+    if(label==='Actieve reacties' && personalOverview?.journalReacted!=null) return [
+      'Zelf genoteerde reacties',personalOverview.journalReacted+' zelf gereageerd',
+      (personalOverview.journalTotal??0)+' eigen notities in '+
+        personalOverview.month+'; niet bij WoningNet geverifieerd.'
+    ];
+    if(label==='Zoekpunten' && personalOverview?.points) return [
+      'Zelf genoteerde zoekpunten',personalOverview.points.points+' punten',
+      'Handmatig afgelezen in '+personalOverview.points.month+
+        '; geen officiële toekenning of accountverificatie.'
+    ];
+    return [label,value,detail];
+  });
   const [navigationCategory,setNavigationCategory]=useState<
     'snel'|'favorieten'|'alles'|HomeNavCategory>('snel');
   const [pinnedNavIds,setPinnedNavIds]=useState<string[]>([]);
@@ -256,7 +266,7 @@ export default function HomePage() {
       <PrivateHousingJourney />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
-        <h2 id="projectstatus-heading">Mijn eigen woonzoekstatus</h2>
+        <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
         <p>Actuele persoonlijke <strong>niet-geverifieerde</strong> notities uit je
           maandteller, dagboek en zoekpuntenhistorie. Er vindt geen automatische
           WoningNet- of accountcontrole plaats.</p>
