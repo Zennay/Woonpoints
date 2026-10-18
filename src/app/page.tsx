@@ -1,6 +1,6 @@
-import ManualMonthProgress from './manual-month-progress';
+import PrivateReactionWorkflow from './private-reaction-workflow';
 import PositionStats from './position-stats';
-import { ManualPositionsWorkspace, PrivateSearchPointsHistory } from './position-stats';
+import { PrivateSearchPointsHistory } from './position-stats';
 import { ManualHousingDecisionWorkspace } from './position-stats';
 
 const cards = [
@@ -61,10 +61,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <ManualMonthProgress />
-      <PrivateSearchPointsHistory />
-      <PositionStats />
-      <ManualPositionsWorkspace />
+      <PrivateReactionWorkflow>
+        <PrivateSearchPointsHistory />
+        <PositionStats />
+      </PrivateReactionWorkflow>
       <ManualHousingDecisionWorkspace />
 
       <section className="panel">
