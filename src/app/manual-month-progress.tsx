@@ -1384,6 +1384,26 @@ export function PrivateMovingVolume() {
   }
 
 
+  function offerMovingBudgetToLedger(){
+    if(!costValid){setMessage('Controleer eerst je verhuisvolume en begroting.');return;}
+    const offer=[
+      {label:'Ritkosten (eigen begroting)',category:'Vervoer',amount:vehicleExpense},
+      {label:'Hulpkosten (eigen begroting)',category:'Hulp',amount:helpersExpense},
+      {label:'Verpakkingsmateriaal (begroot)',category:'Verpakkingen',amount:costValues.materialsEuro!},
+      {label:'Andere verhuiskosten (begroot)',category:'Overig',amount:costValues.otherEuro!},
+      {label:'Onvoorziene reserve (begroot)',category:'Overig',amount:reserveExpense}
+    ].map(item=>({...item,plannedCents:Math.round(item.amount*100)}));
+    if(offer.some(item=>!Number.isSafeInteger(item.plannedCents)||item.plannedCents>9999999)){
+      setMessage('Je begroting bevat bedragen die groter zijn dan de limiet van het privé-kostenboek. Verlaag deze eerst.');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('woonpoints:moving-budget-offer',{
+      detail:{format:'woonpoints-moving-budget-offer',version:1,offer:offer.map(({label,category,plannedCents})=>({label,category,plannedCents}))}
+    }));
+    document.getElementById('private-moving-expenses-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+    setMessage('Begroting als concept aan het privé-kostenboek aangeboden; niets is automatisch overgenomen.');
+  }
+
   function prepareMovingBudget(){
     if(!costValid){setMessage('Corrigeer eerst het verhuisvolume, jouw ritten en kosten.');return;}
     const lines=[
@@ -1567,6 +1587,9 @@ export function PrivateMovingVolume() {
               gegarandeerde laadcapaciteit. Neem gewicht, tillen,
               toegang en eventuele vergunningen zelf mee.</p>
           </div>}
+        <button type="button" disabled={!costValid} onClick={offerMovingBudgetToLedger}>
+          Bied deze vijf begrotingsposten aan in het privé-kostenboek…
+        </button>
         <button type="button" disabled={!costValid} onClick={prepareMovingBudget}>
           Bekijk eigen verhuiskosten-TXT eerst…
         </button>
@@ -2266,6 +2289,306 @@ export function PrivateMoveDocumentReadiness(){
       {notice && <p role="status">{notice}</p>}
       <p>Alleen titel, status en eigen datum; nooit een bestand, identiteit of woningaccount.
         Zonder expliciete export verdwijnen de gegevens bij sluiten van dit tabblad.</p>
+    </section>
+  );
+}
+
+
+type MovingExpenseCategory = 'Vervoer' | 'Hulp' | 'Verpakkingen' | 'Diensten' | 'Overig';
+type MovingExpenseLine = {
+  id: string; label: string; category: MovingExpenseCategory;
+  plannedCents: number; actualCents: number | null; paid: boolean;
+};
+const EXPENSE_CATEGORIES: MovingExpenseCategory[] = ['Vervoer','Hulp','Verpakkingen','Diensten','Overig'];
+const emptyExpenseForm = () => ({
+  label:'',category:'Vervoer' as MovingExpenseCategory, planned:'',actual:'',paid:false
+});
+function expenseCents(value:string):number|null {
+  const normalized=value.trim().replace(',','.');
+  if(!/^(?:0|[1-9]\d{0,4})(?:\.\d{1,2})?$/.test(normalized))return null;
+  const [whole,decimal='']=normalized.split('.');
+  const cents=Number(whole)*100+Number(decimal.padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents<=9999999?cents:null;
+}
+function expenseAmount(cents:number):string {
+  return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(cents/100);
+}
+function expenseFormAmount(cents:number|null):string {
+  if(cents===null)return '';
+  return (cents/100).toFixed(2).replace('.',',');
+}
+function validExpenseLine(raw:unknown):raw is MovingExpenseLine {
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const item=raw as Record<string,unknown>;
+  return Object.keys(item).length===6 &&
+    typeof item.id==='string' && /^move-exp-[0-9]+-[0-9]+$/.test(item.id) &&
+    typeof item.label==='string' && item.label.length>0&&item.label.length<=70 &&
+    item.label.trim()===item.label&&!/[\u0000-\u001f\u007f]/.test(item.label) &&
+    EXPENSE_CATEGORIES.includes(item.category as MovingExpenseCategory) &&
+    typeof item.plannedCents==='number' && Number.isSafeInteger(item.plannedCents) &&
+    item.plannedCents>=0&&item.plannedCents<=9999999 &&
+    (item.actualCents===null||(typeof item.actualCents==='number' &&
+      Number.isSafeInteger(item.actualCents)&&item.actualCents>=0&&item.actualCents<=9999999)) &&
+    typeof item.paid==='boolean'&&(!item.paid||item.actualCents!==null);
+}
+
+/** All figures are private user-entered estimates and payments, never financial or portal evidence. */
+export function PrivateMovingExpenseLedger(){
+  const [lines,setLines]=useState<MovingExpenseLine[]>([]);
+  const [pendingBudget,setPendingBudget]=useState<MovingExpenseLine[]|null>(null);
+  useEffect(()=>{
+    function onBudget(event:Event){
+      const raw=(event as CustomEvent<unknown>).detail;
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+      const data=raw as Record<string,unknown>;
+      if(data.format!=='woonpoints-moving-budget-offer'||data.version!==1||
+        !Array.isArray(data.offer)||data.offer.length!==5)return;
+      const valid=data.offer.every(item=>{
+        if(!item||typeof item!=='object'||Array.isArray(item))return false;
+        const line=item as Record<string,unknown>;
+        return typeof line.label==='string'&&line.label.length>0&&line.label.length<=70&&
+          !/[\u0000-\u001f\u007f]/.test(line.label)&&
+          EXPENSE_CATEGORIES.includes(line.category as MovingExpenseCategory)&&
+          typeof line.plannedCents==='number'&&Number.isSafeInteger(line.plannedCents)&&
+          line.plannedCents>=0&&line.plannedCents<=9999999;
+      });
+      if(!valid)return;
+      const dataLines:MovingExpenseLine[]=data.offer.map((item,index)=>{
+        const line=item as {label:string;category:MovingExpenseCategory;plannedCents:number};
+        return {id:'move-exp-'+Date.now()+'-'+index,label:line.label,category:line.category,
+          plannedCents:line.plannedCents,actualCents:null,paid:false};
+      });
+      setPendingBudget(dataLines);setNotice('Bekijk de vijf begrotingsposten en bevestig apart voordat je ze toevoegt.');
+    }
+    window.addEventListener('woonpoints:moving-budget-offer',onBudget);
+    return()=>window.removeEventListener('woonpoints:moving-budget-offer',onBudget);
+  },[]);
+
+  const [form,setForm]=useState(emptyExpenseForm);
+  const [editing,setEditing]=useState<string|null>(null);
+  const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<MovingExpenseLine[]|null>(null);
+  const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [notice,setNotice]=useState('');
+  const [clearPending,setClearPending]=useState(false);
+  const planned=lines.reduce((sum,line)=>sum+line.plannedCents,0);
+  const actualKnown=lines.reduce((sum,line)=>sum+(line.actualCents??0),0);
+  const paidKnown=lines.reduce((sum,line)=>sum+(line.paid?line.actualCents??0:0),0);
+  const matchedPlanned=lines.reduce((sum,line)=>sum+(line.actualCents!==null?line.plannedCents:0),0);
+  const outstanding=lines.filter(line=>line.actualCents===null).length;
+  const recorded=lines.filter(line=>line.actualCents!==null).length;
+  const snapshot=JSON.stringify(lines);
+  const report=[
+    'Woonpoints · privé verhuiskostenadministratie',
+    'Alle bedragen zijn eigen invoer en geen boekhouding, offerte of geverifieerde betaling.',
+    ...lines.map(line=>
+      `${line.category} | ${line.label} | Begroot ${expenseAmount(line.plannedCents)} | `+
+      `Werkelijk ${line.actualCents===null?'onbekend':expenseAmount(line.actualCents)} | `+
+      (line.paid?'Door mij als betaald gemarkeerd':'Niet als betaald gemarkeerd')),
+    '',
+    `Begroot totaal: ${expenseAmount(planned)}`,
+    `Bekend werkelijk: ${expenseAmount(actualKnown)} (${recorded} van ${lines.length} posten)`,
+    `Nog zonder werkelijk bedrag: ${outstanding}`,
+    `Afwijking voor posten met beide bedragen: ${expenseAmount(actualKnown-matchedPlanned)}`,
+    `Door mij als betaald gemarkeerd: ${expenseAmount(paidKnown)}`,
+    'Er worden geen facturen, transacties, betaalbewijzen of accountgegevens opgehaald.'
+  ].join('\n')+'\n';
+  function invalidate(){
+    setPendingReport(null);setPendingRestore(null);setPendingDelete(null);setPendingBudget(null);
+    setNotice('');setClearPending(false);
+  }
+  function submit(){
+    const name=form.label.trim().replace(/[\u0000-\u001f\u007f]/g,' ');
+    const plan=expenseCents(form.planned);
+    const actual=form.actual.trim()?expenseCents(form.actual):null;
+    if(!name||name.length>70||plan===null||(form.actual.trim()&&actual===null)||
+      (form.paid&&actual===null)||!EXPENSE_CATEGORIES.includes(form.category)||
+      (!editing&&lines.length>=30)){
+      setNotice('Post niet bewaard. Max. 70 tekens, 30 posten en € 0–99.999,99 per bedrag; betaald vereist werkelijk bedrag.');
+      return;
+    }
+    if(editing&&!lines.some(line=>line.id===editing)){
+      setEditing(null);setNotice('Te bewerken post bestaat niet meer. Probeer opnieuw.');return;
+    }
+    const row:MovingExpenseLine={
+      id:editing??`move-exp-${Date.now()}-${lines.length}`,
+      label:name,category:form.category,plannedCents:plan,actualCents:actual,paid:form.paid
+    };
+    setLines(current=>editing?current.map(line=>line.id===editing?row:line):[...current,row]);
+    setForm(emptyExpenseForm());setEditing(null);invalidate();
+    setNotice('Eigen kostenpost opgeslagen, alleen in dit browsertabblad.');
+  }
+  function edit(line:MovingExpenseLine){
+    setEditing(line.id);setForm({
+      label:line.label,category:line.category,
+      planned:expenseFormAmount(line.plannedCents),
+      actual:expenseFormAmount(line.actualCents),paid:line.paid
+    });invalidate();
+    document.getElementById('private-moving-expense-entry')?.scrollIntoView({block:'start',behavior:'smooth'});
+  }
+  async function importJson(file:File|undefined){
+    setPendingRestore(null);setPendingReport(null);
+    if(!file)return;
+    if(!file.size||file.size>16384){setNotice('Privé-JSON geweigerd: maximaal 16 KiB.');return;}
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('format');
+      const data=raw as Record<string,unknown>;
+      if(data.format!=='woonpoints-moving-expenses'||data.version!==1||
+        !Array.isArray(data.lines)||data.lines.length>30)throw Error('version');
+      if(!data.lines.every(validExpenseLine))throw Error('line');
+      const rows=data.lines as MovingExpenseLine[];
+      if(new Set(rows.map(row=>row.id)).size!==rows.length)throw Error('duplicate');
+      setPendingRestore(rows);setNotice('Geldige privé-back-up gelezen. Bevestig vervanging van je huidige posten.');
+    }catch{
+      setNotice('Back-up afgewezen: ongeldige versie, posten of bedragen. Je huidige posten blijven behouden.');
+    }
+  }
+  return(
+    <section className="panel" aria-labelledby="private-moving-expenses-heading">
+      <p className="eyebrow">VERHUIZING · BEGROOT VERSUS WERKELIJK</p>
+      <h2 id="private-moving-expenses-heading">Verhuiskosten bijhouden</h2>
+      <p>Vergelijk je eigen kostenraming met later zelf ingevulde bedragen. Lege werkelijke
+        bedragen blijven <strong>onbekend</strong>: ze worden nooit als € 0 uitgelegd.
+        Dit is geen gekoppelde bankrekening, factuuradministratie of financieel advies.</p>
+      {pendingBudget&&<div role="group" aria-label="Bevestig begrotingsposten toevoegen">
+        <h3>Concept uit jouw verhuisbudget</h3>
+        <p>Dit zijn vijf <strong>zelf geraamde bedragen</strong> uit je eigen verhuisvolume-module.
+          Er is nog niets toegevoegd. Werkelijke bedragen blijven onbekend en niets wordt betaald gemarkeerd.
+          Als je dit twee keer toevoegt kunnen dubbele posten ontstaan.</p>
+        <ul>{pendingBudget.map(item=><li key={item.id}>
+          {item.label}: {expenseAmount(item.plannedCents)}
+        </li>)}</ul>
+        <button type="button" disabled={lines.length+pendingBudget.length>30} onClick={()=>{
+          if(lines.length+pendingBudget.length>30)return;
+          const existingIds=new Set(lines.map(line=>line.id));
+          const suffix=Date.now();
+          setLines(old=>[...old,...pendingBudget.map((item,index)=>({
+            ...item,id:existingIds.has(item.id)?'move-exp-'+suffix+'-'+(index+old.length):item.id
+          }))]);
+          setPendingBudget(null);setNotice('De vijf eigen ramingsposten zijn toegevoegd; vul werkelijke bedragen later zelf in.');
+        }}>Bevestig toevoegen ({pendingBudget.length} posten)</button>
+        <button type="button" onClick={()=>{
+          setPendingBudget(null);setNotice('Begrotingsvoorstel geannuleerd.');
+        }}>Annuleren</button>
+        {lines.length+pendingBudget.length>30&&<p>Het kostenboek heeft plaats voor maximaal 30 posten.
+          Verwijder eerst eigen posten of annuleer deze overdracht.</p>}
+      </div>}
+      <dl>
+        <div><dt>Gepland totaal</dt><dd>{expenseAmount(planned)}</dd></div>
+        <div><dt>Bekende werkelijke kosten</dt><dd>{expenseAmount(actualKnown)} ({recorded}/{lines.length} posten)</dd></div>
+        <div><dt>Door mij als betaald gemarkeerd</dt><dd>{expenseAmount(paidKnown)}</dd></div>
+        <div><dt>Afwijking op ingevulde posten</dt><dd>{expenseAmount(actualKnown-matchedPlanned)}</dd></div>
+      </dl>
+      {outstanding>0&&<p role="status">{outstanding} posten missen nog een werkelijk bedrag. De afwijking
+        omvat alleen posten waarvoor beide bedragen zijn ingevuld en is geen definitieve besparing.</p>}
+      <form id="private-moving-expense-entry" onSubmit={event=>{event.preventDefault();submit();}}>
+        <fieldset>
+          <legend>{editing?'Bewerk kostenpost':'Nieuwe eigen kostenpost'} (max. 30)</legend>
+          <label htmlFor="expense-name">Omschrijving (geen rekeningnummers, max. 70 tekens)</label>
+          <input id="expense-name" autoComplete="off" maxLength={70} value={form.label}
+            onChange={event=>{setForm(old=>({...old,label:event.target.value}));invalidate();}} />
+          <label htmlFor="expense-category">Categorie</label>
+          <select id="expense-category" value={form.category} onChange={event=>{
+            setForm(old=>({...old,category:event.target.value as MovingExpenseCategory}));invalidate();
+          }}>{EXPENSE_CATEGORIES.map(cat=><option key={cat}>{cat}</option>)}</select>
+          <label htmlFor="expense-planned">Begroot bedrag (€)</label>
+          <input id="expense-planned" type="text" inputMode="decimal" maxLength={10}
+            placeholder="Bijv. 125,50" value={form.planned}
+            onChange={event=>{setForm(old=>({...old,planned:event.target.value}));invalidate();}} />
+          <label htmlFor="expense-actual">Werkelijk bedrag (€; leeg zolang onbekend)</label>
+          <input id="expense-actual" type="text" inputMode="decimal" maxLength={10}
+            placeholder="Nog onbekend" value={form.actual}
+            onChange={event=>{
+              const value=event.target.value;
+              setForm(old=>({...old,actual:value,paid:value.trim()?old.paid:false}));invalidate();
+            }} />
+          <label><input type="checkbox" checked={form.paid} disabled={!form.actual.trim()}
+            onChange={event=>{setForm(old=>({...old,paid:event.target.checked}));invalidate();}} />
+            Zelf als betaald markeren</label>
+          <button type="submit">{editing?'Sla wijziging op':'Voeg kostenpost toe'}</button>
+          {editing&&<button type="button" onClick={()=>{setForm(emptyExpenseForm());setEditing(null);invalidate();}}>
+            Annuleer bewerken</button>}
+        </fieldset>
+      </form>
+      <h3>Eigen kostenposten</h3>
+      {!lines.length&&<p>Nog geen posten. Maak zelf een eerste kostenraming.</p>}
+      <ul>{lines.map(line=><li key={line.id}>
+        <strong>{line.label}</strong> · {line.category}<br />
+        Begroot {expenseAmount(line.plannedCents)} ·
+        Werkelijk {line.actualCents===null?'onbekend':expenseAmount(line.actualCents)} ·
+        {line.paid?'zelf als betaald gemarkeerd':'niet als betaald gemarkeerd'}
+        <div>
+          <button type="button" onClick={()=>edit(line)}>Bewerken</button>
+          <button type="button" onClick={()=>{setPendingDelete(line.id);setPendingReport(null);}}>Verwijderen…</button>
+          {pendingDelete===line.id&&<div role="group" aria-label="Bevestig kostenpost verwijderen">
+            <p>Deze eigen post verdwijnt uit de berekening. Andere posten blijven behouden.</p>
+            <button type="button" onClick={()=>{
+              setLines(old=>old.filter(item=>item.id!==line.id));
+              if(editing===line.id){setEditing(null);setForm(emptyExpenseForm());}
+              invalidate();setNotice('Kostenpost uit dit tabblad verwijderd.');
+            }}>Bevestig verwijderen</button>
+            <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
+          </div>}
+        </div>
+      </li>)}</ul>
+      {lines.length>0&&<>
+        <h3>Per categorie (bekende bedragen)</h3>
+        <ul>{EXPENSE_CATEGORIES.map(cat=>{
+          const group=lines.filter(line=>line.category===cat);
+          if(!group.length)return null;
+          return <li key={cat}>{cat}: begroot {expenseAmount(group.reduce((s,l)=>s+l.plannedCents,0))},
+            werkelijk bekend {expenseAmount(group.reduce((s,l)=>s+(l.actualCents??0),0))}
+            {' · '}{group.filter(l=>l.actualCents===null).length} onbekend</li>;
+        })}</ul>
+      </>}
+      <button type="button" onClick={()=>{
+        exportFile('woonpoints-prive-verhuiskosten.json',
+          JSON.stringify({format:'woonpoints-moving-expenses',version:1,lines},null,2),
+          'application/json;charset=utf-8');
+        setNotice('Privé-JSON aangeboden. Je gekozen opslaglocatie kan synchroniseren.');
+      }} disabled={!lines.length}>Bewaar eigen kostenposten als JSON…</button>
+      <label htmlFor="expense-import">Herstel privé-JSON (max. 16 KiB)</label>
+      <input id="expense-import" type="file" accept=".json,application/json" onChange={event=>{
+        const file=event.currentTarget.files?.[0];event.currentTarget.value='';void importJson(file);
+      }} />
+      {pendingRestore&&<div role="group" aria-label="Bevestig verhuiskosten herstel">
+        <p>Back-up bevat {pendingRestore.length} valide posten. Herstellen vervangt
+          <strong> alle huidige posten</strong> en je onbewaarde bewerkingsformulier in dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setLines(pendingRestore);setForm(emptyExpenseForm());setEditing(null);
+          setPendingRestore(null);setPendingReport(null);
+          setNotice('Privé-kostenposten hersteld. Geen betaalbewijs of bankcontrole uitgevoerd.');
+        }}>Bevestig vervangen</button>
+        <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
+      </div>}
+      {lines.length>0&&pendingReport!==snapshot&&
+        <button type="button" onClick={()=>{setPendingReport(snapshot);setNotice('');}}>
+          Bekijk volledig privé-kostenoverzicht voor TXT-export…
+        </button>}
+      {lines.length>0&&pendingReport===snapshot&&<div role="group" aria-label="Bevestig kostenoverzicht export">
+        <p>Controleer deze volledige tekst. Je eigen omschrijvingen staan in het te bewaren bestand.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report}</pre>
+        <button type="button" onClick={()=>{
+          if(pendingReport!==JSON.stringify(lines))return;
+          exportFile('woonpoints-prive-verhuiskosten.txt',report,'text/plain;charset=utf-8');
+          setPendingReport(null);setNotice('TXT aangeboden na je uitdrukkelijke bevestiging.');
+        }}>Bevestig TXT-download</button>
+        <button type="button" onClick={()=>setPendingReport(null)}>Annuleren</button>
+      </div>}
+      {lines.length>0&&!clearPending&&<button type="button" onClick={()=>setClearPending(true)}>
+        Wis alle kostenposten…</button>}
+      {clearPending&&<div role="group" aria-label="Bevestig alle kosten wissen">
+        <p>Alle bedragen en je eigen omschrijvingen verdwijnen uit dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setLines([]);setEditing(null);setForm(emptyExpenseForm());invalidate();
+          setNotice('Alle eigen kostenposten gewist.');
+        }}>Bevestig alles wissen</button>
+        <button type="button" onClick={()=>setClearPending(false)}>Annuleren</button>
+      </div>}
+      {notice&&<p role="status">{notice}</p>}
+      <p>Alles blijft in het huidige tabblad; geen automatische opslag of remote verwerking.
+        Exporteer bewust als je dit overzicht later wilt terugzien.</p>
     </section>
   );
 }
