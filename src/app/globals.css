@@ -369,3 +369,87 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) {
   .quick-nav, .quick-nav-links { scroll-behavior: auto; }
 }
+
+/* Cohesive accessible controls for the integrated long-term and viewing tools.
+   Never let the generic full-width number-input rule stretch a checkbox. */
+.private-budget input[type="checkbox"] {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0;
+  accent-color: #355e42;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.private-budget select {
+  display: block;
+  width: 100%;
+  min-width: 132px;
+  min-height: 44px;
+  padding: 8px;
+  border: 2px solid #536d5a;
+  border-radius: 9px;
+  background: #fff;
+  color: #18231c;
+  font: inherit;
+}
+.private-budget select:focus-visible,
+.private-budget input[type="checkbox"]:focus-visible {
+  outline: 3px solid #173d25;
+  outline-offset: 3px;
+}
+.private-budget-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border-radius: 10px;
+}
+.private-budget-table-wrap table {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #fff;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.private-budget-table-wrap caption {
+  text-align: left;
+  padding: 8px 2px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #385644;
+}
+.private-budget-table-wrap th,
+.private-budget-table-wrap td {
+  border-bottom: 1px solid #d4e2d6;
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+.private-budget-table-wrap tbody tr:nth-child(even) {
+  background: #f4f8f5;
+}
+.private-budget-table-wrap tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: 1px 0 0 #cdddcf;
+}
+.private-budget-table-wrap tbody tr:nth-child(even) th {
+  background: #f4f8f5;
+}
+@media (max-width: 600px) {
+  .private-budget-table-wrap table { min-width: 680px; }
+  .private-budget-table-wrap th,
+  .private-budget-table-wrap td { padding: 9px 8px; }
+  .private-budget-table-wrap select { min-width: 150px; }
+  .private-budget-table-wrap { border: 1px solid #d4e2d6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .private-budget-table-wrap { scroll-behavior: auto; }
+}
