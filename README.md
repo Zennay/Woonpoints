@@ -325,3 +325,22 @@ geen financieel advies. Er worden geen WoningNet-gegevens gelezen, geen
 toeslagen berekend, geen account gekoppeld en geen gegevens automatisch
 opgeslagen of verzonden. Kies een bestandslocatie zelf; die locatie kan elders
 synchroniseren. De WoningNet-worker blijft BOT_DRY_RUN=true.
+
+
+## Eigen bezichtigingschecklist voor twee woningen
+
+Het dashboard heeft een **Bezichtiging**-onderdeel met tien vaste categorieën
+zoals ventilatie, vocht, geluid, isolatie en bereikbaarheid. Markeer welke
+punten voor jezelf essentieel zijn en geef voor woning A/B afzonderlijk aan
+of iets goed, twijfelachtig, ongunstig of nog niet beoordeeld is. Het
+overzicht telt alleen eigen oordelen; onbekende punten tellen niet als goed
+of slecht en essentieel gemarkeerde aandachtspunten verschijnen duidelijk.
+Er is geen automatische rangorde, woningkans of officiële keuring.
+
+De volledige checklist blijft in het geheugen van het huidige tabblad.
+Een bewuste JSON-export bevat uitsluitend vaste categoriecodes, vier vaste
+beoordelingswaarden en de essentiële vlaggen (geen adres of vrije tekst).
+Import weigert extra sleutels, onbekende waarden, verkeerde volgorde of
+bestanden boven 8 KiB en vereist afzonderlijke bevestiging voordat huidige
+beoordelingen worden vervangen. Een zelf gekozen opslaglocatie kan elders
+synchroniseren. Er is geen netwerkverzoek, WoningNet-koppeling of live reactie.
