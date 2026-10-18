@@ -547,6 +547,42 @@ function readCompleteHandover(source: string): CompleteHandover {
   return { inspection, aftercare };
 }
 
+
+/** Print the exact approved TXT snapshot instead of recomputing a potentially different report. */
+function completeHandoverPrintHtml(approvedText: string): string {
+  const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char =>
+    ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char] || char));
+  const lines = approvedText.replace(/\r/g, '').split('\n');
+  const body = lines.map((line, index) => {
+    const escaped = escapeHtml(line);
+    if (!line.trim()) return '<div class="spacer" aria-hidden="true"></div>';
+    if (index === 0) return '<h1>' + escaped + '</h1>';
+    if (/^(STARTINSPECTIE:|NAZORG:)/.test(line)) return '<h2>' + escaped + '</h2>';
+    if (INSPECTION_ALL_ROOMS.some(room => line === room.toUpperCase())) {
+      return '<h3>' + escaped + '</h3>';
+    }
+    if (line.startsWith('- ')) return '<p class="inspection-row">' + escaped + '</p>';
+    return '<p>' + escaped + '</p>';
+  }).join('\n');
+  return [
+    '<!doctype html><html lang="nl"><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;">',
+    '<title>Eigen complete overdracht · Woonpoints</title>',
+    '<style>@page{size:A4;margin:16mm}body{font:11pt/1.5 Arial,Helvetica,sans-serif;color:#192d20;margin:22px auto;padding:0 15px;max-width:870px}',
+    'h1{font-size:21pt}h2{font-size:16pt;margin:28px 0 11px;border-bottom:2px solid #647866;padding-bottom:5px;break-after:avoid}',
+    'h3{font-size:12pt;margin:19px 0 6px;break-after:avoid}.inspection-row{padding-left:10px;border-left:2px solid #b4c7b7}',
+    'p{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}.spacer{height:9px}',
+    '.warning{border:2px solid #728674;padding:10px;margin-bottom:20px;break-inside:avoid}',
+    '@media print{body{margin:0;padding:0}h1,h2,h3{break-after:avoid}}',
+    '</style></head><body>',
+    '<p class="warning"><strong>Persoonlijk overzicht.</strong> Alleen eigen invoer; geen officiële keuring, verzending of bevestiging. Controleer eventuele privégegevens vóór delen.</p>',
+    '<main>' + body + '</main>',
+    '<footer><p>Dit lokale afdrukbestand is op eigen verzoek gegenereerd. Niets automatisch verzonden of gesynchroniseerd.</p></footer>',
+    '</body></html>'
+  ].join('\n');
+}
+
 function PrivateArrivalInspection({
   items, onTransfer, grades, setGrades, notes, setNotes, customChecks, setCustomChecks
 }: {
@@ -929,7 +965,9 @@ function PrivateMoveAftercare() {
   } | null>(null);
   const [confirmCompleteUndo, setConfirmCompleteUndo] = useState(false);
   const [completeMessage, setCompleteMessage] = useState('');
-  const [includePrivateSummaryNotes, setIncludePrivateSummaryNotes] = useState(false);
+  const [includeInspectionSummaryNotes, setIncludeInspectionSummaryNotes] = useState(false);
+  const [includeAftercareSummaryNotes, setIncludeAftercareSummaryNotes] = useState(false);
+  const [includeContactSummaryNotes, setIncludeContactSummaryNotes] = useState(false);
   const [completeSummaryText, setCompleteSummaryText] = useState('');
   const [completeSummarySource, setCompleteSummarySource] = useState('');
   const [completeSummaryApproved, setCompleteSummaryApproved] = useState(false);
@@ -989,7 +1027,8 @@ function PrivateMoveAftercare() {
   const canUndoComplete = completeUndo !== null &&
     completeUndo.importedSignature === completeDataSignature;
   const completeSummaryFingerprint = JSON.stringify({
-    inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history, includePrivateSummaryNotes
+    inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history,
+    includeInspectionSummaryNotes, includeAftercareSummaryNotes, includeContactSummaryNotes
   });
   const completeSummaryCurrent = completeSummaryText.length > 0 &&
     completeSummaryText.length <= 70000 &&
@@ -1173,7 +1212,7 @@ function PrivateMoveAftercare() {
         const state = inspectionGrades[check.id] === 'goed' ? 'Zelf in orde bevonden' :
           inspectionGrades[check.id] === 'aandacht' ? 'Eigen aandachtspunt' : 'Niet beoordeeld';
         lines.push('- ' + check.title + ' — ' + state + (check.id.startsWith('custom-') ? ' (eigen controle)' : ''));
-        if (includePrivateSummaryNotes && inspectionGrades[check.id] === 'aandacht' &&
+        if (includeInspectionSummaryNotes && inspectionGrades[check.id] === 'aandacht' &&
             inspectionNotes[check.id]?.trim()) {
           lines.push('  Privétoelichting: ' + inspectionNotes[check.id].trim());
         }
@@ -1183,10 +1222,10 @@ function PrivateMoveAftercare() {
     for (const issue of items) {
       lines.push('', issue.room + ' — ' + issue.title, 'Status: ' + issue.status +
         ' · Eigen prioriteit: ' + issue.priority + ' · Eigen streefdatum: ' + (issue.due || 'niet ingesteld'));
-      if (includePrivateSummaryNotes && issue.note.trim()) lines.push('Privénotitie: ' + issue.note.trim());
+      if (includeAftercareSummaryNotes && issue.note.trim()) lines.push('Privénotitie: ' + issue.note.trim());
       const log = history.filter(event => event.issueId === issue.id);
       lines.push('Zelf genoteerde contactmomenten: ' + log.length);
-      if (includePrivateSummaryNotes) {
+      if (includeContactSummaryNotes) {
         for (const event of log) {
           lines.push('  ' + event.day + ' · ' + event.kind + ' · ' + event.detail.trim());
         }
@@ -1203,6 +1242,19 @@ function PrivateMoveAftercare() {
     setCompleteSummarySource(completeSummaryFingerprint);
     setCompleteSummaryApproved(false);
     setCompleteMessage('Bekijk de volledige samenvatting hieronder vóór vrijwillig downloaden.');
+  }
+  function exportCompletePrintableHandover() {
+    if (!completeSummaryCurrent || !completeSummaryApproved) {
+      setCompleteMessage('Bevestig eerst de actuele tekstvoorvertoning.'); return;
+    }
+    const html = completeHandoverPrintHtml(completeSummaryText);
+    if (new TextEncoder().encode(html).length > 120 * 1024) {
+      setCompleteMessage('Het afdrukbare overzicht is groter dan 120 KiB. Verkort privénotities.');
+      return;
+    }
+    download('woonpoints-eigen-complete-overdracht-afdruk.html',
+      html, 'text/html;charset=utf-8');
+    setCompleteMessage('Offline afdrukbaar HTML-bestand gedownload. Open het lokaal en kies zelf Afdrukken of Bewaar als PDF. Er is niets verzonden.');
   }
   function exportCompleteSummary() {
     if (!completeSummaryCurrent || !completeSummaryApproved) {
@@ -1818,18 +1870,38 @@ function PrivateMoveAftercare() {
           </div>
           <div className="aftercare-confirm">
             <h3>Eigen leesbare samenvatting</h3>
-            <p>Maak optioneel een TXT voor je eigen dossier. De voorvertoning toont precies wat in
-              het bestand komt. Vrije notities of zelf genoteerde contactteksten zijn standaard
-              verborgen en worden pas opgenomen wanneer je dat hieronder zelf aanvinkt.</p>
-            <label className="aftercare-checkbox" htmlFor="complete-summary-notes">
-              <input id="complete-summary-notes" type="checkbox"
-                checked={includePrivateSummaryNotes}
-                onChange={event => {
-                  setIncludePrivateSummaryNotes(event.target.checked);
-                  setCompleteSummaryApproved(false);
-                }} />
-              Voeg mijn privétoelichtingen en zelf genoteerde contactteksten toe
-            </label>
+            <p>Maak een TXT of een offline HTML-document om zelf als PDF te bewaren.
+              Beide gebruiken exact dezelfde gecontroleerde voorvertoning. Kies apart welke
+              privé-informatie erin mag: inspectie, nazorg en contactnotities blijven standaard verborgen.</p>
+            <div role="group" aria-label="Privacykeuzes voor complete overdracht">
+              <label className="aftercare-check" htmlFor="complete-summary-inspection">
+                <input id="complete-summary-inspection" type="checkbox"
+                  checked={includeInspectionSummaryNotes}
+                  onChange={event => {
+                    setIncludeInspectionSummaryNotes(event.target.checked);
+                    setCompleteSummaryApproved(false);
+                  }} />
+                Neem mijn privétoelichtingen bij inspectiepunten op
+              </label>
+              <label className="aftercare-check" htmlFor="complete-summary-aftercare">
+                <input id="complete-summary-aftercare" type="checkbox"
+                  checked={includeAftercareSummaryNotes}
+                  onChange={event => {
+                    setIncludeAftercareSummaryNotes(event.target.checked);
+                    setCompleteSummaryApproved(false);
+                  }} />
+                Neem mijn privétoelichtingen bij nazorgpunten op
+              </label>
+              <label className="aftercare-check" htmlFor="complete-summary-contacts">
+                <input id="complete-summary-contacts" type="checkbox"
+                  checked={includeContactSummaryNotes}
+                  onChange={event => {
+                    setIncludeContactSummaryNotes(event.target.checked);
+                    setCompleteSummaryApproved(false);
+                  }} />
+                Neem ook de inhoud en datums van mijn eigen contactnotities op
+              </label>
+            </div>
             <div className="aftercare-actions">
               <button type="button" className="secondary"
                 onClick={previewCompleteSummary}>Maak actuele TXT-voorvertoning</button>
@@ -1852,6 +1924,9 @@ function PrivateMoveAftercare() {
                 <div className="aftercare-actions">
                   <button type="button" disabled={!completeSummaryCurrent || !completeSummaryApproved}
                     onClick={exportCompleteSummary}>Download gecontroleerde TXT</button>
+                  <button type="button" className="secondary"
+                    disabled={!completeSummaryCurrent || !completeSummaryApproved}
+                    onClick={exportCompletePrintableHandover}>Download afdrukbaar HTML/PDF-bronbestand</button>
                 </div>
               </>
             )}
