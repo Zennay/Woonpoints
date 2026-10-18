@@ -589,14 +589,16 @@ function compareCompleteHandover(current: CompleteHandover, incoming: CompleteHa
   const itemRows = (data: AftercareBackup): PrivateImportRows =>
     data.items.map(item => ({
       id:item.id, label:item.room + ' — ' + item.title,
-      snapshot:JSON.stringify(item)
+      // Compare semantic fields, never object-key serialization order.
+      snapshot:JSON.stringify([item.title, item.room, item.priority, item.status,
+        item.due, item.note, item.created])
     }));
   const contactRows = (data: AftercareBackup): PrivateImportRows => {
     const names = new Map(data.items.map(item => [item.id, item.room + ' — ' + item.title]));
     return data.history.map(item => ({
       id:item.id,
       label:item.day + ' · ' + (names.get(item.issueId) || 'Eigen nazorgpunt') + ' (' + item.kind + ')',
-      snapshot:JSON.stringify(item)
+      snapshot:JSON.stringify([item.issueId, item.kind, item.day, item.detail])
     }));
   };
   return {
