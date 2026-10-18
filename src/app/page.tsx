@@ -366,6 +366,40 @@ function PrivateMoveAftercare() {
       ? 'Zelf als gemeld gemarkeerd. Er is niets aan een verhuurder verstuurd.'
       : 'Eigen status aangepast. Geen externe bevestiging.');
   }
+  function addFollowUp(event: FormEvent<HTMLFormElement>, issueId: string) {
+    event.preventDefault();
+    const clean = historyDetail.trim();
+    if (!items.some(item => item.id === issueId) || !CONTACT_TYPES.some(type => type.id === historyKind) ||
+        !validDate(historyDay) || !validText(clean, 1, 240)) {
+      setMessage('Controleer de datum en je contactnotitie (max. 240 tekens).'); return;
+    }
+    if (historyKind !== 'afspraak' && historyDay > today()) {
+      setMessage('Een zelf genoteerd contact kan niet in de toekomst liggen. Kies voor een geplande afspraak.'); return;
+    }
+    if (history.length >= 160 || history.filter(item => item.issueId === issueId).length >= 8) {
+      setMessage('Het maximum van 8 contactmomenten per punt of 160 in totaal is bereikt.'); return;
+    }
+    const next: FollowUp[] = [...history, {
+      id: 'log-' + crypto.randomUUID(), issueId, kind: historyKind, day: historyDay, detail: clean
+    }];
+    const bytes = new TextEncoder().encode(JSON.stringify({ kind: KIND, schema: 2, items, history: next }, null, 2)).length;
+    if (bytes > MAX_BYTES) {
+      setMessage('Geen ruimte meer binnen de veilige privéback-up van 16 KiB. Verwijder oude contactmomenten of verkort invoer.'); return;
+    }
+    setHistory(next);
+    setHistoryDetail('');
+    setHistoryDay(today());
+    setHistoryKind('eigen-notitie');
+    setHistoryTarget(null);
+    setHistoryDeletePending(null);
+    setMessage('Contactmoment alleen in dit tabblad opgeslagen; niet extern geverifieerd of verzonden.');
+  }
+  function removeFollowUp(id: string) {
+    setHistory(prev => prev.filter(event => event.id !== id));
+    setHistoryDeletePending(null);
+    setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
+  }
+
   function exportJson() {
     const json = JSON.stringify({ kind: KIND, schema: 2, items, history }, null, 2);
     if (new TextEncoder().encode(json).length > MAX_BYTES) {
@@ -495,6 +529,11 @@ function PrivateMoveAftercare() {
         .aftercare .aftercare-notice-picks legend { font-weight:700; }
         .aftercare .aftercare-notice-picks ul { list-style:none; margin:0; padding:0; max-height:350px; overflow:auto; }
         .aftercare #nazorg-notice-text { min-height:290px; }
+        .aftercare .aftercare-history { background:#fff; border:1px solid #d0e0d4; border-radius:10px; padding:12px; margin:12px 0; }
+        .aftercare .aftercare-history summary { cursor:pointer; font-weight:700; color:#355e42; }
+        .aftercare .aftercare-history ol { padding-left:24px; }
+        .aftercare .aftercare-history li { margin:12px 0; padding:8px 0; border-bottom:1px solid #d0e0d4; }
+
 
         @media(max-width:650px) { .aftercare .aftercare-grid { grid-template-columns:1fr; } }
       `}</style>
@@ -579,6 +618,51 @@ function PrivateMoveAftercare() {
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
                 {item.note && <p className="aftercare-note">{item.note}</p>}
+                <details className="aftercare-history">
+                  <summary>Mijn contacthistorie ({history.filter(event => event.issueId === item.id).length})</summary>
+                  <p>Alleen wat je zelf invult. Geen e-mail-, verhuurder- of WoningNet-verificatie.</p>
+                  {history.filter(event => event.issueId === item.id).length > 0 ?
+                    <ol>{history.filter(event => event.issueId === item.id)
+                      .slice().sort((a, b) => b.day.localeCompare(a.day))
+                      .map(log => <li key={log.id}>
+                        <strong>{log.day} · {CONTACT_TYPES.find(type => type.id === log.kind)?.title}</strong>
+                        <p className="aftercare-note">{log.detail}</p>
+                        <button className="secondary" onClick={() => setHistoryDeletePending(log.id)}>Verwijder dit moment…</button>
+                        {historyDeletePending === log.id && <div className="aftercare-confirm">
+                          <p>Contactmoment uit dit tabblad wissen?</p>
+                          <div className="aftercare-actions">
+                            <button onClick={() => removeFollowUp(log.id)}>Ja, wis moment</button>
+                            <button className="secondary" onClick={() => setHistoryDeletePending(null)}>Behoud moment</button>
+                          </div>
+                        </div>}
+                      </li>)}</ol> : <p>Nog geen persoonlijke contactmomenten vastgelegd.</p>}
+                  <button disabled={history.length >= 160 || history.filter(event => event.issueId === item.id).length >= 8}
+                    className="secondary" onClick={() => {
+                      setHistoryTarget(item.id); setHistoryDeletePending(null);
+                      setHistoryDay(today()); setHistoryKind('eigen-notitie'); setHistoryDetail('');
+                    }}>Contactmoment toevoegen</button>
+                  {historyTarget === item.id && <form onSubmit={event => addFollowUp(event, item.id)}>
+                    <div className="aftercare-grid">
+                      <div><label htmlFor={'nazorg-log-kind-' + item.id}>Soort eigen notitie</label>
+                        <select id={'nazorg-log-kind-' + item.id} value={historyKind}
+                          onChange={event => setHistoryKind(event.target.value as ContactKind)}>
+                          {CONTACT_TYPES.map(type => <option key={type.id} value={type.id}>{type.title}</option>)}
+                        </select></div>
+                      <div><label htmlFor={'nazorg-log-day-' + item.id}>Datum</label>
+                        <input id={'nazorg-log-day-' + item.id} type="date" required
+                          min="2020-01-01" max="2099-12-31" value={historyDay}
+                          onChange={event => setHistoryDay(event.target.value)} /></div>
+                    </div>
+                    <label htmlFor={'nazorg-log-detail-' + item.id}>Wat heb jij zelf waargenomen of afgesproken?</label>
+                    <textarea id={'nazorg-log-detail-' + item.id} required maxLength={240} value={historyDetail}
+                      onChange={event => setHistoryDetail(event.target.value)}
+                      placeholder="Geen persoonlijke gegevens of vertrouwelijke berichtkopieën" />
+                    <div className="aftercare-actions">
+                      <button type="submit">Bewaar eigen moment</button>
+                      <button className="secondary" type="button" onClick={() => setHistoryTarget(null)}>Annuleer</button>
+                    </div>
+                  </form>}
+                </details>
                 <div className="aftercare-actions">
                   {item.status !== 'gemeld' && item.status !== 'afgerond' && <button onClick={() => setStatus(item.id, 'gemeld')}>Ik heb dit zelf gemeld</button>}
                   {item.status !== 'afgerond' && <button onClick={() => setStatus(item.id, 'afgerond')}>Markeer afgerond</button>}
@@ -653,6 +737,7 @@ function PrivateMoveAftercare() {
         <div>
           <p className="eyebrow">ZELF BEWAREN</p>
           <h2 id="nazorg-backup-title">Back-up en overdracht</h2>
+          <p>De versie-2 JSON-back-up bevat ook je zelf genoteerde contactmomenten. Eerdere versie-1 bestanden blijven importeerbaar zonder contacthistorie. CSV/TXT bevatten alleen de aandachtspunten; gebruik JSON voor volledig herstel.</p>
           <p>Bewaar optioneel een volledig JSON-bestand, een CSV-overzicht of een leesbaar TXT-dossier. Export kan via je gekozen bestandsprovider buiten Woonpoints synchroniseren.</p>
           <p>Import vervangt uitsluitend na een aparte bevestiging je huidige tabblad. Woonpoints bewaart geen automatische kopieën.</p>
         </div>
