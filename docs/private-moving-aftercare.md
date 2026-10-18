@@ -21,6 +21,16 @@ Met **Download ICS voor mijn agenda** exporteert de gebruiker uitsluitend niet-a
 - Niet invullen van een datum genereert geen afspraak. "Gemeld" is alleen een eigen handmatige status en is geen verhuurderbevestiging.
 - Bij ieder expliciet nieuw ICS-bestand kan de agenda-app bestaande importregels verwerken volgens eigen gedrag; Woonpoints beheert, annuleert of synchroniseert daar geen afspraak.
 
+## Conceptmelding voor de verhuurder — uitsluitend handmatig delen
+
+Onder **Concept voor de verhuurder** kies je expliciet 1–12 eigen, nog niet-afgeronde aandachtspunten. Een lokale samensteller maakt een aanpasbare tekst met zelf ingevuld onderwerp, ruimte en omschrijving per punt. Prioriteiten en eventuele eigen streefdatums worden als persoonlijke aannames gemarkeerd; er wordt **geen juridische hersteltermijn of ontvangstbewijs** toegekend.
+
+- Persoonlijke toelichtingen staan **standaard uit**. Alleen na een aparte opt-in worden ze aan het concept toegevoegd.
+- Je kunt het concept in een tekstvak corrigeren, inkorten of anonimiseren (maximaal 10.000 tekens).
+- De huidige selectie en bronvelden zijn aan het concept gekoppeld; als ze na genereren worden aangepast, is kopiëren/export uitgeschakeld totdat je het concept opnieuw opbouwt.
+- Een aparte checkbox bevestigt menselijke inhoudscontrole. Daarna kan de gebruiker bewust kopiëren naar het klembord of een TXT-bestand downloaden. Er is geen netwerk-, e-mail-, WoningNet- of verhuurderkoppeling en geen automatische verzending of statuswijziging naar ‘gemeld’.
+- Klembord en zelfgekozen opslagplek vallen buiten Woonpoints; een bestand of reeds gekopieerde tekst kan niet op afstand worden ingetrokken. De gebruiker controleert zelf ontvanger en eventueel benodigde bijlagen voordat deze iets verstuurt.
+
 ## Privacy, veiligheid en grenzen
 
 - Maximaal 80 aandachtspunten; tabbladgeheugen, geen automatische opslag, cookies, localStorage, API-aanroep of sync.
