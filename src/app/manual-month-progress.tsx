@@ -3147,11 +3147,99 @@ type MovingWorkspaceArchive = {
 };
 type MovingWorkspaceSection = 'quotes' | 'expenses' | 'split';
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive {
+type MovingWorkspaceArchiveV2 = Omit<MovingWorkspaceArchive,'version'> & {
+  version: 2;
+  timeline: {moveDate:string;completed:string[];extras:ExtraTask[]};
+  handover: {entries:{in?:PrivateHandoverEntry;out?:PrivateHandoverEntry}};
+  documents: ReadinessBackup;
+};
+
+function validMovingWorkspaceTimeline(value:unknown):
+  value is MovingWorkspaceArchiveV2['timeline'] {
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const data=value as Record<string,unknown>;
+  if(Object.keys(data).sort().join('|')!=='completed|extras|moveDate' ||
+    typeof data.moveDate!=='string'||(data.moveDate!==''&&!dateOnly(data.moveDate))||
+    !Array.isArray(data.extras)||data.extras.length>6||
+    !Array.isArray(data.completed)||data.completed.length>15)return false;
+  const extraIds:string[]=[];
+  for(const item of data.extras){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const task=item as Record<string,unknown>;
+    if(Object.keys(task).sort().join('|')!=='group|id|offset|title' ||
+      typeof task.id!=='string'||!/^extra-[0-9]+-[0-9]+$/.test(task.id)||
+      typeof task.title!=='string'||!task.title.trim()||task.title.length>60||
+      task.title!==task.title.trim()||
+      task.group!=='Eigen taak'||typeof task.offset!=='number'||
+      !Number.isInteger(task.offset)||task.offset < -120||task.offset > 60)return false;
+    extraIds.push(task.id);
+  }
+  const validIds=new Set([...DEFAULT_TASKS.map(t=>t.id),...extraIds]);
+  return validIds.size===DEFAULT_TASKS.length+extraIds.length &&
+    data.completed.every((id:unknown)=>typeof id==='string'&&validIds.has(id)) &&
+    new Set(data.completed).size===data.completed.length;
+}
+function validMovingWorkspaceHandover(value:unknown):
+  value is MovingWorkspaceArchiveV2['handover']{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const envelope=value as Record<string,unknown>;
+  if(Object.keys(envelope).join('|')!=='entries'||!envelope.entries||
+    typeof envelope.entries!=='object'||Array.isArray(envelope.entries))return false;
+  const entries=envelope.entries as Record<string,unknown>;
+  if(Object.keys(entries).some(k=>k!=='in'&&k!=='out'))return false;
+  for(const item of Object.values(entries)){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const row=item as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='day|electricity|gas|keys|property|remarks|water'||
+      typeof row.day!=='string'||!dateOnly(row.day)||
+      typeof row.property!=='string'||row.property.length>70||
+      typeof row.keys!=='number'||!Number.isInteger(row.keys)||row.keys<0||row.keys>99||
+      typeof row.remarks!=='string'||row.remarks.length>900)return false;
+    for(const meter of ['electricity','gas','water']){
+      if(typeof row[meter]!=='string'||handoverMeter(row[meter] as string)===null)return false;
+    }
+  }
+  return true;
+}
+function validMovingWorkspaceDocuments(value:unknown):
+  value is ReadinessBackup {
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const doc=value as Record<string,unknown>;
+  if(Object.keys(doc).sort().join('|')!=='dates|extras|states'||
+    !Array.isArray(doc.extras)||doc.extras.length>8||
+    !doc.states||typeof doc.states!=='object'||Array.isArray(doc.states)||
+    !doc.dates||typeof doc.dates!=='object'||Array.isArray(doc.dates))return false;
+  const ids=READINESS_DEFAULTS.map(item=>item.id);
+  for(const raw of doc.extras){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+    const extra=raw as Record<string,unknown>;
+    if(Object.keys(extra).sort().join('|')!=='id|title' ||
+      typeof extra.id!=='string'||!/^custom-[0-9]+-[0-9]+$/.test(extra.id)||
+      typeof extra.title!=='string'||!extra.title.trim()||extra.title.length>60||
+      extra.title!==extra.title.trim())return false;
+    ids.push(extra.id);
+  }
+  const allowed=new Set(ids);
+  if(allowed.size!==ids.length)return false;
+  const states=doc.states as Record<string,unknown>,dates=doc.dates as Record<string,unknown>;
+  if(Object.keys(states).length>16||Object.keys(dates).length>16)return false;
+  return Object.keys(states).every(key=>
+      allowed.has(key)&&['needed','ready','skip'].includes(String(states[key]))) &&
+    Object.keys(dates).every(key=>
+      allowed.has(key)&&typeof dates[key]==='string'&&
+      (dates[key]===''||dateOnly(dates[key] as string)!==null));
+}
+
+
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  if(Object.keys(obj).sort().join('|')!=='expenses|format|quotes|split|version' ||
-    obj.format !== 'woonpoints-private-moving-workspace' || obj.version !== 1)return false;
+  const v2=obj.version===2;
+  const keys=Object.keys(obj).sort().join('|');
+  if(keys!==(v2?'documents|expenses|format|handover|quotes|split|timeline|version':
+    'expenses|format|quotes|split|version') ||
+    obj.format !== 'woonpoints-private-moving-workspace' ||
+    (obj.version!==1&&!v2))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3174,7 +3262,10 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const quoteIds=(quotes.quotes as MovingQuote[]).map(q=>q.id);
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
-    new Set(expenseIds).size===expenseIds.length;
+    new Set(expenseIds).size===expenseIds.length &&
+    (!v2 || (validMovingWorkspaceTimeline(obj.timeline)&&
+      validMovingWorkspaceHandover(obj.handover)&&
+      validMovingWorkspaceDocuments(obj.documents)));
 }
 function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive):string{
   return JSON.stringify(data);
