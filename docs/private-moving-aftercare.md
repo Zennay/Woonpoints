@@ -1,6 +1,6 @@
 # Privé verhuisnazorg — uitvoerbare gebruikersflow
 
-Sinds 18 oktober 2026 is via de dashboardlink **Nazorg & gebreken** een volledig aparte `/nazorg`-pagina beschikbaar. Doel: na verhuizing zelf open punten, gebreken en afspraken bijhouden zonder rechten op WoningNet, een verhuurder of een notificatieprovider te veronderstellen.
+Sinds 18 oktober 2026 is via de dashboardlink **Nazorg & gebreken** het in het bestaande dashboard geïntegreerde onderdeel **#nazorg** beschikbaar. Doel: na verhuizing zelf open punten, gebreken en afspraken bijhouden zonder rechten op WoningNet, een verhuurder of een notificatieprovider te veronderstellen.
 
 ## Wat een gebruiker kan doen
 
@@ -21,4 +21,4 @@ Sinds 18 oktober 2026 is via de dashboardlink **Nazorg & gebreken** een volledig
 
 ## Integratie en oplevering
 
-Bronpaden: `src/app/nazorg/page.tsx`, `src/app/page.tsx` (alleen directe ingang en kaart), dit document. Productbron commit staat in een aparte featurebranch en vereist de bestaande verplichte exact-head GitHub CI/owner-reviews en veilige merge. Bronmerge bewijst geen VPS- of productiedeploy.
+Bronpaden: `src/app/page.tsx` (directe ingang, kaart én afgeschermde tabbladinterface), dit document. De originele route-map is bewust ingetrokken om exact binnen de bestaande productie-Docker bron-allowlist te blijven; de bestaande security- en CI-gates blijven ongewijzigd. Productbron commit staat in een aparte featurebranch en vereist de bestaande verplichte exact-head GitHub CI/owner-reviews en veilige merge. Bronmerge bewijst geen VPS- of productiedeploy.
