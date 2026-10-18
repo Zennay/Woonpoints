@@ -36,6 +36,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
   {id:'position-stats-heading',title:'Posities',category:'inzichten'},
   {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
+  {id:'nazorg-contactlijn',title:'Contacttijdlijn',category:'verhuizen'},
   {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
 ];
 const homeCategoryOptions=[
@@ -1035,6 +1036,9 @@ function PrivateMoveAftercare() {
   const [completeSummaryApproved, setCompleteSummaryApproved] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [history, setHistory] = useState<FollowUp[]>([]);
+  const [contactTimelineKind, setContactTimelineKind] = useState<ContactKind | 'alle'>('alle');
+  const [contactTimelineSearch, setContactTimelineSearch] = useState('');
+  const [expandContactTimeline, setExpandContactTimeline] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [historyKind, setHistoryKind] = useState<ContactKind>('eigen-notitie');
   const [historyDay, setHistoryDay] = useState(today());
@@ -1161,6 +1165,20 @@ function PrivateMoveAftercare() {
       return item ? [{ event, item }] : [];
     }).sort((a, b) => a.event.day.localeCompare(b.event.day) ||
       a.item.title.localeCompare(b.item.title));
+
+  const contactTimelineQuery = contactTimelineSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const contactTimeline = useMemo(() => {
+    const byId = new Map(items.map(item => [item.id, item]));
+    return history.flatMap(event => {
+      const item = byId.get(event.issueId);
+      if (!item || (contactTimelineKind !== 'alle' && event.kind !== contactTimelineKind)) return [];
+      if (contactTimelineQuery && ![item.title, item.room, event.detail, event.day].some(value =>
+        value.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(contactTimelineQuery))) return [];
+      return [{event, item}];
+    }).sort((a, b) => b.event.day.localeCompare(a.event.day) ||
+      a.item.title.localeCompare(b.item.title, 'nl-NL') ||
+      a.event.id.localeCompare(b.event.id));
+  }, [items, history, contactTimelineKind, contactTimelineQuery]);
 
   const issueRooms = useMemo(() => Array.from(new Set(items.map(item => item.room)))
     .sort((a, b) => a.localeCompare(b, 'nl-NL')), [items]);
@@ -1818,6 +1836,61 @@ function PrivateMoveAftercare() {
             </button>
           </div>}
           <p>Conceptkeuze is handmatig en verstuurt niets. Contactmomenten en eigen status pas je per punt in het dossier hieronder aan.</p>
+        </div>
+      </section>
+      <section className="panel" aria-labelledby="nazorg-contactlijn">
+        <div>
+          <p className="eyebrow">EIGEN CHRONOLOGIE</p>
+          <h2 id="nazorg-contactlijn">Mijn eigen contacttijdlijn</h2>
+          <p>Alle zelf vastgelegde contactmomenten bij je nazorgpunten in één overzicht,
+            met een directe route naar het bijbehorende dossier. Dit zijn uitsluitend
+            je eigen notities: geen geverifieerde verzendingen, afspraken of reacties.</p>
+          <label htmlFor="nazorg-timeline-kind">Soort eigen contactnotitie</label>
+          <select id="nazorg-timeline-kind" value={contactTimelineKind}
+            onChange={event => setContactTimelineKind(event.target.value as ContactKind | 'alle')}>
+            <option value="alle">Alle eigen notities</option>
+            {CONTACT_TYPES.map(type => <option key={type.id} value={type.id}>{type.title}</option>)}
+          </select>
+          <label htmlFor="nazorg-timeline-search">Zoeken in eigen tijdlijn</label>
+          <input id="nazorg-timeline-search" type="search" autoComplete="off"
+            maxLength={100} value={contactTimelineSearch}
+            placeholder="Eigen punt, ruimte, datum of notitie"
+            onChange={event => setContactTimelineSearch(event.target.value)} />
+          <p role="status" aria-live="polite">
+            {contactTimeline.length} van {history.length} zelf genoteerde contactmomenten zichtbaar.
+          </p>
+          {(contactTimelineSearch || contactTimelineKind !== 'alle') &&
+            <button type="button" className="secondary"
+              onClick={() => { setContactTimelineSearch(''); setContactTimelineKind('alle'); }}>
+              Wis tijdlijnfilters
+            </button>}
+        </div>
+        <div>
+          {contactTimeline.length === 0 ? <p>Geen eigen contactmomenten binnen deze filters.
+            Voeg een contactmoment toe bij een punt of wis de zoekfilters.</p> :
+            <ol className="aftercare-list">
+              {contactTimeline.slice(0, expandContactTimeline ? 160 : 20).map(({event, item}) =>
+                <li className="aftercare-item" key={event.id}>
+                  <strong>{event.day} · {CONTACT_TYPES.find(type => type.id === event.kind)?.title}</strong>
+                  <p>{item.room} · {item.title} · Eigen status: {item.status}</p>
+                  <details className="aftercare-history">
+                    <summary>Bekijk mijn privénotitie</summary>
+                    <p className="aftercare-note">{event.detail}</p>
+                  </details>
+                  <button type="button" className="secondary"
+                    onClick={() => openIssueFromInbox(item.id)}>
+                    Open het bijbehorende eigen nazorgpunt ↓
+                  </button>
+                </li>)}
+            </ol>}
+          {contactTimeline.length > 20 && <button type="button" className="secondary"
+            aria-expanded={expandContactTimeline}
+            onClick={() => setExpandContactTimeline(!expandContactTimeline)}>
+            {expandContactTimeline ? 'Toon eerste 20 momenten' :
+              'Toon alle ' + contactTimeline.length + ' momenten'}
+          </button>}
+          <p>Vrije contacttekst blijft hier ingeklapt totdat je zelf opent. Er is
+            geen automatische export, synchronisatie of contact met derden.</p>
         </div>
       </section>
       <section className="panel" aria-labelledby="nazorg-calendar-title">
