@@ -886,3 +886,300 @@ export function ManualHousingShortlist() {
     </section>
   );
 }
+
+
+/** Private, in-memory deadline planner. No account/portal hooks and no background reminders. */
+type PrivatePlanKind = 'reactie' | 'bezichtiging' | 'beslissing';
+type PrivatePlanStatus = 'open' | 'afgerond';
+type PrivatePlanItem = {label: string; when: string; kind: PrivatePlanKind; status: PrivatePlanStatus};
+const MAX_PRIVATE_PLANS = 12;
+const emptyPrivatePlan: PrivatePlanItem = {label: '', when: '', kind: 'reactie', status: 'open'};
+const planKinds: Record<PrivatePlanKind, string> = {
+  reactie: 'Reactiedeadline (zelf genoteerd)',
+  bezichtiging: 'Bezichtiging (zelf genoteerd)',
+  beslissing: 'Beslismoment (zelf genoteerd)'
+};
+
+function validPrivatePlan(value: unknown): value is PrivatePlanItem {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Partial<PrivatePlanItem>;
+  if (typeof item.label !== 'string' || item.label.trim().length < 1 ||
+      item.label.trim().length > 64 || /[\u0000-\u001f\u007f]/.test(item.label)) return false;
+  if (item.kind !== 'reactie' && item.kind !== 'bezichtiging' && item.kind !== 'beslissing') return false;
+  if (item.status !== 'open' && item.status !== 'afgerond') return false;
+  if (typeof item.when !== 'string' ||
+      !/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-3]):[0-5]\d$/.test(item.when)) return false;
+  const d = new Date(item.when);
+  return Number.isFinite(d.getTime()) &&
+    d.getFullYear() === Number(item.when.slice(0,4)) &&
+    d.getMonth() + 1 === Number(item.when.slice(5,7)) &&
+    d.getDate() === Number(item.when.slice(8,10)) &&
+    d.getHours() === Number(item.when.slice(11,13)) &&
+    d.getMinutes() === Number(item.when.slice(14,16));
+}
+
+function downloadPrivatePlanFile(content: string, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], {type}));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click(); a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function foldCalendarLine(line: string) {
+  const encoder = new TextEncoder();
+  const lines: string[] = [];
+  let row = '';
+  let bytes = 0;
+  for (const char of line) {
+    const size = encoder.encode(char).length;
+    if (bytes + size > 75) {
+      lines.push(row);
+      row = ' ';
+      bytes = 1;
+    }
+    row += char;
+    bytes += size;
+  }
+  lines.push(row);
+  return lines.join('\r\n');
+}
+function safeCalendarText(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,')
+    .replace(/\r?\n/g, ' ');
+}
+function calendarUtc(date: Date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+/** A deliberate download, never a browser notification or remote calendar write. */
+export function ManualDeadlinePlanner() {
+  const [entries, setEntries] = useState<PrivatePlanItem[]>([]);
+  const [draft, setDraft] = useState<PrivatePlanItem>(emptyPrivatePlan);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
+  const [pendingImport, setPendingImport] = useState<PrivatePlanItem[] | null>(null);
+  const [notice, setNotice] = useState('');
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const pending = entries.filter(item => item.status === 'open').length;
+  const ordered = entries.map((entry, index) => ({entry, index}))
+    .filter(row => !onlyOpen || row.entry.status === 'open')
+    .sort((a,b) => a.entry.when.localeCompare(b.entry.when) || a.index - b.index);
+  const next = entries.filter(entry => entry.status === 'open' && new Date(entry.when).getTime() >= now)
+    .sort((a,b) => a.when.localeCompare(b.when))[0];
+
+  function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const item = {...draft, label: draft.label.trim()};
+    if (!validPrivatePlan(item)) {
+      setNotice('Controleer je korte anonieme label en vul een geldige lokale datum en tijd in.');
+      return;
+    }
+    if (editing === null && entries.length >= MAX_PRIVATE_PLANS) {
+      setNotice('Maximaal twaalf acties; verwijder er eerst een.');
+      return;
+    }
+    if (editing !== null && (editing < 0 || editing >= entries.length)) {
+      setNotice('Deze actie bestaat niet meer; kies opnieuw.');
+      setEditing(null);
+      return;
+    }
+    setEntries(items => editing === null ? [...items, item] :
+      items.map((existing, index) => index === editing ? item : existing));
+    setDraft({...emptyPrivatePlan});
+    setEditing(null); setDeleteIndex(null); setPendingImport(null);
+    setNow(Date.now());
+    setNotice('Alleen in dit tabblad genoteerd. Geen live-reactie of automatische herinnering.');
+  }
+
+  function edit(index: number) {
+    setDraft({...entries[index]});
+    setEditing(index);
+    setDeleteIndex(null);
+    setPendingImport(null);
+    setNotice('Aanpassing is pas van kracht na Bewaar.');
+  }
+
+  function changeStatus(index: number) {
+    setEntries(items => items.map((item,i) => index === i
+      ? {...item, status: item.status === 'open' ? 'afgerond' : 'open'} : item));
+    setEditing(null); setDraft({...emptyPrivatePlan});
+    setDeleteIndex(null); setPendingImport(null);
+    setNotice('Status alleen lokaal aangepast; dit verifieert geen WoningNet-reactie.');
+  }
+
+  function exportJson() {
+    if (!entries.length) return;
+    downloadPrivatePlanFile(JSON.stringify({version: 1, entries}, null, 2),
+      'application/json', 'woonpoints-eigen-planning.json');
+    setNotice('Privé-JSON aangeboden. Een door jou gekozen bestandsprovider kan synchroniseren.');
+  }
+
+  async function selectJson(file: File | undefined) {
+    setPendingImport(null);
+    if (!file) return;
+    if (file.size < 1 || file.size > 16384) {
+      setNotice('Bestand geweigerd: gebruik maximaal 16 KB JSON.');
+      return;
+    }
+    try {
+      const decoded: unknown = JSON.parse(await file.text());
+      if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) throw new Error('invalid');
+      const object = decoded as {version?: unknown; entries?: unknown};
+      if (object.version !== 1 || !Array.isArray(object.entries) ||
+          object.entries.length > MAX_PRIVATE_PLANS || !object.entries.every(validPrivatePlan)) throw new Error('invalid');
+      setPendingImport(object.entries.map(item => ({...item, label: item.label.trim()})));
+      setNotice('Bestand gecontroleerd. Bevestig apart voordat de huidige tabbladplanning wordt vervangen.');
+    } catch {
+      setNotice('Geen geldig Woonpoints-planningsbestand; de huidige invoer is ongewijzigd.');
+    }
+  }
+
+  function exportIcs() {
+    const selected = entries.filter(item => item.status === 'open');
+    if (!selected.length) return;
+    const stamp = calendarUtc(new Date());
+    const rows = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Woonpoints//Private Manual Planner//NL',
+      'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+    for (const [index,item] of selected.entries()) {
+      const start = new Date(item.when);
+      const end = new Date(start.getTime() + 15 * 60000);
+      rows.push('BEGIN:VEVENT',
+        'UID:woonpoints-own-'+stamp+'-'+index+'@local.invalid',
+        'DTSTAMP:'+stamp,
+        'DTSTART:'+calendarUtc(start),
+        'DTEND:'+calendarUtc(end),
+        'SUMMARY:'+safeCalendarText(planKinds[item.kind]),
+        'DESCRIPTION:'+safeCalendarText('Eigen planning: '+item.label+'. Niet geverifieerd, geen automatische WoningNet-reactie.'),
+        'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY',
+        'DESCRIPTION:Eigen Woonpoints-planning controleren','END:VALARM',
+        'END:VEVENT');
+    }
+    rows.push('END:VCALENDAR');
+    downloadPrivatePlanFile(rows.map(foldCalendarLine).join('\r\n')+'\r\n',
+      'text/calendar;charset=utf-8', 'woonpoints-eigen-deadlines.ics');
+    setNotice('iCalendar aangeboden voor eigen import. Agendameldingen hangen af van jouw kalenderapp.');
+  }
+
+  return (
+    <section className="panel private-plan" aria-labelledby="private-plan-title">
+      <div>
+        <p className="eyebrow">EIGEN ACTIEPLANNING · OFFLINE</p>
+        <h2 id="private-plan-title">Reactiedeadlines en bezichtigingen zelf plannen</h2>
+        <p>Leg maximaal twaalf zelf ontdekte deadlines, bezichtigingen of beslismomenten vast.
+          De planner controleert <strong>geen woningplatform, agenda of reactie</strong> en
+          stuurt nooit een bericht. De invoer blijft in dit tabblad totdat je zelf exporteert.</p>
+        <p>Gebruik alleen een anoniem herkenningslabel (bijvoorbeeld &quot;Woning A&quot;);
+          geen adressen, namen, accountgegevens, telefoonnummers of uitnodigingslinks.</p>
+      </div>
+      <div className="private-plan-overview" aria-live="polite" aria-atomic="true">
+        <p><strong>{pending}</strong> open eigen acties · {entries.length} / {MAX_PRIVATE_PLANS} ingevoerd</p>
+        <p>{next ? 'Eerstvolgende: '+next.label+' · '+new Date(next.when).toLocaleString('nl-NL')
+          : 'Geen toekomstige open acties bekend. Dit zegt niets over jouw echte reactiestand.'}</p>
+      </div>
+      <form className="private-plan-form" onSubmit={save}>
+        <fieldset>
+          <legend>{editing === null ? 'Nieuwe eigen actie' : 'Eigen actie aanpassen'}</legend>
+          <label htmlFor="plan-label">Anoniem label</label>
+          <input id="plan-label" value={draft.label} maxLength={64} autoComplete="off"
+            placeholder="Woning A" required
+            onChange={event => setDraft(d => ({...d, label: event.target.value}))} />
+          <div className="private-plan-grid">
+            <div><label htmlFor="plan-kind">Soort actie</label>
+              <select id="plan-kind" value={draft.kind}
+                onChange={event => setDraft(d => ({...d, kind: event.target.value as PrivatePlanKind}))}>
+                <option value="reactie">Reactiedeadline</option>
+                <option value="bezichtiging">Bezichtiging</option>
+                <option value="beslissing">Beslismoment</option>
+              </select>
+            </div>
+            <div><label htmlFor="plan-when">Lokale datum en tijd</label>
+              <input id="plan-when" type="datetime-local" required value={draft.when}
+                onChange={event => setDraft(d => ({...d, when: event.target.value}))} />
+            </div>
+          </div>
+          <div className="private-plan-buttons">
+            <button type="submit" disabled={editing === null && entries.length >= MAX_PRIVATE_PLANS}>
+              {editing === null ? 'Voeg eigen actie toe' : 'Bewaar wijziging'}
+            </button>
+            {editing !== null && <button type="button" className="secondary" onClick={() => {
+              setEditing(null); setDraft({...emptyPrivatePlan}); setNotice('Aanpassing geannuleerd.');
+            }}>Annuleren</button>}
+          </div>
+        </fieldset>
+      </form>
+      <div className="private-plan-toolbar">
+        <label className="private-plan-check"><input type="checkbox" checked={onlyOpen}
+          onChange={event => setOnlyOpen(event.target.checked)} /> Alleen open acties tonen</label>
+        <button type="button" onClick={() => {setNow(Date.now()); setNotice('Tijd opnieuw bekeken.');}}>
+          Werk tijdsindicaties bij
+        </button>
+      </div>
+      {ordered.length ? (
+        <ol className="private-plan-items">
+          {ordered.map(({entry,index}) => {
+            const time = new Date(entry.when).getTime();
+            const isPast = time < now;
+            return <li key={index}>
+              <strong>{entry.label}</strong>
+              <span>{planKinds[entry.kind]} · {new Date(entry.when).toLocaleString('nl-NL')}</span>
+              <span>{entry.status === 'afgerond' ? 'Zelf afgevinkt (niet geverifieerd)' :
+                isPast ? 'Tijd verstreken — controleer zelf' : 'Open — nog niet geverifieerd'}</span>
+              <div className="private-plan-buttons">
+                <button type="button" className="secondary" onClick={() => edit(index)}>Bewerk</button>
+                <button type="button" onClick={() => changeStatus(index)}>
+                  {entry.status === 'open' ? 'Zelf afvinken' : 'Heropen'}
+                </button>
+                <button type="button" className="secondary" onClick={() => setDeleteIndex(index)}>
+                  Verwijder…
+                </button>
+              </div>
+              {deleteIndex === index && <div className="private-plan-confirm">
+                <p>Deze notitie echt verwijderen? Dit is niet te herstellen zonder eigen back-up.</p>
+                <button type="button" onClick={() => {
+                  setEntries(items => items.filter((_,i) => i !== index));
+                  setEditing(null); setDraft({...emptyPrivatePlan});
+                  setDeleteIndex(null); setPendingImport(null);
+                  setNotice('Notitie alleen uit dit tabblad verwijderd.');
+                }}>Ja, verwijder</button>
+                <button type="button" className="secondary" onClick={() => setDeleteIndex(null)}>Annuleren</button>
+              </div>}
+            </li>;
+          })}
+        </ol>
+      ) : <p>{entries.length && onlyOpen ? 'Geen open acties in dit tabblad.' : 'Nog geen acties ingevuld.'}</p>}
+      <div className="private-plan-archive">
+        <h3>Mijn planning bewaren of meenemen</h3>
+        <p><strong>Alleen op jouw verzoek.</strong> JSON bewaart je eigen planning; ICS
+          bevat uitsluitend nog open acties en kan bij import naar een kalenderdienst synchroniseren.
+          Een agenda-event is geen bevestigde reactie of automatische herinnering vanuit Woonpoints.</p>
+        <div className="private-plan-buttons">
+          <button type="button" disabled={!entries.length} onClick={exportJson}>Download privé-JSON</button>
+          <button type="button" disabled={!pending} onClick={exportIcs}>Download agenda (.ics)</button>
+        </div>
+        <label htmlFor="plan-import">Herstel eigen Woonpoints-JSON (maximaal 16 KB)</label>
+        <input id="plan-import" type="file" accept=".json,application/json"
+          onChange={event => {void selectJson(event.target.files?.[0]); event.target.value = '';}} />
+        {pendingImport !== null && <div className="private-plan-confirm">
+          <p>Vervang alle {entries.length} huidige notities door {pendingImport.length} uit het bestand?</p>
+          <button type="button" onClick={() => {
+            setEntries(pendingImport); setPendingImport(null);
+            setEditing(null); setDraft({...emptyPrivatePlan}); setDeleteIndex(null);
+            setNow(Date.now()); setNotice('Eigen privéplanning uit gekozen bestand geladen.');
+          }}>Ja, vervang</button>
+          <button type="button" className="secondary" onClick={() => {
+            setPendingImport(null); setNotice('Import geannuleerd; huidige planning blijft staan.');
+          }}>Behoud huidige planning</button>
+        </div>}
+        <button type="button" className="secondary" disabled={!entries.length} onClick={() => {
+          setEntries([]); setEditing(null); setDraft({...emptyPrivatePlan}); setDeleteIndex(null);
+          setPendingImport(null); setNotice('Alle tabbladnotities gewist. Eventueel geëxporteerde bestanden blijven bestaan.');
+        }}>Wis tabbladplanning</button>
+      </div>
+      <p role="status" aria-live="polite">{notice}</p>
+    </section>
+  );
+}
