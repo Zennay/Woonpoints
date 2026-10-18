@@ -637,3 +637,8 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .boxPrintFilters select{font:inherit;padding:10px;border-radius:8px;background:#fff;color:#182e36;border:1px solid #90aeb7}
 .boxPrintFilters select:focus-visible{outline:3px solid #138e86;outline-offset:3px}
 @media print{.boxPrintFilters{display:none!important}}
+
+/* Review the actual downloaded rows in the user's own tab before CSV export. */
+.boxCsvPreview{margin:18px 0;background:#f7faf9;padding:14px;border:1px solid #b9d2cc;border-radius:10px}
+.boxCsvPreview pre{padding:12px;background:#fff;border:1px solid #d1dfdd;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;line-height:1.5}
+@media print{.boxCsvPreview{display:none!important}}
