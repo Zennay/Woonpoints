@@ -588,6 +588,87 @@ const MOVING_FALLBACKS:ReadonlyArray<{id:MovingFallbackId;title:string;tip:strin
 ];
 const MOVING_FALLBACK_KIND='woonpoints-private-plan-b';
 const MOVING_FALLBACK_LIMIT=8192;
+
+/** Private, opt-in recovery across accidental reloads in the same tab only.
+ * Never syncs, writes by default, or uses localStorage. JSON schema is always revalidated. */
+function usePrivateTabRecovery<T>(
+  storageKey:string,initial:()=>T,encode:(data:T)=>string,
+  decode:(raw:string)=>T|null,maxBytes:number
+){
+  const [value,setValue]=useState<T>(initial);
+  const [enabled,setEnabled]=useState(false);
+  const [hydrated,setHydrated]=useState(false);
+  const [storageMessage,setStorageMessage]=useState('');
+  const flagKey=storageKey+':opted-in';
+  const clear=()=>{
+    window.sessionStorage.removeItem(flagKey);
+    window.sessionStorage.removeItem(storageKey);
+  };
+  useEffect(()=>{
+    try{
+      if(window.sessionStorage.getItem(flagKey)==='yes'){
+        const raw=window.sessionStorage.getItem(storageKey);
+        if(!raw||new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+        const data=decode(raw);
+        if(data===null)throw Error('schema');
+        setValue(data);setEnabled(true);
+        setStorageMessage('Vorige eigen tabbladnotities na herladen veilig teruggezet.');
+      }
+    }catch{
+      try{clear();}catch{/* Browser may deny storage entirely. */}
+      setStorageMessage('Tabbladherstel niet mogelijk: ongeldige of ontoegankelijke opslag. Bestaande tabbladinvoer blijft behouden.');
+    }
+    setHydrated(true);
+  },[storageKey,flagKey,decode,maxBytes]);
+  useEffect(()=>{
+    if(!hydrated||!enabled)return;
+    try{
+      const raw=encode(value);
+      if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      window.sessionStorage.setItem(storageKey,raw);
+      window.sessionStorage.setItem(flagKey,'yes');
+    }catch{
+      setEnabled(false);
+      try{clear();}catch{/* Fail closed; no claim of successful removal. */}
+      setStorageMessage('Automatisch tabbladherstel gestopt: opslag geweigerd. Download zelf een JSON-back-up.');
+    }
+  },[value,hydrated,enabled,storageKey,flagKey,encode,maxBytes]);
+  function enable(){
+    if(!hydrated||enabled)return;
+    try{
+      const raw=encode(value);
+      if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      window.sessionStorage.setItem(storageKey,raw);
+      window.sessionStorage.setItem(flagKey,'yes');
+      setEnabled(true);
+      setStorageMessage('Herstel bij herladen ingeschakeld voor dit tabblad; geen serveropslag.');
+    }catch{
+      setEnabled(false);
+      try{clear();}catch{/* May be inaccessible. */}
+      setStorageMessage('Opslaan geweigerd: sessie-opslag ontbreekt of is vol. Gebruik de JSON-download.');
+    }
+  }
+  function disable(){
+    setEnabled(false);
+    try{
+      clear();
+      setStorageMessage('Herstelgegevens uit dit tabblad gewist; huidige open invoer blijft staan.');
+    }catch{
+      setStorageMessage('Opslag wissen niet bevestigd door de browser. Wis zo nodig sitegegevens handmatig.');
+    }
+  }
+  return {value,setValue,enabled,hydrated,storageMessage,enable,disable};
+}
+
+const FALLBACK_TAB_STORAGE_KEY='woonpoints:private-moving-plan-b:tab-recovery:v1';
+function encodeFallbackTab(data:MovingFallbackEntry[]):string{
+  return JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries:data});
+}
+function decodeFallbackTab(raw:string):MovingFallbackEntry[]|null{
+  if(raw.length>MOVING_FALLBACK_LIMIT)return null;
+  try{return parseMovingFallbackBackup(JSON.parse(raw) as unknown);}catch{return null;}
+}
+
 const defaultMovingFallbacks=():MovingFallbackEntry[]=>MOVING_FALLBACKS.map(row=>({
   id:row.id,action:'',contact:'',day:'',done:false
 }));
@@ -626,7 +707,11 @@ function movingFallbackDownload(name:string,body:string,mime:string){
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
 function PrivateMovingFallbackPlan({onPulse}:{onPulse?: (pulse:PrivateMovePulse)=>void}={}){
-  const [entries,setEntries]=useState<MovingFallbackEntry[]>(defaultMovingFallbacks);
+  const {value:entries,setValue:setEntries,enabled:rememberTab,hydrated:tabReady,
+    storageMessage:tabStorageMessage,enable:enableTabRestore,
+    disable:disableTabRestore}=usePrivateTabRecovery<MovingFallbackEntry[]>(
+      FALLBACK_TAB_STORAGE_KEY,defaultMovingFallbacks,
+      encodeFallbackTab,decodeFallbackTab,MOVING_FALLBACK_LIMIT);
   const [preview,setPreview]=useState<'txt'|'json'|'ics'|null>(null);
   const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
   const [undo,setUndo]=useState<{before:MovingFallbackEntry[];after:string}|null>(null);
@@ -707,6 +792,24 @@ function PrivateMovingFallbackPlan({onPulse}:{onPulse?: (pulse:PrivateMovePulse)
       een roepnaam of rol en eventueel een controledatum. Dit is uitsluitend privé tabbladgeheugen:
       geen leverancier, verhuurder, hulpverlener of WoningNet wordt gebeld of ingelicht.
       Vermeld hier geen telefoonnummers, adressen of geheime gegevens.</p>
+    <div style={{border:'1px solid #d4dfd5',padding:14,borderRadius:10,margin:'12px 0'}}>
+      <h3>Behoud mijn plan B bij per ongeluk herladen</h3>
+      <p>Standaard wordt niets bewaard. Alleen met jouw toestemming bewaren we
+        de vier ingevulde regels tijdelijk in de <strong>niet-versleutelde
+        sessie-opslag van dit browsertabblad</strong>. Andere scripts op deze website
+        kunnen die tabbladopslag lezen. Gebruik dit niet op een gedeeld apparaat,
+        en vul geen telefoonnummers, adressen of geheime gegevens in.
+        Een herladen tabblad kan je notities herstellen; sluiten van het tabblad
+        wist sessiegegevens gewoonlijk. Maak voor langdurig bewaren zelf een JSON-download.</p>
+      {rememberTab?
+        <button type="button" disabled={!tabReady} onClick={disableTabRestore}
+          style={{minHeight:44}}>Stop bewaren en wis tabbladherstel</button>:
+        <button type="button" disabled={!tabReady} onClick={enableTabRestore}
+          style={{minHeight:44}}>Ja, onthoud mijn plan B bij herladen</button>}
+      <p role="status" aria-live="polite">Tabbladherstel:
+        {' '}{tabReady?(rememberTab?'ingeschakeld':'uitgeschakeld'):'bezig met controleren'}.
+        {tabStorageMessage&&' '+tabStorageMessage}</p>
+    </div>
     <p role="status" aria-live="polite"><strong>{ready}/4 alternatieven voorbereid;
       {' '}{completed}/4 zelf afgehandeld.</strong>
       {dated.length>0&&<> <strong>{dated.length} open controledatum(s) vandaag of eerder.</strong></>}</p>
