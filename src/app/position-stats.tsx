@@ -4028,8 +4028,8 @@ export function PrivateReactionPacing() {
   }
   const missing = countsOk ? 4 - counted! - planned! : 0;
   const proposed = missing > 0 && openDates.length
-    ? Array.from({length: Math.min(missing, openDates.length)}, (_, i, all) =>
-        openDates[Math.floor(((i + 1) * openDates.length) / (all.length + 1))])
+    ? Array.from({length: Math.min(missing, openDates.length)}, (_, i) =>
+        openDates[Math.floor(((i + 1) * openDates.length) / (Math.min(missing, openDates.length) + 1))])
     : [];
   const insufficient = missing > proposed.length;
   const fmt = (date: string) => {
@@ -4064,7 +4064,9 @@ export function PrivateReactionPacing() {
         'END:VEVENT');
     }
     lines.push('END:VCALENDAR');
-    const uri = URL.createObjectURL(new Blob([lines.join('\r\n')+'\r\n'],
+    // All emitted characters are ASCII; fold calendar physical lines below 75 bytes.
+    const fold = (line: string) => line.match(/.{1,73}/g)?.join('\\r\\n ') ?? line;
+    const uri = URL.createObjectURL(new Blob([lines.map(fold).join('\\r\\n')+'\\r\\n'],
       {type:'text/calendar;charset=utf-8'}));
     const link = document.createElement('a');
     link.href = uri;
