@@ -1405,8 +1405,9 @@ function readPrivateBudgetBackup(text: string): PrivateBudgetBackup | null {
   const scenarios = [data.scenarioA, data.scenarioB];
   if (scenarios.some(value => !fields(value, costKeys) ||
     costKeys.some(key => typeof value[key] !== 'string'))) return null;
-  if (!fields(data.budget, budgetKeys) ||
-    budgetKeys.some(key => typeof data.budget[key] !== 'string')) return null;
+  const candidateBudget = data.budget;
+  if (!fields(candidateBudget, budgetKeys) ||
+    budgetKeys.some(key => typeof candidateBudget[key] !== 'string')) return null;
   if (!fields(data.saving, ['months', 'reserveMonths']) ||
     typeof data.saving.months !== 'string' || typeof data.saving.reserveMonths !== 'string') return null;
   const first = data.scenarioA as CostDraft;
