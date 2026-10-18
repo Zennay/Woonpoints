@@ -125,7 +125,7 @@ export default function PositionStats() {
         {undoJournalOffer&&input===undoJournalOffer.after&&
           <button type="button" onClick={undoJournalQuickStats}
             style={{minHeight:44}}>Maak laatste dagboekovername ongedaan</button>}
-        {offerMessage&&<p role="status" aria-live="polite">{offerMessage}</p>
+        {offerMessage&&<p role="status" aria-live="polite">{offerMessage}</p>}
         {invalid && <p role="alert">Ongeldige positiegegevens. Gebruik maximaal 50 regels positie/totaal, met een positie tussen 1 en het totaal.</p>}
         <div aria-live="polite" aria-atomic="true">
           {!invalid && summary === null && <p>Geen posities ingevuld — uitkomst onbekend.</p>}
