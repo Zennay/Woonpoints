@@ -913,11 +913,12 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
         de eigen stand {pendingRow.count}. Dit heeft geen effect op de
         actuele lokale teller of een echte WoningNet-reactie.</p>
       <button type="button" onClick={()=>{
-        if(!privateHistoryValid([pendingRow])) {setPendingRow(null);return;}
+        const proposal=pendingRow;
+        if(!proposal || !privateHistoryValid([proposal])) {setPendingRow(null);return;}
         setRows(current=>{
-          const remaining=current.filter(row=>row.month!==pendingRow.month);
+          const remaining=current.filter(row=>row.month!==proposal.month);
           if(remaining.length>=PRIVATE_HISTORY_MAX) return current;
-          return [...remaining,pendingRow];
+          return [...remaining,proposal];
         });
         setPendingRow(null);setPendingDelete(null);
         setMessage('Eigen historische maandstand bijgewerkt; actuele maandteller niet gewijzigd.');
