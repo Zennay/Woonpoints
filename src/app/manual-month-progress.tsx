@@ -4094,6 +4094,9 @@ export function PrivateMovingPackingInventory(){
   const [pendingRestore,setPendingRestore]=useState<PackingArchive|null>(null);
   const [showLabelContents,setShowLabelContents]=useState(false);
   const [pendingLabels,setPendingLabels]=useState<string|null>(null);
+  const [transport,setTransport]=useState<Record<string,PackingTransportState>>({});
+  const [showManifestContents,setShowManifestContents]=useState(false);
+  const [pendingManifest,setPendingManifest]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
     const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
@@ -4109,8 +4112,9 @@ export function PrivateMovingPackingInventory(){
       if(!validMovingWorkspaceArchive(imported)||imported.version!==3)return;
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
-      setPendingRestore(null);setPendingLabels(null);
-      setNotice('Paklijst uit eigen v3-werkmap hersteld. Geen netwerkverzoek.');
+      setPendingRestore(null);setPendingLabels(null);setTransport({});
+      setPendingManifest(null);
+      setNotice('Paklijst uit eigen v3-werkmap hersteld. Transportmarkeringen zijn niet in v3 opgeslagen en zijn leeggemaakt.');
     }
     window.addEventListener('woonpoints:moving-workspace:restore',restore);
     return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
@@ -4129,6 +4133,11 @@ export function PrivateMovingPackingInventory(){
   [items,roomFilter,stateFilter]);
   const report=packingReport(items);
   const boxGroups=packingBoxGroups(items);
+  const transportEntries=packingCurrentTransport(boxGroups,transport);
+  const loadedCount=transportEntries.filter(row=>row.stage==='geladen').length;
+  const deliveredCount=transportEntries.filter(row=>row.stage==='afgeleverd').length;
+  const manifestSignature=JSON.stringify({signature,transportEntries,showManifestContents});
+  const manifest=packingTransportReport(boxGroups,transportEntries,showManifestContents);
   const labelSignature=JSON.stringify({signature,showLabelContents});
   const unlabelled=items.filter(item=>item.status!=='Uitgepakt'&&!item.box).length;
   const duplicateCodes=[...new Set(boxGroups.map(group=>group.box))]
@@ -4145,9 +4154,38 @@ export function PrivateMovingPackingInventory(){
     setNotice('Lokaal printbaar HTML-bestand aangeboden. Open het zelf om af te drukken.');
   }
   const resetPending=()=>{
-    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);setPendingLabels(null);
+    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);
+    setPendingLabels(null);setPendingManifest(null);
     setConfirmClear(false);setNotice('');
   };
+  function stampTransport(group:PackingBoxGroup,stage:PackingTransportStage|null){
+    const key=packingTransportKey(group);
+    if(stage==='afgeleverd'&&!transportEntries.some(row=>
+      row.room===group.room&&row.box===group.box&&row.stage==='geladen')){
+      setNotice('Markeer een doos eerst zelf als geladen voordat je aflevering noteert.');
+      return;
+    }
+    setTransport(old=>{
+      const updated={...old};
+      if(stage===null)delete updated[key];
+      else updated[key]={stage,fingerprint:packingTransportFingerprint(group)};
+      return updated;
+    });
+    resetPending();
+    setNotice(stage===null?'Eigen transportmarkering teruggezet.':
+      'Eigen doos gemarkeerd als '+stage+'. Dit is geen extern bewijs.');
+  }
+  function saveManifest(){
+    if(!boxGroups.length||pendingManifest!==manifestSignature){
+      setPendingManifest(null);
+      setNotice('Doosinhoud, status of privacykeuze is gewijzigd. Bekijk de transportlijst opnieuw.');
+      return;
+    }
+    downloadPrivateFile('woonpoints-prive-verhuistransport.txt',
+      manifest,'text/plain;charset=utf-8');
+    setPendingManifest(null);
+    setNotice('Privé-transportlijst lokaal aangeboden. Geen vervoerder of account benaderd.');
+  }
   function saveItem(){
     const label=cleanText(form.label),box=cleanText(form.box),quantity=Number(form.quantity);
     if(!label||label.length>60||CONTROL.test(label)||box.length>30||CONTROL.test(box)||
@@ -4162,6 +4200,7 @@ export function PrivateMovingPackingInventory(){
     const updated:PackingItem={id:previous?.id||'item-'+Date.now()+'-'+(++sequence.current),
       label,box,quantity,room:form.room,priority:form.priority,status:form.status};
     setItems(old=>editing?old.map(item=>item.id===editing?updated:item):[...old,updated]);
+    setTransport({}); // A changed inventory must never carry forward a stale load receipt.
     setEditing(null);setForm(blank());resetPending();
     setNotice(editing?'Pakregel bijgewerkt.':'Pakregel toegevoegd.');
   }
@@ -4172,6 +4211,7 @@ export function PrivateMovingPackingInventory(){
   }
   function changeStatus(id:string,status:PackingState){
     setItems(old=>old.map(item=>item.id===id?{...item,status}:item));
+    setTransport({}); // Packing/unpacking invalidates every previous manual transport stamp.
     resetPending();
   }
   function exportNow(kind:'json'|'txt'){
@@ -4180,7 +4220,8 @@ export function PrivateMovingPackingInventory(){
       return;
     }
     if(kind==='json'){
-      const archive:PackingArchive={format:'woonpoints-private-packing-list',version:1,items};
+      const archive:PackingArchive={format:'woonpoints-private-packing-list',
+        version:2,items,transport:transportEntries};
       downloadPrivateFile('woonpoints-prive-paklijst.json',
         JSON.stringify(archive,null,2)+'\n','application/json;charset=utf-8');
     }else downloadPrivateFile('woonpoints-prive-paklijst.txt',report,'text/plain;charset=utf-8');
@@ -4189,7 +4230,7 @@ export function PrivateMovingPackingInventory(){
   async function readArchive(file:File|undefined){
     setPendingRestore(null);setPendingExport(null);
     if(!file)return;
-    if(file.size<1||file.size>32768){setNotice('Back-up geweigerd: kies een JSON van maximaal 32 KiB.');return;}
+    if(file.size<1||file.size>65536){setNotice('Back-up geweigerd: kies een JSON van maximaal 64 KiB.');return;}
     try{
       const raw:unknown=JSON.parse(await file.text());
       if(!validArchive(raw))throw new Error('invalid archive');
@@ -4288,8 +4329,9 @@ export function PrivateMovingPackingInventory(){
         <p>Verwijder je eigen regel <strong>{item.label}</strong>?</p>
         <button type="button" onClick={()=>{
           setItems(old=>old.filter(x=>x.id!==item.id));
+          setTransport({});
           if(editing===item.id){setEditing(null);setForm(blank());}
-          resetPending();setNotice('Pakregel verwijderd.');
+          resetPending();setNotice('Pakregel verwijderd. Transportmarkeringen opnieuw beginnen.');
         }}>Ja, verwijder deze regel</button>
         <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
       </div>}
@@ -4352,12 +4394,13 @@ export function PrivateMovingPackingInventory(){
           Controleer de gegevens vóór bewaren of delen.</p>
         <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
           maxHeight:'25rem',overflowY:'auto'}}>{pendingExport.kind==='json'?
-          JSON.stringify({format:'woonpoints-private-packing-list',version:1,items},null,2):report}</pre>
+          JSON.stringify({format:'woonpoints-private-packing-list',
+            version:2,items,transport:transportEntries},null,2):report}</pre>
         <button type="button" onClick={()=>exportNow(pendingExport.kind)}>
           Bevestig privé-{pendingExport.kind==='json'?'JSON':'TXT'}-download</button>
         <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
       </div>}
-    <label htmlFor="pack-upload">Herstel eigen paklijst (JSON, maximaal 32 KiB)</label>
+    <label htmlFor="pack-upload">Herstel eigen paklijst v1 of v2 (JSON, maximaal 64 KiB)</label>
     <input id="pack-upload" type="file" accept=".json,application/json"
       onChange={event=>{
         const file=event.currentTarget.files?.[0];
@@ -4367,11 +4410,19 @@ export function PrivateMovingPackingInventory(){
       <p>Back-up bevat {pendingRestore.items.length} eigen regels in
         { ' '+new Set(pendingRestore.items.map(item=>item.room)).size} kamer(s).
         Bevestigen vervangt de huidige {items.length} regels, inclusief onbewaarde wijzigingen.
+        {pendingRestore.version===2?
+          ' Ook de eigen laad-/aflevermarkeringen uit deze back-up worden hersteld.':
+          ' Oudere v1 bevat geen laad-/aflevermarkeringen; deze worden leeggemaakt.'}
         Er wordt niets met WoningNet gecontroleerd.</p>
       <button type="button" onClick={()=>{
-        setItems(pendingRestore.items);setPendingRestore(null);setPendingExport(null);
+        setItems(pendingRestore.items);
+        setTransport(pendingRestore.version===2?
+          packingRestoreTransport(pendingRestore.items,pendingRestore.transport):{});
+        setPendingManifest(null);setPendingRestore(null);setPendingExport(null);
         setPendingDelete(null);setEditing(null);setForm(blank());
-        setNotice('Privé-paklijst hersteld. Geen externe gegevens gecontroleerd.');
+        setNotice(pendingRestore.version===2?
+          'Privé-paklijst en eigen transportstatus hersteld; geen externe controle.':
+          'Oudere privé-paklijst hersteld; transportstatus leeggemaakt.');
       }}>Ja, vervang volledige paklijst</button>
       <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
     </div>}
@@ -4379,7 +4430,8 @@ export function PrivateMovingPackingInventory(){
       Wis eigen paklijst…</button>:<div role="group" aria-label="Bevestig paklijst wissen">
       <p>Wis alle {items.length} eigen pakregels uit dit tabblad? Externe kopieën blijven bestaan.</p>
       <button type="button" onClick={()=>{
-        setItems([]);setEditing(null);setForm(blank());resetPending();setNotice('Paklijst gewist.');
+        setItems([]);setTransport({});setEditing(null);setForm(blank());
+        resetPending();setNotice('Paklijst en transportmarkeringen gewist.');
       }}>Ja, wis alle regels</button>
       <button type="button" onClick={()=>setConfirmClear(false)}>Annuleren</button>
     </div>}
