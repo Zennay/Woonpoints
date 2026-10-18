@@ -2985,6 +2985,8 @@ export function PrivateMovingCostSplit(){
         <input id={`split-person-name-${member.id}`} type="text" autoComplete="off"
           maxLength={30} value={member.alias} onChange={event=>{
             setMembers(old=>old.map(x=>x.id===member.id?{...x,alias:event.target.value}:x));invalidate();
+          }} onBlur={()=>{
+            setMembers(old=>old.map(x=>x.id===member.id?{...x,alias:x.alias.trim()||'Persoon '+x.id}:x));
           }} />
         <label htmlFor={`split-person-paid-${member.id}`}>Zelf ingevuld reeds betaald (€; leeg = onbekend)</label>
         <input id={`split-person-paid-${member.id}`} type="text" inputMode="decimal"
@@ -3012,7 +3014,8 @@ export function PrivateMovingCostSplit(){
       </div>}
       <button type="button" onClick={()=>{
         exportFile('woonpoints-prive-kostenverdeling.json',
-          JSON.stringify({format:'woonpoints-private-moving-split',version:1,members,total},null,2),
+          JSON.stringify({format:'woonpoints-private-moving-split',version:1,
+            members:members.map(x=>({...x,alias:x.alias.trim()||'Persoon '+x.id})),total},null,2),
           'application/json;charset=utf-8');
         setNotice('Eigen privé-JSON aangeboden; je opslaglocatie kan synchroniseren.');
       }}>Bewaar kostenverdeling als privé-JSON…</button>
