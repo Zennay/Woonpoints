@@ -204,6 +204,34 @@ export default function HomePage() {
         'bestaande onbekende voorkeuren zijn niet overschreven.');
     }
   }
+  function moveNavPin(id:string,offset:-1|1){
+    if(!pinnedNavIds.includes(id))return;
+    function reordered(ids:string[]){
+      const current=ids.indexOf(id);
+      const target=current+offset;
+      if(current<0||target<0||target>=ids.length)return ids;
+      const copy=[...ids];
+      [copy[current],copy[target]]=[copy[target],copy[current]];
+      return copy;
+    }
+    const fallback=reordered(pinnedNavIds);
+    try{
+      const stored=decodeNavPins(window.localStorage.getItem(NAV_PINS_STORAGE_KEY));
+      if(stored===null)throw Error('unknown saved pins');
+      const next=reordered(stored);
+      const raw=JSON.stringify(next);
+      window.localStorage.setItem(NAV_PINS_STORAGE_KEY,raw);
+      if(window.localStorage.getItem(NAV_PINS_STORAGE_KEY)!==raw)
+        throw Error('unverified preference write');
+      setPinnedNavIds(next);
+      setPinStorageState('persistent');
+      setPinMessage('Volgorde van je favorieten lokaal bijgewerkt.');
+    }catch{
+      setPinnedNavIds(fallback);
+      setPinStorageState('temporary');
+      setPinMessage('Nieuwe volgorde werkt alleen in dit tabblad; onbekende voorkeuren zijn niet overschreven.');
+    }
+  }
   function clearNavPins(){
     try{
       window.localStorage.removeItem(NAV_PINS_STORAGE_KEY);
@@ -303,6 +331,17 @@ export default function HomePage() {
                 color:'#355e42',cursor:'pointer'}}>
               {pinnedNavIds.includes(item.id)?'★ Vastgezet':'☆ Vastzetten'}
             </button>
+            {navigationCategory==='favorieten'&&!searchTerm&&pinnedNavIds.includes(item.id)&&
+              <span style={{display:'inline-flex',gap:4,marginLeft:6}}>
+                <button type="button" className="secondary"
+                  aria-label={'Zet '+item.title+' hoger in favorieten'}
+                  disabled={pinnedNavIds.indexOf(item.id)===0}
+                  onClick={()=>moveNavPin(item.id,-1)}>↑</button>
+                <button type="button" className="secondary"
+                  aria-label={'Zet '+item.title+' lager in favorieten'}
+                  disabled={pinnedNavIds.indexOf(item.id)===pinnedNavIds.length-1}
+                  onClick={()=>moveNavPin(item.id,1)}>↓</button>
+              </span>}
           </li>)}</ul>}
         {!searchTerm&&navigationCategory!=='alles'&&<button type="button"
           onClick={()=>setNavigationCategory('alles')}
@@ -311,7 +350,7 @@ export default function HomePage() {
           Toon alle {homepageDestinations.length} onderdelen
         </button>}
         <p><strong>{pinnedNavIds.length} van {MAX_NAV_PINS} favorieten</strong> ingesteld.
-          Vastgezette onderdelen staan bovenaan en verschijnen ook bij Snelstart.</p>
+          In ★ Vastgezet kun je de volgorde met ↑ en ↓ aanpassen; ze verschijnen ook bij Snelstart.</p>
         {pinnedNavIds.length>0&&<button type="button" className="secondary"
           onClick={clearNavPins}>Wis mijn vastgezette onderdelen</button>}
         {recentNavIds.length>0&&<p>{recentNavIds.length} laatst geopende onderdelen
