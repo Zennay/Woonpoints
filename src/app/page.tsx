@@ -4902,6 +4902,33 @@ function privateContactReport(entries: PrivateUtilityContact[], withNotes: boole
   return lines.join('\r\n') + '\r\n';
 }
 
+/** Calendar export carries only reviewed category labels and civil dates, never private notes. */
+function privateContactCalendar(entries: PrivateUtilityContact[], today: string): string {
+  const output = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//Woonpoints//Eigen Leverancierscontacten//NL',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'
+  ];
+  const stamp = new Date().toISOString().replaceAll('-', '').replaceAll(':', '')
+    .replace(/\.\d{3}Z$/, 'Z');
+  for (const item of [...entries].sort((a,b)=>a.followUp.localeCompare(b.followUp)||a.id-b.id)) {
+    if(!handoverValidDay(item.followUp)||item.followUp<today)continue;
+    const label=PRIVATE_UTILITIES.find(x=>x.id===item.utility)?.name;
+    if(!label)continue;
+    const start=item.followUp.replaceAll('-', '');
+    const end=privateUtilityTomorrow(item.followUp).replaceAll('-', '');
+    output.push('BEGIN:VEVENT',
+      'UID:woonpoints-contact-' + item.id + '-' + start + '@offline.local',
+      'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start,
+      'DTEND;VALUE=DATE:' + end,
+      'SUMMARY:Eigen opvolging - ' + label,
+      'DESCRIPTION:Persoonlijke herinnering. Geen bevestigde afspraak.',
+      'END:VEVENT');
+  }
+  output.push('END:VCALENDAR');
+  return output.join('\r\n') + '\r\n';
+}
+
 /** A separate private contact timeline: no account sync, supplier calls or persistent records. */
 function PrivateUtilityContactLog() {
   const [entries,setEntries] = useState<PrivateUtilityContact[]>([]);
@@ -4909,7 +4936,7 @@ function PrivateUtilityContactLog() {
   const [selected,setSelected] = useState<PrivateUtilityKey|'all'>('all');
   const [includeNotes,setIncludeNotes] = useState(false);
   const [preview,setPreview] = useState<{
-    source:string; text:string; mode:'txt'|'json'; notes:boolean
+    source:string; text:string; mode:'txt'|'json'|'ics'; notes:boolean
   }|null>(null);
   const [approved,setApproved]=useState(false);
   const [feedback,setFeedback]=useState('');
@@ -4970,20 +4997,24 @@ function PrivateUtilityContactLog() {
     setPreview(null);setApproved(false);
     setFeedback('Je eigen contactmoment is teruggezet.');
   }
-  function openPreview(mode:'txt'|'json'){
-    if(!entries.length)return;
+  function openPreview(mode:'txt'|'json'|'ics'){
+    if(!entries.length||(mode==='ics'&&!upcoming.length))return;
     setPreview({source,mode,notes:includeNotes,
-      text:mode==='json'?privateContactBackup(entries):privateContactReport(entries,includeNotes)});
+      text:mode==='json'?privateContactBackup(entries):
+        mode==='ics'?privateContactCalendar(entries,dayToday):
+          privateContactReport(entries,includeNotes)});
     setApproved(false);setFeedback('');
   }
   function download(){
     if(!previewCurrent||!approved||preview===null)return;
     const blob=new Blob([preview.text],{type:preview.mode==='json'
-      ?'application/json;charset=utf-8':'text/plain;charset=utf-8'});
+      ?'application/json;charset=utf-8':preview.mode==='ics'
+        ?'text/calendar;charset=utf-8':'text/plain;charset=utf-8'});
     const url=URL.createObjectURL(blob),link=document.createElement('a');
     link.href=url;
     link.download=preview.mode==='json'
-      ?'woonpoints-prive-contacten.json':'woonpoints-prive-contacten.txt';
+      ?'woonpoints-prive-contacten.json':preview.mode==='ics'
+        ?'woonpoints-eigen-contactopvolging.ics':'woonpoints-prive-contacten.txt';
     document.body.appendChild(link);link.click();link.remove();
     window.setTimeout(()=>URL.revokeObjectURL(url),1000);
     setApproved(false);setFeedback('Alleen het door jou gecontroleerde bestand is aangeboden.');
@@ -5058,6 +5089,15 @@ function PrivateUtilityContactLog() {
         {PRIVATE_UTILITIES.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}
       </select>
     </label>
+    {upcoming.length>0&&<details>
+      <summary>Mijn {upcoming.length} toekomstige zelf gekozen opvolgdatums</summary>
+      <ol>{upcoming.map(entry=><li key={entry.id}>
+        <strong>{entry.followUp}</strong> — {
+          PRIVATE_UTILITIES.find(item=>item.id===entry.utility)?.name}
+        {' '}({CONTACT_CHANNELS.find(channel=>channel.id===entry.channel)?.label})
+      </li>)}</ol>
+      <p>Alleen zelf ingevulde data; geen officiële of geboekte afspraken.</p>
+    </details>}
     {visible.length===0?<p>Geen contactmomenten voor deze selectie.</p>:
       <ol>{visible.map(entry=><li key={entry.id} style={{margin:'14px 0',padding:'12px 0',
         borderBottom:'1px solid #dce7e0'}}>
@@ -5080,11 +5120,14 @@ function PrivateUtilityContactLog() {
         Neem vrije privénotities bewust op in het leesbare TXT-overzicht.
       </label>
       <p>JSON-herstelback-up bevat altijd je volledige privénotities en vereist ook
-        afzonderlijke toestemming. Het leesbare TXT-overzicht laat ze standaard weg.</p>
+        afzonderlijke toestemming. TXT laat die standaard weg.
+        Een optionele ICS bevat uitsluitend datums en categorieën: geen privénotities.</p>
       <button type="button" disabled={!entries.length} onClick={()=>openPreview('txt')}>
         Bekijk exacte TXT-export</button>
       <button type="button" className="secondary" disabled={!entries.length}
         onClick={()=>openPreview('json')}>Bekijk volledige JSON-herstelback-up</button>
+      <button type="button" className="secondary" disabled={!upcoming.length}
+        onClick={()=>openPreview('ics')}>Bekijk mijn opvolgagenda (ICS)</button>
       {preview!==null&&<div style={{padding:12,marginTop:12,border:'1px solid #c4d6c9',
         borderRadius:10}}>
         {!previewCurrent?<p role="alert">Bron of privacykeuze gewijzigd. Controleer opnieuw.</p>:<>
@@ -5132,6 +5175,8 @@ function PrivateUtilityContactLog() {
     </fieldset>
     <p role="status" aria-live="polite">{feedback}</p>
     <p>Geen automatische verificatie, communicatie, lokale opslag of synchronisatie.
+      Een bewust gedownload agenda-item kan door je agenda-app worden gesynchroniseerd;
+      ook dan zijn deze datums nooit officiële afspraken.
       Bij sluiten of vernieuwen van het tabblad verdwijnt dit log; zelf gedownloade
       bestanden kunnen persoonlijke details bevatten en vallen onder jouw beheer.</p>
   </section>;
