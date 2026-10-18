@@ -1817,9 +1817,9 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer}: {
             begint bij 0% en kun je zelf aanpassen.</p>
           <button type="button" onClick={() => {
             const transfer = (source: CostResult): PrivateCostInputs => ({
-              rent: source.rent.toFixed(2),
-              extras: (source.service + source.energy + source.travel).toFixed(2),
-              moving: source.start.toFixed(2),
+              rent: (source.rent / 100).toFixed(2),
+              extras: ((source.service + source.energy + source.travel) / 100).toFixed(2),
+              moving: (source.start / 100).toFixed(2),
               growth: '0'
             });
             const first = transfer(left);
