@@ -549,6 +549,65 @@ function readCompleteHandover(source: string): CompleteHandover {
 
 
 /** Print the exact approved TXT snapshot instead of recomputing a potentially different report. */
+
+type PrivateImportDelta = { action: 'toegevoegd'|'verwijderd'|'gewijzigd'; label: string };
+type PrivateImportImpact = { added: number; removed: number; changed: number; details: PrivateImportDelta[] };
+type PrivateImportRows = { id: string; label: string; snapshot: string }[];
+function summarizePrivateImportChange(previous: PrivateImportRows, incoming: PrivateImportRows): PrivateImportImpact {
+  const left = new Map(previous.map(row => [row.id, row]));
+  const right = new Map(incoming.map(row => [row.id, row]));
+  const details: PrivateImportDelta[] = [];
+  for (const row of previous) {
+    const next = right.get(row.id);
+    if (!next) details.push({action:'verwijderd',label:row.label});
+    else if (row.snapshot !== next.snapshot) details.push({action:'gewijzigd',label:next.label});
+  }
+  for (const row of incoming) {
+    if (!left.has(row.id)) details.push({action:'toegevoegd',label:row.label});
+  }
+  return {
+    added:details.filter(row => row.action === 'toegevoegd').length,
+    removed:details.filter(row => row.action === 'verwijderd').length,
+    changed:details.filter(row => row.action === 'gewijzigd').length,
+    details
+  };
+}
+/** Compare strict validated import data to the latest in-tab data, without exposing free-text notes. */
+function compareCompleteHandover(current: CompleteHandover, incoming: CompleteHandover) {
+  const inspectionRows = (data: InspectionBackup): PrivateImportRows =>
+    [...INSPECTION_CHECKS, ...data.custom.map(c => ({...c, tip:''}))].map(check => {
+      const grade = data.grades[check.id];
+      return {
+        id:check.id,
+        label:check.room + ' — ' + check.title,
+        snapshot:JSON.stringify({
+          room:check.room, title:check.title, priority:check.priority, grade:grade || null,
+          note:grade === 'aandacht' ? (data.notes[check.id] || '').trim() : ''
+        })
+      };
+    });
+  const itemRows = (data: AftercareBackup): PrivateImportRows =>
+    data.items.map(item => ({
+      id:item.id, label:item.room + ' — ' + item.title,
+      // Compare semantic fields, never object-key serialization order.
+      snapshot:JSON.stringify([item.title, item.room, item.priority, item.status,
+        item.due, item.note, item.created])
+    }));
+  const contactRows = (data: AftercareBackup): PrivateImportRows => {
+    const names = new Map(data.items.map(item => [item.id, item.room + ' — ' + item.title]));
+    return data.history.map(item => ({
+      id:item.id,
+      label:item.day + ' · ' + (names.get(item.issueId) || 'Eigen nazorgpunt') + ' (' + item.kind + ')',
+      snapshot:JSON.stringify([item.issueId, item.kind, item.day, item.detail])
+    }));
+  };
+  return {
+    inspection:summarizePrivateImportChange(inspectionRows(current.inspection),inspectionRows(incoming.inspection)),
+    aftercare:summarizePrivateImportChange(itemRows(current.aftercare),itemRows(incoming.aftercare)),
+    contacts:summarizePrivateImportChange(contactRows(current.aftercare),contactRows(incoming.aftercare))
+  };
+}
+
 function completeHandoverPrintHtml(approvedText: string): string {
   const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char =>
     ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char] || char));
@@ -959,6 +1018,8 @@ function PrivateMoveAftercare() {
   const [inspectionCustomChecks, setInspectionCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
   const [inspectionVersion, setInspectionVersion] = useState(0);
   const [pendingCompleteImport, setPendingCompleteImport] = useState<CompleteHandover | null>(null);
+  const [pendingCompleteSource, setPendingCompleteSource] = useState('');
+  const [importRiskApproved, setImportRiskApproved] = useState(false);
   const [completeBackupPreview, setCompleteBackupPreview] = useState<string | null>(null);
   const [completeUndo, setCompleteUndo] = useState<{
     previous: CompleteHandover;
@@ -1025,6 +1086,16 @@ function PrivateMoveAftercare() {
   const completeDataSignature = JSON.stringify({
     inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history
   });
+  const completeImportCurrent = pendingCompleteImport !== null &&
+    pendingCompleteSource === completeDataSignature;
+  const completeImportImpact = pendingCompleteImport === null ? null :
+    compareCompleteHandover({
+      inspection: {
+        grades: inspectionGrades, notes: inspectionNotes, custom: inspectionCustomChecks,
+        count: Object.values(inspectionGrades).filter(value => value === 'goed' || value === 'aandacht').length
+      },
+      aftercare:{items,history}
+    }, pendingCompleteImport);
   const completeBackupCurrent = completeBackupPreview !== null &&
     completeBackupPreview === completeDataSignature;
   const canUndoComplete = completeUndo !== null &&
@@ -1297,6 +1368,8 @@ function PrivateMoveAftercare() {
     const file = event.target.files?.[0];
     event.target.value = '';
     setPendingCompleteImport(null);
+    setPendingCompleteSource('');
+    setImportRiskApproved(false);
     if (!file) return;
     if (file.size > COMPLETE_HANDOVER_MAX_BYTES) {
       setCompleteMessage('Import geweigerd: maximaal 40 KiB.'); return;
@@ -1309,7 +1382,9 @@ function PrivateMoveAftercare() {
         throw Error('Nazorg in deze complete import past niet in een nieuwe 16 KiB-back-up. Huidige gegevens behouden.');
       }
       setPendingCompleteImport(data);
-      setCompleteMessage('Volledige back-up ingelezen en gecontroleerd. Bevestig het vervangen van beide onderdelen.');
+      setPendingCompleteSource(completeDataSignature);
+      setImportRiskApproved(false);
+      setCompleteMessage('Geldige back-up ingelezen. Bekijk alle verschillen, daarna apart bevestigen.');
     } catch (error) {
       setCompleteMessage(error instanceof Error ? error.message : 'Volledig back-upbestand kon niet worden geopend.');
     }
@@ -1324,6 +1399,8 @@ function PrivateMoveAftercare() {
     setItems(aftercare.items);
     setHistory(aftercare.history);
     setPendingCompleteImport(null);
+    setPendingCompleteSource('');
+    setImportRiskApproved(false);
     setIncoming(null);
     setHistoryTarget(null);
     setHistoryDeletePending(null);
@@ -1340,7 +1417,10 @@ function PrivateMoveAftercare() {
     setCompleteSummarySource('');
   }
   function confirmCompleteImport() {
-    if (pendingCompleteImport === null) return;
+    if (pendingCompleteImport === null || !completeImportCurrent || !importRiskApproved) {
+      setCompleteMessage('Import niet uitgevoerd: vergelijk eerst de actuele verschillen en bevestig de vervanging.');
+      return;
+    }
     // Preserve one previous tab state in RAM only. It can be restored only
     // while the just-imported data is still byte-for-byte equivalent.
     const previous: CompleteHandover = {
@@ -1985,8 +2065,44 @@ function PrivateMoveAftercare() {
                 {' '}{items.length} nazorgpunten en {history.length} contactnotities.
                 Deze worden pas na bevestiging vervangen; download desgewenst eerst je huidige privébestand.
                 Reeds gedownloade bestanden en extern verzonden berichten blijven uiteraard onaangetast.</p>
+              {completeImportImpact && <div role="group" aria-label="Gevolgen complete herstelimport">
+                <h3>Wat verandert er precies?</h3>
+                <p>Een herstel vervangt beide modules als één geheel. De vergelijking toont eigen
+                  titels, statussen en datums, maar geen vrije privénotities of contactinhoud.</p>
+                {([
+                  {id:'inspection',title:'Inspectie en eigen controlepunten',value:completeImportImpact.inspection},
+                  {id:'aftercare',title:'Nazorgpunten',value:completeImportImpact.aftercare},
+                  {id:'contacts',title:'Zelf genoteerde contactmomenten',value:completeImportImpact.contacts}
+                ] as const).map(group => <details key={group.id} className="aftercare-history">
+                  <summary>{group.title}: {group.value.added} erbij · {group.value.removed} verdwijnen ·
+                    {' '}{group.value.changed} veranderen</summary>
+                  {group.value.details.length === 0 ? <p>Geen wijzigingen voor dit onderdeel.</p> :
+                    <ul>{group.value.details.map((entry,index) => <li key={group.id + '-' + index}>
+                      <strong>{entry.action}</strong> — {entry.label}
+                      {entry.action === 'gewijzigd' ? ' (status, eigenschappen of verborgen privé-inhoud)' : ''}
+                    </li>)}</ul>}
+                </details>)}
+              </div>}
+              {!completeImportCurrent && <div className="aftercare-warning" role="status">
+                <p>Je huidige gegevens zijn veranderd sinds het bestand werd ingelezen.
+                  De oude goedkeuring kan niet worden gebruikt.</p>
+                <button type="button" className="secondary" onClick={() => {
+                  setPendingCompleteSource(completeDataSignature);
+                  setImportRiskApproved(false);
+                  setCompleteMessage('De verschillen zijn bijgewerkt. Controleer alle gevolgen opnieuw.');
+                }}>Bekijk gewijzigde importgevolgen opnieuw</button>
+              </div>}
+              <label className="aftercare-check" htmlFor="complete-import-impact-confirm">
+                <input id="complete-import-impact-confirm" type="checkbox"
+                  checked={completeImportCurrent && importRiskApproved}
+                  disabled={!completeImportCurrent}
+                  onChange={event => setImportRiskApproved(event.target.checked)} />
+                Ik begrijp welke punten en contactmomenten worden vervangen, verwijderd of gewijzigd.
+                Ik heb mijn huidige back-up desgewenst zelf bewaard.
+              </label>
               <div className="aftercare-actions">
-                <button type="button" onClick={confirmCompleteImport}>Ja, herstel beide onderdelen</button>
+                <button type="button" disabled={!completeImportCurrent || !importRiskApproved}
+                  onClick={confirmCompleteImport}>Ja, herstel beide onderdelen</button>
                 <button type="button" className="secondary" onClick={() => {
                   setPendingCompleteImport(null);
                   setCompleteMessage('Complete import geannuleerd; inspectie en nazorg blijven onaangetast.');
