@@ -105,6 +105,15 @@ op. Kies eerst je maximale huur, minimumkamers en maximale reistijd.
   gerangschikt: maximaal 40 punten huurruimte, 35 reistijdruimte, 15 extra
   kamers en optioneel 10 balkonpunten. Dit is **geen woningkans,
   WoningNet-ranking, inkomenscheck of gegarandeerde toelating**.
+- Met **Selecteer voor vergelijking** kun je twee van de eigen woningen rechtstreeks
+  naast elkaar zetten. De schermvergelijking toont bij welke kandidaat
+  de genoteerde huur lager is, de reistijd korter en er meer kamers zijn.
+  Het rekenvoorbeeld **12 maal het huidige maandhuurverschil** rekent geen
+  verhuizing, servicekosten, energie, huurverhogingen of kans op
+  woningtoewijzing mee. **Bewaar beslisnotitie als TXT…** is een afzonderlijke,
+  bewuste bestandsdownload van alleen die twee geselecteerde kandidaten;
+  geen automatische opslag of verzending. Een verwijderde of vervangen
+  kandidaat wist zijn tijdelijke selectiemarkering.
 - Bewaar een vergelijking uitsluitend via **Bewaar JSON…** naar een zelfgekozen
   bestand. De bronversie, voorkeuren en maximaal twaalf kandidaten zitten in
   een begrensde JSON (maximaal 16 KiB). **Open eerder bewaarde privévergelijking**

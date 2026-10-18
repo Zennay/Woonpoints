@@ -221,3 +221,16 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .housing-item li { color: #536059; }
 .housing-item button { margin-top: 5px; }
 @media (max-width: 600px) { .housing-fields { grid-template-columns: 1fr; } }
+
+/* Explicit, side-by-side user choice. Numbers describe private manual input only. */
+.housing-side-by-side { margin: 18px 0; padding: 16px; border: 1px solid #d0e0d4; border-radius: 14px; background: #f5f7f5; }
+.housing-side-by-side h3 { margin: 4px 0 8px; font-size: 20px; }
+.housing-pair-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.housing-pair-grid article { padding: 12px; background: #fff; border: 1px solid #d0e0d4; border-radius: 10px; min-width: 0; }
+.housing-pair-grid h4 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.housing-pair-grid article p { margin-bottom: 0; }
+.housing-pair-facts { grid-column: 1 / -1; background: #e8f0e9; border-radius: 10px; padding: 12px; }
+.housing-pair-facts p { margin: 8px 0; overflow-wrap: anywhere; }
+.housing-choice-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.housing-item button + button { margin-left: 8px; }
+@media (max-width: 520px) { .housing-pair-grid { grid-template-columns: 1fr; } }

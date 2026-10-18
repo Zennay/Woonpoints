@@ -385,3 +385,61 @@ export function decodeHousingShortlist(input) {
   if (homes.some(x => !x)) return null;
   return {preferences, homes};
 }
+
+
+/**
+ * Two user-selected homes, never fetched from a property platform.
+ * Differences are descriptive arithmetic only and never predict allocation.
+ */
+export function compareTwoManualHomes(homes, preferences, selected) {
+  if (!Array.isArray(selected) || selected.length !== 2 ||
+      !selected.every(index => int(index, 0, MAX_MANUAL_HOMES - 1)) ||
+      selected[0] === selected[1]) return null;
+  const ranked = rankManualHomes(homes, preferences);
+  if (!ranked) return null;
+  const choices = selected.map(index => ranked.find(row => row.index === index));
+  if (choices.some(x => !x)) return null;
+  const [a, b] = choices;
+  const aHome = a.home, bHome = b.home;
+  const lowest = (key) => aHome[key] === bHome[key] ? null :
+    (aHome[key] < bHome[key] ? aHome.label : bHome.label);
+  const highest = (key) => aHome[key] === bHome[key] ? null :
+    (aHome[key] > bHome[key] ? aHome.label : bHome.label);
+  return {
+    choices, lowerRent: lowest('rent'), shorterTravel: lowest('travel'),
+    moreRooms: highest('rooms'),
+    monthlyRentGap: Math.abs(aHome.rent - bHome.rent),
+    twelveMonthRentGap: Math.abs(aHome.rent - bHome.rent) * 12,
+    minutesGap: Math.abs(aHome.travel - bHome.travel),
+    roomsGap: Math.abs(aHome.rooms - bHome.rooms)
+  };
+}
+
+/** Optional human-triggered plain-text note; never an official housing report. */
+export function exportManualHousingDecisionNote(homes, preferences, selected) {
+  const comparison = compareTwoManualHomes(homes, preferences, selected);
+  if (!comparison) return null;
+  const [a, b] = comparison.choices;
+  const lines = [
+    'Woonpoints — mijn eigen woningafweging (handmatige, ongeverifieerde notities)',
+    '',
+    'Geen accountgegevens, echte woningbeschikbaarheid, toewijzing of woningkans.',
+    ...[a, b].flatMap(row => [
+      '',
+      row.home.label,
+      `Eigen invoer: EUR ${row.home.rent}/maand, ${row.home.rooms} kamers, ${row.home.travel} minuten reistijd, ${row.home.balcony ? 'balkon' : 'geen balkon'}`,
+      row.suitable ? `Past bij eigen grenzen: ja, eigen score ${row.score}` : 'Past bij eigen grenzen: nee',
+      ...row.reasons
+    ]),
+    '',
+    `Verschil maandhuur: EUR ${comparison.monthlyRentGap}`,
+    `Verschil in 12 maal dezelfde maandhuur: EUR ${comparison.twelveMonthRentGap}`,
+    `Verschil reistijd per enkele reis: ${comparison.minutesGap} minuten`,
+    `Verschil kamers: ${comparison.roomsGap}`,
+    '',
+    'Huurschommelingen, energie, servicekosten, reistijdvariatie en toewijzingsregels zijn niet meegenomen.',
+    'Deze tekst is uitsluitend op mijn verzoek vanuit dit browsertabblad geëxporteerd.'
+  ];
+  const payload = lines.join('\n') + '\n';
+  return new TextEncoder().encode(payload).length <= 4096 ? payload : null;
+}
