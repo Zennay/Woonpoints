@@ -1372,3 +1372,48 @@ Dit zijn uitsluitend zichtfilters: ze veranderen nooit een beoordeling,
 wissen geen toelichting en beperken ook niet de afzonderlijke volledige
 JSON-, TXT- of HTML-export. Een leeg aandachtspuntenfilter is **geen**
 officiële bevestiging dat de woning goedgekeurd is.
+
+
+## Complete privé-overdracht: print, gerichte privacy en bewuste back-up
+
+De reeds bestaande **Complete privé-overdrachtsback-up** heeft drie
+geïntegreerde verbeteringen. Het dashboard bewaart niets automatisch
+en neemt geen contact op met WoningNet of verhuurders.
+
+**Leesbaar, afdrukbaar dossier.** In **Eigen leesbare samenvatting** kies
+je afzonderlijk of het afdrukbestand eigen inspectie-toelichtingen,
+nazorgtoelichtingen en/of de inhoud plus datums van zelf genoteerde
+contactmomenten mag bevatten. Alle drie keuzes staan standaard **uit**.
+Vervolgens maak je een actuele voorvertoning en bevestig je na het lezen
+expliciet de huidige inhoud. De knoppen bieden daarna twee uitvoerformaten:
+
+- **TXT:** de exact goedgekeurde leesbare samenvatting.
+- **Afdrukbaar HTML:** dezelfde goedgekeurde tekst met A4-vriendelijke
+  koppen, ruimten en pagina-indeling. Open het HTML-bestand zelf lokaal
+  in een browser en kies Afdrukken of Bewaar als PDF.
+
+De HTML-export is een inert bestand met ontsmette tekst, een beperkende
+Content Security Policy, zonder scripts of extern ingeladen assets.
+Er is geen extra dataopvraag, autosave, serverupload of berichtactie.
+Elke gewijzigde inspectiebeoordeling, nazorgstatus, toelichting,
+contactnotitie of privacykeuze maakt de voorgaande goedkeuring ongeldig
+tot de actuele tekst opnieuw bekeken en bevestigd is.
+
+**Volledige herstel-JSON:** klik eerst op **Bekijk complete
+privé-JSON-overdracht…**. Je ziet de huidige tellingen van beide modules
+en krijgt de waarschuwing dat een herstelback-up *altijd* alle
+persoonlijke toelichtingen, datums en contactdetails kan bevatten,
+anders dan de gefilterde leesbare samenvatting. Pas de afzonderlijke
+knop **Ja, download alle privégegevens als herstel-JSON** downloadt
+het bestand. Veranderen brongegevens voor het akkoord, dan vervalt
+de eerdere goedkeuring. Een herstel-JSON is bedoeld om later je
+volledige tabbladstatus zelf te herstellen en ondersteunt bewust
+geen selectieve informatieverwijdering.
+
+De onafhankelijke inspectie-/nazorgback-ups en bevestigde import,
+undo en bestaande maximale bestandsgroottes blijven ongewijzigd.
+Deze bestanden zijn **geen officiële keurings- of verzendbewijzen**.
+Een eigen bestandsmap, browserprint, PDF-printer of cloudmap kan
+informatie buiten het browsertabblad bewaren. Deel alleen na
+eigen controle met een bevoegde ontvanger. `BOT_DRY_RUN=true`
+en de WoningNet-toestemmingsgrens blijven ongewijzigd.
