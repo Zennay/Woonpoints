@@ -2186,6 +2186,8 @@ function PrivateMoveAftercare() {
         }}
         onDownload={text => download('woonpoints-prive-nazorgplan.txt',
           text, 'text/plain;charset=utf-8')}
+        onDownloadCalendar={text => download('woonpoints-geselecteerde-eigen-nazorg.ics',
+          text, 'text/calendar;charset=utf-8')}
       />
       <section className="panel" aria-labelledby="nazorg-contactlijn">
         <div>
@@ -3036,6 +3038,7 @@ type Props = {
   onOpen: (id: string) => void;
   onPrepareNotice: (ids: string[], mode: 'eerste-melding' | 'opvolging') => void;
   onDownload: (content: string) => void;
+  onDownloadCalendar: (content: string) => void;
 };
 
 // All displayed facts are the user's own observations, never a landlord
@@ -3055,12 +3058,38 @@ function reportLine(value: string): string {
     .trim();
 }
 
+// Escape displayed user labels for RFC 5545 TEXT; never use raw lines,
+ // control characters or free private contact notes inside calendar data.
+function icsCalendarText(value: string): string {
+  return reportLine(value).replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;').replace(/,/g, '\\,');
+}
+
+// RFC 5545 requires CRLF and 75-octet folded content lines, counting the
+// leading continuation whitespace. Count UTF-8 code points, not JS units.
+function foldCalendarLine(value: string): string {
+  const encoder = new TextEncoder();
+  let result = '';
+  let octets = 0;
+  for (const character of value) {
+    const width = encoder.encode(character).length;
+    if (octets + width > 75) { result += '\r\n '; octets = 1; }
+    result += character;
+    octets += width;
+  }
+  return result;
+}
+
 function PrivateAftercareWeekPlan({
-  day, sourceFingerprint, actions, appointments, onOpen, onPrepareNotice, onDownload
+  day, sourceFingerprint, actions, appointments, onOpen, onPrepareNotice, onDownload,
+  onDownloadCalendar
 }: Props) {
   const [horizonDays, setHorizonDays] = useState<7 | 30>(7);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ fingerprint: string; text: string; count: number } | null>(null);
+  const [includeAppointmentsInCalendar, setIncludeAppointmentsInCalendar] = useState(false);
+  const [preview, setPreview] = useState<{
+    fingerprint: string; text: string; count: number; format: 'text' | 'calendar'
+  } | null>(null);
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
 
@@ -3080,11 +3109,16 @@ function PrivateAftercareWeekPlan({
   const visibleSet = new Set(plan.map(action => action.id));
   const currentSelection = plan.filter(action => selectedIds.includes(action.id));
   const fingerprint = JSON.stringify({
-    sourceFingerprint, day, endDay, selected: currentSelection, appointments: upcomingAppointments
+    sourceFingerprint, day, endDay, selected: currentSelection,
+    appointments: upcomingAppointments, includeAppointmentsInCalendar
   });
   const previewCurrent = preview !== null && preview.fingerprint === fingerprint;
   const urgentCount = plan.filter(action => action.urgency <= 3).length;
   const datedCount = plan.filter(action => action.due && action.due >= day && action.due <= endDay).length;
+  const datedSelection = currentSelection.filter(action =>
+    action.due !== '' && action.due >= day && action.due <= endDay);
+  const calendarCount = datedSelection.length +
+    (includeAppointmentsInCalendar ? upcomingAppointments.length : 0);
 
   function toggle(id: string) {
     if (!visibleSet.has(id)) return;
@@ -3128,9 +3162,62 @@ function PrivateAftercareWeekPlan({
       setFeedback('Het plan is te groot. Kies minder acties of verkort eigen titels.');
       return;
     }
-    setPreview({ fingerprint, text, count: currentSelection.length });
+    setPreview({ fingerprint, text, count: currentSelection.length, format: 'text' });
     setApproved(false);
     setFeedback('Eigen plan klaargezet ter controle. Er is nog geen bestand opgeslagen.');
+  }
+
+  function buildCalendarPreview() {
+    const appointmentsForExport = includeAppointmentsInCalendar ? upcomingAppointments : [];
+    if (!datedSelection.length && !appointmentsForExport.length) {
+      setFeedback('Selecteer eerst een toekomstige eigen streefdatum of kies bewust eigen afspraaknotities.');
+      setPreview(null); setApproved(false);
+      return;
+    }
+    // No login, third-party access, location, alarms or free-text notes. The
+    // original exact selected source and calendar inclusion opt-in are pinned.
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const records = [
+      ...datedSelection.map(action => ({
+        uid: 'woonpoints-own-due-' + action.id + '@local.invalid',
+        day: action.due,
+        title: 'Eigen nazorgstreefdatum: ' + action.room + ' — ' + action.title,
+        note: 'Eigen zelfgekozen datum; geen juridisch of officieel afgesproken termijn.'
+      })),
+      ...appointmentsForExport.map(appointment => ({
+        uid: 'woonpoints-own-appointment-' + appointment.id + '@local.invalid',
+        day: appointment.day,
+        title: 'Eigen afspraaknotitie: ' + appointment.room + ' — ' + appointment.title,
+        note: 'Zelf genoteerde afspraak; niet geverifieerd of bevestigd bij een derde.'
+      }))
+    ];
+    const lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0',
+      'PRODID:-//Woonpoints//Private Selected Aftercare Calendar//NL',
+      'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'X-WR-CALNAME:Mijn eigen nazorgplanning',
+      ...records.flatMap(record => [
+        'BEGIN:VEVENT',
+        'UID:' + record.uid,
+        'DTSTAMP:' + stamp,
+        'DTSTART;VALUE=DATE:' + record.day.replace(/-/g, ''),
+        'DTEND;VALUE=DATE:' + addCalendarDays(record.day, 1).replace(/-/g, ''),
+        'SUMMARY:' + icsCalendarText(record.title),
+        'DESCRIPTION:' + icsCalendarText(record.note),
+        'TRANSP:TRANSPARENT',
+        'END:VEVENT'
+      ]),
+      'END:VCALENDAR'
+    ];
+    const content = lines.map(foldCalendarLine).join('\r\n') + '\r\n';
+    if (new TextEncoder().encode(content).length > 70000) {
+      setPreview(null); setApproved(false);
+      setFeedback('Je geselecteerde agenda is te groot. Kies minder eigen streefdatums.');
+      return;
+    }
+    setPreview({ fingerprint, text: content, count: records.length, format: 'calendar' });
+    setApproved(false);
+    setFeedback('Eigen agenda-export ter controle klaar. Er is nog niets toegevoegd aan je agenda.');
   }
 
   function confirmDownload() {
@@ -3141,10 +3228,16 @@ function PrivateAftercareWeekPlan({
       setFeedback('De selectie of het dossier is gewijzigd. Controleer eerst een nieuw plan.');
       return;
     }
-    onDownload(preview.text);
+    if (preview.format === 'calendar') {
+      onDownloadCalendar(preview.text);
+    } else {
+      onDownload(preview.text);
+    }
     setApproved(false);
     setPreview(null);
-    setFeedback('Het door jou gecontroleerde privéplan is als tekstbestand gedownload.');
+    setFeedback(preview.format === 'calendar'
+      ? 'Je gecontroleerde ICS-bestand is gedownload; agenda-import is jouw keuze.'
+      : 'Het door jou gecontroleerde privéplan is als tekstbestand gedownload.');
   }
 
   return <section className="panel" aria-labelledby="nazorg-weekplan-title">
@@ -3231,9 +3324,24 @@ function PrivateAftercareWeekPlan({
       </details>}
       <button type="button" disabled={!currentSelection.length && !upcomingAppointments.length}
         onClick={buildPreview}>Bekijk mijn exacte plan vóór downloaden</button>
+      <label className="aftercare-check">
+        <input type="checkbox" checked={includeAppointmentsInCalendar}
+          onChange={event => {
+            setIncludeAppointmentsInCalendar(event.target.checked);
+            setPreview(null); setApproved(false);
+          }} />
+        Neem mijn toekomstige zelf genoteerde afspraaknotities bewust op in de agenda-export.
+      </label>
+      <p>De agenda bevat uitsluitend de <strong>{datedSelection.length}</strong> geselecteerde
+        streefdatums binnen de gekozen periode en, na je opt-in,
+        <strong> {includeAppointmentsInCalendar ? upcomingAppointments.length : 0}</strong> eigen
+        afspraaknotities. Verlopen en ongedateerde acties worden niet als toekomstige afspraken voorgesteld.</p>
+      <button type="button" className="secondary" disabled={calendarCount === 0}
+        onClick={buildCalendarPreview}>Bekijk mijn geselecteerde agenda-export (.ics) vóór downloaden</button>
       {preview && <div className="aftercare-confirm" role="group" aria-label="Eigen nazorgplan controleren">
-        <p><strong>{preview.count} geselecteerde acties</strong>; toekomstafspraken zijn eigen notities,
-          geen verifieerbare boekingen.</p>
+        <p><strong>{preview.count} {preview.format === 'calendar'
+          ? 'eigen agenda-evenementen' : 'geselecteerde acties'}</strong>;
+          toekomstafspraken zijn eigen notities, geen verifieerbare boekingen.</p>
         {!previewCurrent && <p className="aftercare-warning" role="status">
           Je dossier, periode of selectie is veranderd. Maak eerst een nieuw plan.
         </p>}
@@ -3249,14 +3357,18 @@ function PrivateAftercareWeekPlan({
           Ik heb de huidige volledige inhoud bekeken en kies zelf waar ik dit bestand bewaar of deel.
         </label>
         <button type="button" disabled={!previewCurrent || !approved} onClick={confirmDownload}>
-          Download precies dit gecontroleerde plan (.txt)
+          {preview.format === 'calendar'
+            ? 'Download precies deze gecontroleerde agenda (.ics)'
+            : 'Download precies dit gecontroleerde plan (.txt)'}
         </button>
         <button type="button" className="secondary"
           onClick={() => { setPreview(null); setApproved(false); }}>Annuleer mijn voorvertoning</button>
       </div>}
       <p role="status" aria-live="polite">{feedback}</p>
-      <p>Alleen eigen tabbladgegevens. De optionele TXT bevat titels/ruimtes en datums, maar geen
-        vrije contact- of gebreksnotities. Een eigen datum is geen wettelijke of met een derde afgesproken termijn.</p>
+      <p>Alleen eigen tabbladgegevens. TXT en zelfgekozen ICS bevatten titels/ruimtes en
+        datums, maar geen vrije contact- of gebreksnotities. Een eigen datum is geen wettelijke
+        of met een derde afgesproken termijn. Agenda-apps kunnen een bewust opgeslagen
+        ICS-bestand buiten deze app synchroniseren; er zijn geen automatische agenda-acties.</p>
     </div>
   </section>;
 }
