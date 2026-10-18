@@ -625,12 +625,13 @@ function usePrivateTabRecovery<T>(
     try{
       const raw=encode(value);
       if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      if(decode(raw)===null)throw Error('schema');
       window.sessionStorage.setItem(storageKey,raw);
       window.sessionStorage.setItem(flagKey,'yes');
     }catch{
       setEnabled(false);
       try{clear();}catch{/* Fail closed; no claim of successful removal. */}
-      setStorageMessage('Automatisch tabbladherstel gestopt: opslag geweigerd. Download zelf een JSON-back-up.');
+      setStorageMessage('Automatisch tabbladherstel gestopt: invoer niet herstelbaar of opslag geweigerd. Download zelf een geldige JSON-back-up.');
     }
   },[value,hydrated,enabled,storageKey,flagKey,encode,maxBytes]);
   function enable(){
@@ -638,6 +639,7 @@ function usePrivateTabRecovery<T>(
     try{
       const raw=encode(value);
       if(new TextEncoder().encode(raw).length>maxBytes)throw Error('size');
+      if(decode(raw)===null)throw Error('schema');
       window.sessionStorage.setItem(storageKey,raw);
       window.sessionStorage.setItem(flagKey,'yes');
       setEnabled(true);
@@ -645,7 +647,7 @@ function usePrivateTabRecovery<T>(
     }catch{
       setEnabled(false);
       try{clear();}catch{/* May be inaccessible. */}
-      setStorageMessage('Opslaan geweigerd: sessie-opslag ontbreekt of is vol. Gebruik de JSON-download.');
+      setStorageMessage('Opslaan geweigerd: invoer niet herstelbaar of sessie-opslag ontbreekt. Gebruik de JSON-download.');
     }
   }
   function disable(){
