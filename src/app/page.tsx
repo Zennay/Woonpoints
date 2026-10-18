@@ -639,7 +639,7 @@ function PrivateMovingFallbackPlan(){
   const futureReminders=entries.filter(row=>row.day&&!row.done);
   // Intentionally export only known generic labels: never leak user-entered action/contact text.
   const calendar=(()=>{
-    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}Z$/,'Z');
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
     const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Woonpoints//Private Plan B//NL',
       'CALSCALE:GREGORIAN','METHOD:PUBLISH'];
     for(const row of futureReminders){
@@ -654,7 +654,7 @@ function PrivateMovingFallbackPlan(){
         'DESCRIPTION:Persoonlijke Woonpoints-controledatum. Open het eigen plan B. Geen externe bevestiging.',
         'END:VEVENT');
     }
-    return [...lines,'END:VCALENDAR',''].join('\\r\\n');
+    return [...lines,'END:VCALENDAR',''].join('\r\n');
   })();
   const backup=JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries},null,2)+'\n';
   const printable=[
