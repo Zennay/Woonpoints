@@ -1184,6 +1184,8 @@ export function PrivateMovingVolume() {
   ];
   const [items,setItems]=useState<Item[]>(initial);
   const nextId=useRef(4);
+  // Per-line counts live only in this tab; the existing v1 inventory file stays compatible.
+  const [packedCounts,setPackedCounts]=useState<Record<number,string>>({});
   const [margin,setMargin]=useState('15');
   const [capacity,setCapacity]=useState('10');
   const budgetDefaults={plannedTrips:'2',euroPerTrip:'90',laborHours:'8',
@@ -1218,6 +1220,66 @@ export function PrivateMovingVolume() {
   const safeTotal=valid&&loadEstimate<=200;
   const currentSignature=JSON.stringify({rows:items.map(({id,...rest})=>rest),margin,capacity});
   const trips=safeTotal&&loadEstimate>0?Math.ceil(loadEstimate/vanCapacity!):0;
+
+  const packRows=measured.map(({item,volume})=>{
+    const quantity=parse(item.quantity,0,100,true);
+    const packed=parse(packedCounts[item.id]??'0',0,quantity??0,true);
+    return {item,volume,quantity,packed};
+  });
+  const packingValid=safeTotal&&packRows.every(row=>row.packed!==null&&row.quantity!==null);
+  const packedPieces=packRows.reduce((sum,row)=>sum+(row.packed??0),0);
+  const piecesTotal=packRows.reduce((sum,row)=>sum+(row.quantity??0),0);
+  const packedVolume=packingValid?packRows.reduce((sum,row)=>{
+    if(!row.quantity||row.volume===null)return sum;
+    return sum+row.volume*row.packed!/row.quantity;
+  },0):0;
+  const remainingVolume=packingValid?Math.max(0,rawTotal-packedVolume):0;
+  const percentage=packingValid&&piecesTotal>0?100*packedPieces/piecesTotal:0;
+  const packSignature=JSON.stringify({
+    inventory:items.map(({id,...row})=>row),
+    packed:items.map(row=>packedCounts[row.id]??'0')
+  });
+  const [packPreview,setPackPreview]=useState<{text:string,signature:string}|null>(null);
+  function preparePackList(){
+    if(!packingValid){setMessage('Controleer eerst de inventaris en het ingepakte aantal per item.');return;}
+    const lines=[
+      'WOONPOINTS · EIGEN INPAKLIJST',
+      'Handmatige momentopname, geen automatische opslag of externe controle.',
+      'Een itemregel telt pas als ingepakt voor precies het ingevoerde aantal stuks.',
+      '',
+      ...packRows.map(row=>{
+        const left=row.quantity!-row.packed!;
+        return row.item.name.trim()+' | totaal '+row.quantity+' | ingepakt '+
+          row.packed+' | nog '+left+' | omhullend nog '+fmt(
+            row.quantity ? row.volume!*left/row.quantity : 0
+          )+' m3';
+      }),
+      '',
+      'Eigen stuks totaal: '+piecesTotal,
+      'Eigen stuks ingepakt: '+packedPieces,
+      'Eigen stuks nog in te pakken: '+(piecesTotal-packedPieces),
+      'Rechthoekig volume ingepakt: '+fmt(packedVolume)+' m3',
+      'Rechthoekig volume nog niet ingepakt: '+fmt(remainingVolume)+' m3',
+      'Niet gecontroleerd: gewicht, stapelbaarheid, voertuigcapaciteit of feitelijke verhuisstatus.'
+    ];
+    setPackPreview({text:lines.join('\n')+'\n',signature:packSignature});
+    setMessage('Controleer alle eigen itemnamen en aantallen voordat je deze momentopname bewaart.');
+  }
+  function savePackList(){
+    if(!packPreview||packPreview.signature!==packSignature||!packingValid){
+      setPackPreview(null);
+      setMessage('De inventaris is gewijzigd. Maak eerst opnieuw een inpakoverzicht.');
+      return;
+    }
+    const url=URL.createObjectURL(new Blob([packPreview.text],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-eigen-inpakstatus.txt';
+    link.rel='noopener';document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setPackPreview(null);
+    setMessage('Eigen TXT-inpakoverzicht aangeboden; de opslaglocatie kan synchroniseren.');
+  }
+
   const costValues={
     plannedTrips:parse(budget.plannedTrips,0,300,true),
     euroPerTrip:parse(budget.euroPerTrip,0,2000),
@@ -1241,7 +1303,8 @@ export function PrivateMovingVolume() {
   const fmt=(n:number)=>new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(n);
   const change=(id:number,key:keyof Omit<Item,'id'>,value:string)=>{
     setItems(previous=>previous.map(row=>row.id===id?{...row,[key]:value}:row));
-    setPreview(null);setMessage('');
+    if(key==='quantity')setPackedCounts(current=>({...current,[id]:'0'}));
+    setPackPreview(null);setPreview(null);setMessage('');
   };
   const add=(name:string,width:string,depth:string,height:string)=>{
     if(items.length>=25){setMessage('Maximaal 25 eigen itemregels.');return;}
@@ -1315,6 +1378,7 @@ export function PrivateMovingVolume() {
     }
     setItems(pendingArchive.rows.map(row=>({...row,id:nextId.current++})));
     setMargin(pendingArchive.margin);setCapacity(pendingArchive.capacity);
+    setPackedCounts({});setPackPreview(null);
     setPreview(null);setPendingArchive(null);setBudgetReport(null);
     setMessage('Eigen inventaris bewust in dit tabblad hersteld. Niets is extern verstuurd.');
   }
@@ -1431,7 +1495,10 @@ export function PrivateMovingVolume() {
         }</p>
         <button type="button" className="secondary" onClick={()=>{
           setItems(previous=>previous.filter(row=>row.id!==item.id));
-          setPreview(null);setMessage('Eigen item verwijderd.');
+          setPackedCounts(current=>{
+            const next={...current};delete next[item.id];return next;
+          });
+          setPackPreview(null);setPreview(null);setMessage('Eigen item verwijderd.');
         }}>Verwijder item {index+1}</button>
       </fieldset>)}
       <button type="button" disabled={items.length>=25}
@@ -1517,6 +1584,62 @@ export function PrivateMovingVolume() {
           in de afzonderlijke JSON-inventaris. Bewaar desgewenst een
           eigen TXT-samenvatting om dit bedrag later terug te vinden.</p>
       </div>
+      <div className="month-csv-confirm" aria-labelledby="mv-pack-progress-heading">
+        <h3 id="mv-pack-progress-heading">Hoeveel heb je echt al ingepakt?</h3>
+        <p>Vul per eigen meubel-/doosregel het aantal stuks in dat jij
+          **zelf als ingepakt markeert**. De teller is onafhankelijk van
+          het berekende minimumaantal ritten; markeren zegt niets over veilig
+          vervoer, daadwerkelijke laadruimte of officiële verhuisstatus.</p>
+        {items.map((item,index)=>{
+          const measuredRow=packRows[index];
+          return <div key={item.id}>
+            <label htmlFor={'mv-packed-'+item.id}>
+              {item.name.trim()||'Item '+(index+1)} · ingepakt van {item.quantity}
+            </label>
+            <input id={'mv-packed-'+item.id} type="number" min="0"
+              max={measuredRow.quantity??0} step="1" inputMode="numeric"
+              value={packedCounts[item.id]??'0'}
+              onChange={e=>{
+                setPackedCounts(current=>({...current,[item.id]:e.target.value}));
+                setPackPreview(null);setMessage('');
+              }}/>
+            <button type="button" className="secondary" disabled={measuredRow.quantity===null}
+              onClick={()=>{
+                setPackedCounts(current=>({...current,[item.id]:item.quantity}));
+                setPackPreview(null);
+              }}>Alle stuks van deze regel ingepakt</button>
+          </div>;
+        })}
+        {packingValid?<div aria-live="polite">
+          <p><strong>{packedPieces} / {piecesTotal}</strong> stuks zelf
+            als ingepakt genoteerd ({fmt(percentage)}%). Nog
+            <strong> {piecesTotal-packedPieces}</strong> stuks open.</p>
+          <p>Bij benadering <strong>{fmt(packedVolume)} m³</strong> ingepakt en
+            <strong> {fmt(remainingVolume)} m³</strong> niet ingepakt.
+            Dit rekent slechts op rechthoekige afmetingen, niet op
+            stapelbaarheid of laadgewicht.</p>
+        </div>:<p role="alert">Corrigeer eerst aantallen: ingepakt mag
+          niet negatief, groter dan totaal of een deel van een stuk zijn.
+          Ongeldige inventarismaten blokkeren de volumesamenvatting.</p>}
+        <button type="button" disabled={!packingValid} onClick={preparePackList}>
+          Toon eigen inpakmomentopname als TXT…
+        </button>
+        {packPreview!==null&&<div role="group"
+          aria-label="Bevestig eigen inpakoverzicht bewaren">
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{packPreview.text}</pre>
+          <button type="button" disabled={packPreview.signature!==packSignature}
+            onClick={savePackList}>Ja, bewaar alleen deze inpakstatus als TXT…</button>
+          <button type="button" className="secondary" onClick={()=>{
+            setPackPreview(null);setMessage('Geen inpakbestand gemaakt.');
+          }}>Nee, laat het alleen op het scherm</button>
+        </div>}
+        <button type="button" className="secondary" onClick={()=>{
+          setPackedCounts({});setPackPreview(null);setMessage('Inpakstatus gewist; inventaris behouden.');
+        }}>Wis uitsluitend mijn ingepakte aantallen</button>
+        <p>De bestaande versie-1 JSON-inventaris bevat bewust alleen maten
+          en aantallen, niet deze voortgang. Een apart inpak-TXT wordt
+          uitsluitend na jouw eigen bevestiging aangeboden.</p>
+      </div>
       <div className="month-csv-confirm">
         <h3>Eigen inventaris bewust bewaren of herstellen</h3>
         <p>Bewaar een volledige privé-JSON om je maten en aantallen later
@@ -1562,6 +1685,7 @@ export function PrivateMovingVolume() {
       <button type="button" className="secondary" onClick={()=>{
         setItems(initial.map(row=>({...row})));setMargin('15');setCapacity('10');
         setBudget(budgetDefaults);setBudgetReport(null);
+        setPackedCounts({});setPackPreview(null);
         setPreview(null);setMessage('Eigen invoer gewist; fictieve voorbeelden hersteld.');
       }}>Wis mijn invoer en herstel voorbeelden</button>
       <p role="status">{message}</p>
