@@ -1097,7 +1097,7 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
               </tr></thead>
               <tbody>{comparableRows.map(row=><tr key={row.index}>
                 <th scope="row">{new Intl.DateTimeFormat('nl-NL',{month:'short'})
-                  .format(new Date(2026,row.index-1,1))}</th>
+                  .format(new Date(year,row.index-1,1))}</th>
                 <td>{row.first===null?'Onbekend':row.first+'/4'}</td>
                 <td>{row.other===null?'Onbekend':row.other+'/4'}</td>
                 <td>{row.difference===null?'—':formattedDifference(row.difference)}</td>
@@ -1105,7 +1105,7 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
             </table>
             <button type="button" onClick={savePersonalYearComparison}
               disabled={matchedMonths.length===0}>
-              Bewaar alleen vergelijkbare maanden als privé-TXT…
+              Bewaar eigen jaarvergelijking als privé-TXT…
             </button>
             <p>Een export is altijd een aparte keuze en verandert nooit
               je actuele maandteller of historische invoer.</p>
