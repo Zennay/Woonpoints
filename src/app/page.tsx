@@ -792,6 +792,40 @@ function PrivateMoveAftercare() {
   const horizon = new Date(Date.UTC(year, month - 1, day + 30)).toISOString().slice(0, 10);
   const upcoming = dueActive.filter(item => item.due >= currentDay && item.due <= horizon);
 
+  // Priority is based only on the user's local entries; never infer a real landlord notification.
+  const nextSevenDays = new Date(Date.UTC(year, month - 1, day + 7)).toISOString().slice(0, 10);
+  const followUpInbox = active.map(item => {
+    const ownContact = history.filter(log => log.issueId === item.id && log.kind === 'zelf-verstuurd' && log.day <= currentDay)
+      .sort((a, b) => b.day.localeCompare(a.day))[0];
+    const ownFutureAppointment = history.some(log => log.issueId === item.id &&
+      log.kind === 'afspraak' && log.day >= currentDay);
+    const contactAge = ownContact
+      ? Math.floor((Date.parse(currentDay + 'T00:00:00Z') - Date.parse(ownContact.day + 'T00:00:00Z')) / 86400000)
+      : null;
+    let urgency = 5;
+    let reason = 'Bewaar dit punt in je eigen overzicht.';
+    if (item.due && item.due < currentDay) {
+      urgency = 0;
+      reason = 'Je eigen streefdatum is verstreken; controleer zelf wat is afgesproken.';
+    } else if (item.status === 'gemeld' && !ownContact) {
+      urgency = 1;
+      reason = 'Door jou als gemeld gemarkeerd, zonder vastgelegd eigen verzendmoment. Controleer de echte correspondentie.';
+    } else if (item.status === 'gemeld' && contactAge !== null && contactAge >= 14 && !ownFutureAppointment) {
+      urgency = 2;
+      reason = 'Je laatste zelf genoteerde bericht is minstens 14 dagen oud. Kijk zelf of opvolging passend is.';
+    } else if (item.priority === 'dringend' && item.status === 'open') {
+      urgency = 3;
+      reason = 'Door jou als dringend aangemerkt; beoordeel een volgende stap.';
+    } else if (item.due && item.due <= nextSevenDays) {
+      urgency = 4;
+      reason = 'Je eigen streefdatum valt binnen zeven dagen.';
+    }
+    return { item, urgency, reason, ownContact, ownFutureAppointment };
+  }).sort((a, b) => a.urgency - b.urgency ||
+    (a.item.due || '9999-99-99').localeCompare(b.item.due || '9999-99-99') ||
+    a.item.title.localeCompare(b.item.title));
+  const attentionCount = followUpInbox.filter(entry => entry.urgency <= 4).length;
+
   const shown = useMemo(() => items.filter(item => filter === 'alles' ||
     (filter === 'actief' ? item.status !== 'afgerond' : item.status === 'afgerond'))
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
@@ -1228,6 +1262,40 @@ function PrivateMoveAftercare() {
         </ul>
       </section>
 
+
+      <section className="panel" aria-labelledby="nazorg-action-inbox">
+        <div>
+          <p className="eyebrow">WAT VRAAGT JE AANDACHT?</p>
+          <h2 id="nazorg-action-inbox">Mijn nazorg-acties</h2>
+          <p>Een overzicht op basis van jouw eigen data: <strong>{attentionCount} aandachtspunt{attentionCount === 1 ? '' : 'en'}</strong> om na te lopen.
+            Eigen prioriteit en streefdatum zijn geen juridisch oordeel of officieel afgesproken termijn. Een zelf aangevinkte melding is geen bewijs van verzending.</p>
+        </div>
+        <div>
+          {followUpInbox.length === 0 ? <p>Geen open nazorgpunten. Voeg een punt toe of bekijk afgeronde punten in je dossier.</p> :
+            <ol className="aftercare-list">
+              {followUpInbox.slice(0, 16).map(entry => <li key={entry.item.id} className="aftercare-item">
+                <strong>{entry.item.room}: {entry.item.title}</strong>
+                <p>{entry.reason}</p>
+                <p>Eigen prioriteit: {entry.item.priority} · Status: {entry.item.status}
+                  {entry.item.due ? ' · Eigen datum: ' + entry.item.due : ' · Geen datum'}
+                  {entry.ownContact ? ' · Laatst zelf genoteerd verzonden: ' + entry.ownContact.day : ''}
+                  {entry.ownFutureAppointment ? ' · Eigen toekomstige afspraaknotitie aanwezig' : ''}
+                </p>
+                <button type="button" className="secondary"
+                  disabled={!chosenIssueIds.includes(entry.item.id) && chosenIssueIds.length >= 12}
+                  onClick={() => {
+                    setChosenIssueIds(previous => previous.includes(entry.item.id) ? previous : [...previous, entry.item.id]);
+                    setNoticeApproved(false);
+                    document.getElementById('nazorg-notice-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}>
+                  {chosenIssueIds.includes(entry.item.id) ? 'Bekijk mijn conceptselectie ↓' : 'Neem op in eigen concept ↓'}
+                </button>
+              </li>)}
+            </ol>}
+          {followUpInbox.length > 16 && <p>Je ziet de eerste 16 van {followUpInbox.length} open punten. De rest staat in het volledige nazorgdossier.</p>}
+          <p>Conceptkeuze is handmatig en verstuurt niets. Contactmomenten en eigen status pas je per punt in het dossier hieronder aan.</p>
+        </div>
+      </section>
       <section className="panel" aria-labelledby="nazorg-calendar-title">
         <div>
           <p className="eyebrow">EIGEN AGENDA</p>
