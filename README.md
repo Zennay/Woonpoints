@@ -289,6 +289,10 @@ keuze. Een ICS-download is **geen synchronisatie, kalenderwijziging of bevestigi
 van WoningNet**; import en externe cloudopslag gebeuren uitsluitend via de door
 jou gekozen kalenderapp. De lokale maandweergave stuurt nooit meldingen zelf.
 
+### Mobiele snelnavigatie door de persoonlijke hulpmiddelen
+
+Het dashboard heeft bovenaan een zichtbare, horizontaal veegbare sectienavigatie naar projectstatus, maanddoel, zelf genoteerde reacties, woningselectie, woonkosten, actieplanner, positie-analyse en maandtrend. Elke link is een gewone in-page anchor naar de bestaande Nederlandstalige sectiekop; toetsenbord-, schermlezer- en touchbediening gebruiken dezelfde route. De balk blijft bij lang scrollen bereikbaar en laat de bovenkant van de bestemmingskop vrij. Er is geen nieuwe JavaScript-clientstate, cookie, servercall, browserstorage of live WoningNet-functionaliteit toegevoegd. De vaste niet-geverifieerde projectstatus blijft zichtbaar als context.
+
 ### Eigen betaalbaarheid en buffer bij tegenslag (handmatige preview)
 
 Onder **Wat kost wonen je écht per maand?** kun je na vergelijking van twee handmatig ingevulde woningen nu je netto besteedbaar inkomen, overige maandlasten en voor verhuizing beschikbaar spaargeld invoeren. Dezelfde twee scenario's tonen naast hun maand- en jaarkosten direct de buffer ná verhuiskosten, het maandoverschot/-tekort en het geschatte saldo na 12 maanden, zowel bij huidige aannames als bij een zelfgekozen inkomensdaling en stijging van de gezamenlijke woonlasten. Bij een negatief maandbedrag wordt ook de geschatte uitputtingsduur in volle maanden getoond. Een tekort of negatieve buffer krijgt een expliciete waarschuwing.
