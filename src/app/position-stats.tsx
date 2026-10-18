@@ -291,6 +291,8 @@ export function ManualReactionJournal({
   const [monthFilter, setMonthFilter] = useState('all');
   const [message, setMessage] = useState('');
   const [pendingImport, setPendingImport] = useState<JournalItem[] | null>(null);
+  const [recentlyRemoved,setRecentlyRemoved] = useState<{item:JournalItem;index:number}|null>(null);
+  const [confirmClearAll,setConfirmClearAll] = useState(false);
   const [editingId,setEditingId] = useState<number|null>(null);
   const [editDate,setEditDate] = useState('');
   const [editStatus,setEditStatus] = useState<JournalStatus>('planned');
@@ -305,6 +307,7 @@ export function ManualReactionJournal({
 
   function add() {
     setMessage('');
+    setConfirmClearAll(false);
     if (!date || entries.length >= 100 ||
         (rankInput === '') !== (totalInput === '') ||
         (rankInput !== '' && (!/^[1-9][0-9]{0,5}$/.test(rankInput) ||
@@ -320,6 +323,7 @@ export function ManualReactionJournal({
     try {
       summarizeManualReactionJournal([...entries, next]);
       setEntries(old => [...old, next]);
+      setRecentlyRemoved(null); // Invalidate stale undo after a new journal entry.
       setNextId(n => n + 1);
       setRankInput('');
       setTotalInput('');
@@ -366,6 +370,7 @@ export function ManualReactionJournal({
     try {
       summarizeManualReactionJournal(candidate);
       setEntries(candidate);setEditingId(null);
+      setConfirmClearAll(false);
       setMonthFilter('all'); // Reveal the corrected row if its date moved outside the old filter.
       setMessage('Je eigen datum, status en eindpositie zijn bijgewerkt. Dit verandert geen officiële woningreactie.');
     } catch {
@@ -373,9 +378,36 @@ export function ManualReactionJournal({
     }
   }
 
+
+  function removeItem(item: JournalItem) {
+    const index=entries.findIndex(row=>row.id===item.id);
+    if (index<0) return;
+    setRecentlyRemoved({item:{...item},index});
+    setConfirmClearAll(false);
+    setEntries(current=>current.filter(row=>row.id!==item.id));
+    if (editingId===item.id) setEditingId(null);
+    setMessage('Alleen deze eigen notitie verwijderd. Je kunt de laatste verwijdering hieronder herstellen.');
+  }
+  function undoRemoveItem() {
+    if (!recentlyRemoved || pendingImport || entries.length>=100 ||
+        entries.some(row=>row.id===recentlyRemoved.item.id)) return;
+    const restored=[...entries];
+    restored.splice(Math.min(recentlyRemoved.index,restored.length),0,{...recentlyRemoved.item});
+    try {
+      summarizeManualReactionJournal(restored);
+      setEntries(restored);
+      setRecentlyRemoved(null);
+      setConfirmClearAll(false);
+      setMessage('De laatste verwijderde eigen notitie is met dezelfde ID hersteld.');
+    } catch {
+      setMessage('Herstellen is niet veilig mogelijk. Je huidige notities blijven behouden.');
+    }
+  }
+
   function updateState(id: number, state: JournalStatus) {
     if (!Object.hasOwn(statusNames, state)) return;
     setEntries(old => old.map(row => row.id === id ? { ...row, status: state } : row));
+    setConfirmClearAll(false);
     setMessage('Eigen status aangepast; dit is geen officiële registratiestatus.');
   }
 
@@ -414,6 +446,7 @@ export function ManualReactionJournal({
   async function prepareImport(file?: File) {
     setPendingImport(null);
     setEditingId(null);
+    setConfirmClearAll(false);
     if (!file) return;
     if (!file.size || file.size > 12_000) {
       setMessage('Import geweigerd: kies een CSV kleiner dan 12 KB.');
@@ -490,6 +523,8 @@ export function ManualReactionJournal({
               Vervangen verwijdert de huidige {entries.length} notities uit dit tabblad.</p>
             <button type="button" onClick={() => {
               setEntries(pendingImport);
+              setRecentlyRemoved(null);
+              setConfirmClearAll(false);
               setNextId(pendingImport.length + 1);
               setPendingImport(null);
               setMonthFilter('all');
@@ -501,6 +536,19 @@ export function ManualReactionJournal({
           </div>
         )}
         {message && <p role="status">{message}</p>}
+        {recentlyRemoved && <div className="journal-confirm" role="group"
+          aria-label="Herstel laatste verwijderde notitie">
+          <p>Je verwijderde zojuist eigen notitie #{recentlyRemoved.item.id}
+            ({recentlyRemoved.item.date}, {statusNames[recentlyRemoved.item.status]}).
+            Alleen de meest recente verwijdering kan hier worden hersteld;
+            invoer blijft uitsluitend in dit tabblad.</p>
+          <button type="button" disabled={Boolean(pendingImport) || entries.length>=100}
+            onClick={undoRemoveItem}>Herstel laatste verwijderde notitie</button>
+          <button type="button" className="secondary" onClick={()=>{
+            setRecentlyRemoved(null);
+            setMessage('Herstelmogelijkheid voor de laatste verwijdering bewust gesloten.');
+          }}>Niet herstellen</button>
+        </div>}
         <p><strong>{rowCount}</strong> eigen notities · <strong>{journal.recordedPositions}</strong> met
           zelf ingevoerde eindpositie. Nul officiële reacties geverifieerd.</p>
         {onTransfer && journal.recordedPositions > 0 && (
@@ -581,21 +629,35 @@ export function ManualReactionJournal({
                     <button type="button" onClick={cancelEdit}>Annuleer bewerken</button>
                   </div>
                 </fieldset>}
-                <button type="button" onClick={() => {
-                  setEntries(old => old.filter(item => item.id !== row.id));
-                  if (editingId===row.id) setEditingId(null);
-                  setMessage('Eigen notitie verwijderd; geen WoningNet-reactie gewijzigd.');
-                }}>Verwijder</button>
+                <button type="button" onClick={() => removeItem(row)}>
+                  Verwijder (herstelbaar)
+                </button>
               </article>)}
               {!visible.length && <p>Geen eigen notities voor deze maand.</p>}
             </div>
-            <button type="button" onClick={() => {
-              setEntries([]);
-              setPendingImport(null);
-              setEditingId(null);
-              setMonthFilter('all');
-              setMessage('Alle eigen notities uit dit tabblad gewist.');
-            }}>Wis alle eigen notities in dit tabblad</button>
+            <button type="button" onClick={() => setConfirmClearAll(true)}>
+              Wis alle eigen notities…
+            </button>
+            {confirmClearAll && <div className="journal-confirm" role="group"
+              aria-label="Bevestig alle eigen reactienotities wissen">
+              <p><strong>Alle {entries.length} notities wissen?</strong> Dit
+                verwijdert de eigen datums, statussen en eindposities uit dit
+                tabblad. Er is geen automatische reservekopie en de actie is
+                niet ongedaan te maken. Bewaar eventueel eerst bewust je CSV.</p>
+              <button type="button" onClick={()=>{
+                setEntries([]);
+                setPendingImport(null);
+                setEditingId(null);
+                setRecentlyRemoved(null);
+                setConfirmClearAll(false);
+                setMonthFilter('all');
+                setMessage('Alle eigen notities na bevestiging gewist. Er is niets op WoningNet gewijzigd.');
+              }}>Ja, wis echt alle notities</button>
+              <button type="button" onClick={()=>{
+                setConfirmClearAll(false);
+                setMessage('Alles wissen geannuleerd; je notities zijn behouden.');
+              }}>Nee, behoud alle notities</button>
+            </div>}
           </>
         )}
       </div>
