@@ -1805,3 +1805,170 @@ export function PrivateMovingDayTimeline() {
     </section>
   );
 }
+
+
+/** User-entered move-in/out handover notes only, not a verified inspection or legal receipt. */
+type PrivateHandoverEntry = {
+  day: string; property: string; keys: number;
+  electricity: string; gas: string; water: string; remarks: string;
+};
+type PrivateHandoverForm = {
+  day: string; property: string; keys: string;
+  electricity: string; gas: string; water: string; remarks: string;
+};
+const handoverEmpty = (): PrivateHandoverForm => ({
+  day: '', property: '', keys: '', electricity: '', gas: '', water: '', remarks: ''
+});
+function handoverMeter(raw: string): string | null {
+  const clean = raw.trim().replace(',', '.');
+  return clean === '' ? '' : /^\\d{1,7}(\\.\\d{1,3})?$/.test(clean) ? clean : null;
+}
+function handoverNumber(value: string): number { return Number(value); }
+
+export function PrivateMovingHandover() {
+  const [stage, setStage] = useState<'in' | 'out'>('in');
+  const [form, setForm] = useState<PrivateHandoverForm>(handoverEmpty);
+  const [entries, setEntries] = useState<{in?: PrivateHandoverEntry; out?: PrivateHandoverEntry}>({});
+  const [pendingSave, setPendingSave] = useState<{stage:'in'|'out'; entry:PrivateHandoverEntry} | null>(null);
+  const [pendingExport, setPendingExport] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  function change<K extends keyof PrivateHandoverForm>(name:K, value:PrivateHandoverForm[K]) {
+    setForm(old => ({...old, [name]:value}));
+    setPendingSave(null); setPendingExport(null); setNotice('');
+  }
+  function selectStage(next:'in'|'out') {
+    setStage(next); setPendingSave(null); setPendingExport(null);
+    setForm(handoverEmpty());
+    setNotice('Formulier gewisseld. Opgeslagen opnamen blijven binnen dit tabblad beschikbaar.');
+  }
+  function candidate():PrivateHandoverEntry | null {
+    const meters = [handoverMeter(form.electricity),handoverMeter(form.gas),handoverMeter(form.water)];
+    if (!dateOnly(form.day) || form.property.trim().length > 70 ||
+        !/^\\d{1,2}$/.test(form.keys) || Number(form.keys) > 99 ||
+        meters.some(value => value === null) || form.remarks.length > 900) return null;
+    if (form.property && /[\\u0000-\\u001f\\u007f]/.test(form.property)) return null;
+    return {
+      day:form.day, property:form.property.trim(), keys:Number(form.keys),
+      electricity:meters[0]!, gas:meters[1]!, water:meters[2]!, remarks:form.remarks
+    };
+  }
+  function saveEntry() {
+    const entry=candidate();
+    if(!entry) {setNotice('Opname niet bewaard: controleer datum, 0–99 sleutels en optionele meterstanden (max. drie decimalen).');return;}
+    if(entries[stage]) { setPendingSave({stage,entry}); setNotice('Er bestaat al een opname voor dit moment. Bevestig eerst het vervangen.');return;}
+    setEntries(old=>({...old,[stage]:entry}));setNotice('Opname alleen in dit tabblad vastgelegd. Geen externe controle of handtekening.');
+    setPendingExport(null);
+  }
+  const slots = [entries.in,entries.out];
+  const draft = slots.map((entry,index)=>{
+    if(!entry) return '';
+    const title = index===0?'Sleutelontvangst':'Sleuteloverdracht';
+    return [title, `Datum: ${entry.day}`,`Woning (eigen omschrijving): ${entry.property || 'niet ingevuld'}`,
+      `Sleutels: ${entry.keys}`,`Elektriciteit (kWh): ${entry.electricity || 'niet ingevuld'}`,
+      `Gas (m³): ${entry.gas || 'niet ingevuld'}`,`Water (m³): ${entry.water || 'niet ingevuld'}`,
+      `Eigen opmerkingen: ${entry.remarks || 'geen'}`].join('\\n');
+  }).filter(Boolean).join('\\n\\n');
+  const report = 'Woonpoints · privé sleuteloverdrachtsnotities\\nAlle waarden zijn eigen invoer. Geen officiële meterstand, inspectie, handtekening of ontvangstbewijs.\\n\\n'+draft+'\\n';
+  const reportToken=JSON.stringify(entries);
+  const meterLabels: [('electricity'|'gas'|'water'), string][] = [
+    ['electricity','Elektriciteit (kWh)'],['gas','Gas (m³)'],['water','Water (m³)']
+  ];
+  return (
+    <section className="panel" aria-labelledby="private-handover-heading">
+      <p className="eyebrow">VERHUIZEN · EIGEN INVOER · GEEN ACCOUNTKOPPELING</p>
+      <h2 id="private-handover-heading">Sleutels en meterstanden bijhouden</h2>
+      <p>Maak zelf een begin- en eindopname. Dit hulpmiddel legt geen officiële oplevering,
+        meterregistratie, handtekening of akkoord van verhuurder vast. Bewaar echte bewijsstukken apart.</p>
+      <div role="group" aria-label="Kies opnamemoment">
+        <button type="button" aria-pressed={stage==='in'} onClick={()=>selectStage('in')}>Sleutelontvangst</button>
+        <button type="button" aria-pressed={stage==='out'} onClick={()=>selectStage('out')}>Sleuteloverdracht</button>
+      </div>
+      <fieldset>
+        <legend>{stage==='in'?'Beginopname':'Eindopname'} – eigen formulier</legend>
+        <label htmlFor="handover-date">Datum opname</label>
+        <input id="handover-date" type="date" min="2000-01-01" max="2099-12-31" value={form.day}
+          onChange={event=>change('day',event.target.value)} />
+        <label htmlFor="handover-house">Eigen naam van woning (optioneel, max. 70 tekens)</label>
+        <input id="handover-house" maxLength={70} value={form.property} autoComplete="off"
+          onChange={event=>change('property',event.target.value)} />
+        <label htmlFor="handover-keys">Aantal ontvangen of afgegeven sleutels (0–99)</label>
+        <input id="handover-keys" type="number" min={0} max={99} step={1} value={form.keys}
+          onChange={event=>change('keys',event.target.value)} />
+        {(['electricity','gas','water'] as const).map((key)=>(
+          <div key={key}>
+            <label htmlFor={`handover-${key}`}>{meterLabels.find(([name])=>name===key)?.[1]} (optioneel)</label>
+            <input id={`handover-${key}`} type="text" inputMode="decimal" maxLength={12}
+              value={form[key]} placeholder="Bijv. 1234,500"
+              onChange={event=>change(key,event.target.value)} />
+          </div>
+        ))}
+        <label htmlFor="handover-remarks">Eigen notities of openstaande punten (maximaal 900 tekens)</label>
+        <textarea id="handover-remarks" rows={4} maxLength={900} value={form.remarks}
+          onChange={event=>change('remarks',event.target.value)} />
+        <button type="button" onClick={saveEntry}>Bewaar eigen {stage==='in'?'beginopname':'eindopname'}</button>
+        {pendingSave && pendingSave.stage===stage && <div role="group" aria-label="Bevestig opname vervangen">
+          <p>Deze opname vervangt de eerdere {stage==='in'?'begin':'eind'}stand in dit tabblad.
+            De andere opname blijft staan.</p>
+          <button type="button" onClick={()=>{
+            setEntries(old=>({...old,[stage]:pendingSave.entry}));
+            setPendingSave(null);setPendingExport(null);setNotice('Opname vervangen, alleen in dit tabblad.');
+          }}>Bevestig vervanging</button>
+          <button type="button" onClick={()=>setPendingSave(null)}>Annuleren</button>
+        </div>}
+      </fieldset>
+      <h3>Eigen vastgelegde opnamen</h3>
+      <ul>
+        {(['in','out'] as const).map(key=>(
+          <li key={key}>
+            <strong>{key==='in'?'Ontvangst':'Overdracht'}:</strong>{' '}
+            {entries[key] ? `${entries[key]!.day} · ${entries[key]!.keys} sleutels` : 'nog niet ingevuld'}
+          </li>
+        ))}
+      </ul>
+      {entries.in && entries.out && <div>
+        <h3>Verschil tussen je twee invoeren</h3>
+        <p>Sleutels: {entries.out.keys-entries.in.keys>=0?'+':''}{entries.out.keys-entries.in.keys}.
+          Dit is geen bevestiging dat alle sleutels daadwerkelijk zijn overgedragen.</p>
+        <ul>{meterLabels.map(([key,label])=>{
+          const before=entries.in?.[key]; const after=entries.out?.[key];
+          const delta=before && after ? handoverNumber(after)-handoverNumber(before):null;
+          return <li key={key}>{label}: {delta===null?'onbekend (waarde ontbreekt)':
+            `${delta>=0?'+':''}${new Intl.NumberFormat('nl-NL',{maximumFractionDigits:3}).format(delta)}`}</li>;
+        })}</ul>
+        <p>Verschillen zijn eenvoudige rekenkundige aftrekkingen, geen gecontroleerd verbruik of factuur.</p>
+      </div>}
+      {!!draft && pendingExport!==reportToken && <button type="button" onClick={()=>{
+        setPendingExport(reportToken);setNotice('');
+      }}>Bekijk privé-TXT voordat je exporteert…</button>}
+      {!!draft && pendingExport===reportToken && <div role="group" aria-label="Bevestig privéoverdrachtsrapport">
+        <p>Controleer onderstaande exacte tekst. De download bevat je zelf ingevulde woningnaam en opmerkingen.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report}</pre>
+        <button type="button" onClick={()=>{
+          if(pendingExport!==JSON.stringify(entries))return;
+          const url=URL.createObjectURL(new Blob([report],{type:'text/plain;charset=utf-8'}));
+          const link=document.createElement('a');link.href=url;link.download='woonpoints-prive-sleutelrapport.txt';
+          document.body.appendChild(link);link.click();link.remove();
+          window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+          setPendingExport(null);setNotice('Tekstbestand op eigen verzoek aangeboden; een opslaglocatie kan synchroniseren.');
+        }}>Bevestig eigen TXT-download</button>
+        <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
+      </div>}
+      {!!draft && !confirmClear && <button type="button" onClick={()=>setConfirmClear(true)}>
+        Wis beide opnamen…
+      </button>}
+      {confirmClear && <div role="group" aria-label="Bevestig verwijderen van privé-opnamen">
+        <p>Dit wist beide opnamen definitief uit dit tabblad. Maak zelf eerst een export als je ze wilt bewaren.</p>
+        <button type="button" onClick={()=>{
+          setEntries({});setForm(handoverEmpty());setPendingSave(null);setPendingExport(null);
+          setConfirmClear(false);setNotice('Beide opnamen uit dit tabblad gewist.');
+        }}>Bevestig wissen</button>
+        <button type="button" onClick={()=>setConfirmClear(false)}>Annuleren</button>
+      </div>}
+      {notice && <p role="status">{notice}</p>}
+      <p>Deze gegevens worden niet geüpload of automatisch bewaard. Bij sluiten van het tabblad
+        verlies je de invoer. Exporteer bewust en deel persoonlijke notities niet onbedoeld.</p>
+    </section>
+  );
+}

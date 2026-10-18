@@ -1,7 +1,7 @@
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
-import { PrivateMovingVolume } from './manual-month-progress';
+import { PrivateMovingVolume, PrivateMovingHandover } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
 const cards = [
@@ -46,6 +46,7 @@ export default function HomePage() {
             ['private-moving-heading', 'Verhuizen'],
             ['private-moving-volume-heading', 'Verhuisvolume'],
             ['private-moving-day-heading', 'Verhuisdag'],
+            ['private-handover-heading', 'Sleutelrapport'],
             ['position-stats-heading', 'Posities'],
             ['monthly-positions-heading', 'Maandtrend']
           ] as const).map(([id, title]) =>
@@ -76,6 +77,7 @@ export default function HomePage() {
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
       <PrivateMovingDayTimeline />
+      <PrivateMovingHandover />
 
       <section className="panel">
         <div>
