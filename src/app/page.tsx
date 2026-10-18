@@ -1043,6 +1043,10 @@ function PrivateMoveAftercare() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState<'actief' | 'alles' | 'afgerond'>('actief');
+  const [issueSearch, setIssueSearch] = useState('');
+  const [issuePriority, setIssuePriority] = useState<Priority | 'alle'>('alle');
+  const [issueRoom, setIssueRoom] = useState('alle');
+  const [showAllFollowUps, setShowAllFollowUps] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
@@ -1151,11 +1155,18 @@ function PrivateMoveAftercare() {
     }).sort((a, b) => a.event.day.localeCompare(b.event.day) ||
       a.item.title.localeCompare(b.item.title));
 
-  const shown = useMemo(() => items.filter(item => filter === 'alles' ||
-    (filter === 'actief' ? item.status !== 'afgerond' : item.status === 'afgerond'))
+  const issueRooms = useMemo(() => Array.from(new Set(items.map(item => item.room)))
+    .sort((a, b) => a.localeCompare(b, 'nl-NL')), [items]);
+  const issueQuery = issueSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const shown = useMemo(() => items.filter(item =>
+    (filter === 'alles' || (filter === 'actief' ? item.status !== 'afgerond' : item.status === 'afgerond')) &&
+    (issuePriority === 'alle' || item.priority === issuePriority) &&
+    (issueRoom === 'alle' || item.room === issueRoom) &&
+    (!issueQuery || [item.title, item.room, item.note].some(field =>
+      field.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(issueQuery))))
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
-      (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title)),
-    [items, filter]);
+      (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
+    [items, filter, issuePriority, issueRoom, issueQuery]);
 
   function createFromInspection(requests: Draft[]): { added: number; skipped: number; error?: string } {
     if (requests.length === 0) return { added: 0, skipped: 0 };
@@ -1698,7 +1709,7 @@ function PrivateMoveAftercare() {
         <div>
           {followUpInbox.length === 0 ? <p>Geen open nazorgpunten. Voeg een punt toe of bekijk afgeronde punten in je dossier.</p> :
             <ol className="aftercare-list">
-              {followUpInbox.slice(0, 16).map(entry => <li key={entry.item.id} className="aftercare-item">
+              {followUpInbox.slice(0, showAllFollowUps ? 80 : 16).map(entry => <li key={entry.item.id} className="aftercare-item">
                 <strong>{entry.item.room}: {entry.item.title}</strong>
                 <p>{entry.reason}</p>
                 <p>Eigen prioriteit: {entry.item.priority} · Status: {entry.item.status}
@@ -1719,7 +1730,13 @@ function PrivateMoveAftercare() {
                   </button>}
               </li>)}
             </ol>}
-          {followUpInbox.length > 16 && <p>Je ziet de eerste 16 van {followUpInbox.length} open punten. De rest staat in het volledige nazorgdossier.</p>}
+          {followUpInbox.length > 16 && <div>
+            <p>Je ziet {showAllFollowUps ? 'alle' : 'de eerste 16 van'} {followUpInbox.length} eigen open punten. Niets is automatisch afgesloten.</p>
+            <button type="button" className="secondary" aria-expanded={showAllFollowUps}
+              onClick={() => setShowAllFollowUps(!showAllFollowUps)}>
+              {showAllFollowUps ? 'Toon eerste 16' : 'Toon alle eigen nazorg-acties'}
+            </button>
+          </div>}
           <p>Conceptkeuze is handmatig en verstuurt niets. Contactmomenten en eigen status pas je per punt in het dossier hieronder aan.</p>
         </div>
       </section>
@@ -1797,9 +1814,34 @@ function PrivateMoveAftercare() {
           <select id="nazorg-filter" value={filter} onChange={e => setFilter(e.target.value as typeof filter)}>
             <option value="actief">Nog niet afgerond</option><option value="alles">Alles</option><option value="afgerond">Afgerond</option>
           </select>
+          <label htmlFor="nazorg-search">Zoek in eigen titel, ruimte of privénotitie</label>
+          <input id="nazorg-search" type="search" value={issueSearch}
+            maxLength={100} autoComplete="off" placeholder="Zoek in je eigen dossier"
+            onChange={event => setIssueSearch(event.target.value)} />
+          <label htmlFor="nazorg-priority-filter">Eigen prioriteit</label>
+          <select id="nazorg-priority-filter" value={issuePriority}
+            onChange={event => setIssuePriority(event.target.value as Priority | 'alle')}>
+            <option value="alle">Alle prioriteiten</option>
+            <option value="dringend">Dringend</option>
+            <option value="normaal">Normaal</option>
+            <option value="laag">Laag</option>
+          </select>
+          <label htmlFor="nazorg-room-filter">Ruimte</label>
+          <select id="nazorg-room-filter" value={issueRoom}
+            onChange={event => setIssueRoom(event.target.value)}>
+            <option value="alle">Alle ruimtes</option>
+            {issueRooms.map(room => <option key={room} value={room}>{room}</option>)}
+          </select>
+          <p role="status" aria-live="polite">{shown.length} van {items.length} eigen punten zichtbaar.</p>
+          {(issueSearch || issuePriority !== 'alle' || issueRoom !== 'alle') && (
+            <button type="button" className="secondary" onClick={() => {
+              setIssueSearch(''); setIssuePriority('alle'); setIssueRoom('alle');
+            }}>Wis zoek- en prioriteitsfilters</button>
+          )}
+          <p>Deze filters werken alleen in dit tabblad. De privé-JSON-back-up blijft volledig en ongewijzigd.</p>
         </div>
         <div>
-          {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave.</p> :
+          {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave. Wis de filters om alles terug te zien.</p> :
             <ul className="aftercare-list">{shown.map(item =>
               <li className="aftercare-item" key={item.id}>
                 <strong>{item.title}</strong>
