@@ -28,6 +28,9 @@ export default function ManualMonthProgress() {
   // by the blank/current-month "Begin" button without explicit deletion.
   const [opaqueStoredNote, setOpaqueStoredNote] = useState(false);
   const [transientDiscarded, setTransientDiscarded] = useState(false);
+  const [reminderDates, setReminderDates] = useState<string[]>(['', '', '', '']);
+  const [reminderMessage, setReminderMessage] = useState('');
+  const reminderMonth = useRef<string | null>(null);
   // If the browser refuses writes, preserve current-tab edits across focus events.
   const unsaved = useRef<{month: string; count: number} | null>(null);
   // Undefined means storage has not supplied an authoritative snapshot yet.
@@ -41,6 +44,11 @@ export default function ManualMonthProgress() {
     function refresh() {
       const observed = new Date();
       const current = localMonthKey(observed);
+      if (reminderMonth.current !== current) {
+        reminderMonth.current = current;
+        setReminderDates(['', '', '', '']);
+        setReminderMessage('');
+      }
       setMonth(current);
       setObservedAt(observed);
       if (unsaved.current !== null && unsaved.current.month !== current) unsaved.current = null;
@@ -236,6 +244,59 @@ export default function ManualMonthProgress() {
 
   const nudge = month && observedAt ? manualPlanningNudge(month, count, observedAt) : null;
 
+  // No background alarms, device permission, external service, or persistence.
+  const remainingPersonalPlans = count === null || opaqueStoredNote
+    ? 0 : Math.max(0, MANUAL_MONTHLY_GOAL - count);
+  const dateString = (date: Date) =>
+    [date.getFullYear(), String(date.getMonth()+1).padStart(2,'0'),
+      String(date.getDate()).padStart(2,'0')].join('-');
+  const todayLocal = dateString(new Date());
+  function validLocalReminderDay(day: string, expectedMonth: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !day.startsWith(expectedMonth+'-')
+        || day < dateString(new Date())) return false;
+    const [year, monthPart, calendarDay] = day.split('-').map(Number);
+    const check = new Date(Date.UTC(year, monthPart-1, calendarDay));
+    return check.getUTCFullYear() === year && check.getUTCMonth() === monthPart-1 &&
+      check.getUTCDate() === calendarDay;
+  }
+  function exportPersonalCalendar() {
+    const currentMonth = localMonthKey(new Date());
+    if (!month || month !== currentMonth || !remainingPersonalPlans) {
+      setReminderMessage('De maand is veranderd of er zijn geen open persoonlijke momenten.');
+      return;
+    }
+    const selected = reminderDates.slice(0, remainingPersonalPlans);
+    if (selected.some(day => !validLocalReminderDay(day, currentMonth)) ||
+        new Set(selected).size !== selected.length) {
+      setReminderMessage('Kies voor elk open moment een unieke, nog komende kalenderdag binnen deze maand.');
+      return;
+    }
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const lines = ['BEGIN:VCALENDAR','VERSION:2.0',
+      'PRODID:-//Woonpoints//Prive maandplanning//NL','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+    selected.forEach((day, index) => {
+      const compact = day.replace(/-/g,'');
+      lines.push('BEGIN:VEVENT',
+        'UID:woonpoints-eigen-planning-'+currentMonth.replace('-','')+'-'+(index+1)+'@local.woonpoints.invalid',
+        'DTSTAMP:'+stamp,'DTSTART:'+compact+'T090000','DTEND:'+compact+'T091500',
+        'SUMMARY:Woonpoints eigen reactiemoment',
+        'DESCRIPTION:Persoonlijke planning. Geen automatisch WoningNet-reactie of officieel puntenbewijs.',
+        'STATUS:CONFIRMED','END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    const url = URL.createObjectURL(new Blob([lines.join('\r\n')+'\r\n'],
+      {type:'text/calendar;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-prive-planning-'+currentMonth+'.ics';
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setReminderMessage('ICS-download aangeboden. Je agenda importeert alleen als jij dat bevestigt; pas de lokale tijd van 09:00 eventueel zelf aan.');
+  }
+
   return (
     <section className="panel manual-progress" aria-labelledby="manual-progress-heading">
       <div>
@@ -269,6 +330,45 @@ export default function ManualMonthProgress() {
             {' '}Je hebt nog {nudge.missing} {nudge.missing === 1 ? 'reactie' : 'reacties'} niet zelf genoteerd;
             de officiële WoningNet-stand is onbekend.
           </p>
+        )}
+        {month !== null && count !== null && !opaqueStoredNote && (
+          <div className="manual-reminder" style={{marginTop:16}}>
+            <h3>Plan zelf de resterende momenten in je agenda</h3>
+            <p>Een eigen reactiemoment is geen geldige WoningNet-reactie.
+              Kies {remainingPersonalPlans} {remainingPersonalPlans === 1 ? 'datum' : 'datums'}
+              binnen de lopende maand voor de nog open persoonlijke planning.
+              Alleen na jouw klik wordt een ICS-bestand aangeboden.</p>
+            {remainingPersonalPlans > 0 ? (
+              <>
+                {reminderDates.slice(0, remainingPersonalPlans).map((date, index) =>
+                  <label key={index} style={{display:'block',marginBottom:10}}>
+                    Eigen reactiemoment {index+1}
+                    <input type="date" min={todayLocal}
+                      value={date} style={{display:'block',minHeight:44,width:'100%',padding:8}}
+                      onChange={e => {
+                        const next = [...reminderDates];
+                        next[index] = e.target.value;
+                        setReminderDates(next);
+                        setReminderMessage('');
+                      }} />
+                  </label>
+                )}
+                <button type="button" onClick={exportPersonalCalendar}>
+                  Bewaar {remainingPersonalPlans} privémomenten als agenda-ICS…
+                </button>
+                <button type="button" className="manual-erase" onClick={() => {
+                  setReminderDates(['','','','']);
+                  setReminderMessage('Alleen de tijdelijk gekozen agendadagen gewist.');
+                }}>Wis gekozen agendadagen</button>
+              </>
+            ) : <p>Je eigen maandnotitie is op doel. Er zijn geen nieuwe
+              kalenderherinneringen nodig.</p>}
+            <p>ICS-afspraken zijn bewust handmatig, standaard 09:00–09:15
+              lokale agendatijd en kunnen op je eigen apparaat of cloudagenda
+              worden bewaard. Geen automatische melding vanuit Woonpoints,
+              geen accounttoegang en geen geplaatste reactie.</p>
+            {reminderMessage && <p role="status">{reminderMessage}</p>}
+          </div>
         )}
         {month !== null && (
           <button type="button" className="manual-erase" onClick={erase}>Wis mijn notitie</button>
