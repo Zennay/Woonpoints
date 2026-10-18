@@ -4476,8 +4476,10 @@ function privateUtilityCalendar(entries: Record<PrivateUtilityKey, PrivateUtilit
         entry.state === 'confirmed' || entry.state === 'not-applicable') continue;
     const start = entry.date.replaceAll('-', '');
     const end = privateUtilityTomorrow(entry.date).replaceAll('-', '');
+    const stamp = new Date().toISOString().replaceAll('-', '').replaceAll(':', '')
+      .replace(/\\.\\d{3}Z$/, 'Z');
     lines.push('BEGIN:VEVENT', 'UID:woonpoints-utility-' + item.id + '-' + start + '@offline.local',
-      'DTSTART;VALUE=DATE:' + start, 'DTEND;VALUE=DATE:' + end,
+      'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start, 'DTEND;VALUE=DATE:' + end,
       'SUMMARY:Zelf controleren - ' + item.name,
       'DESCRIPTION:Persoonlijke herinnering. Geen bevestigde afspraak of officiële termijn.',
       'END:VEVENT');
