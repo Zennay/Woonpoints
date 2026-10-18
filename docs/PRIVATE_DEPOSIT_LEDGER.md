@@ -7,7 +7,7 @@ Een nieuwe zelfstandige kaart **Mijn privé-borgboek** staat in de verhuisflow n
 1. Voer de **oorspronkelijke borg** handmatig in (€ 0–€ 50.000, maximaal twee decimalen).
 2. Voeg maximaal **24** gedateerde gebeurtenissen toe: een bedrag dat je *zelf als ontvangen hebt genoteerd*, of een *zelf genoteerde inhouding*. Schrijf een korte neutrale omschrijving, geen naam of adres.
 3. Bekijk de totalen **zelf terugontvangen**, **zelf genoteerd ingehouden** en **nog niet verklaard**. Bij meer boekingen dan oorspronkelijk ingevulde borg komt een waarschuwing; dit blijft zichtbaar en wordt niet stilzwijgend op nul gezet.
-4. Verwijder een fout ingevoerde regel bewust, of download **privé-JSON** of **TXT**. Beide bestaan alleen na een expliciete browseractie. De TXT is een *eigen* samenvatting, geen bewijs of juridische berekening.
+4. Verwijder een fout ingevoerde regel bewust, of download **privé-JSON** of **TXT**. Voor de TXT toont Woonpoints eerst de exacte inhoud inclusief eigen omschrijvingen in een alleen-lezen voorvertoning. Pas na aparte inhoudscontrole-checkbox kan deze versie gedownload worden; elke wijziging van de eigen brongegevens maakt de oude goedkeuring ongeldig. De TXT is een *eigen* samenvatting, geen bewijs of juridische berekening.
 5. Via **Herstel een eerder gedownload privé-borgboek** kies je vrijwillig een lokaal JSON-bestand (maximaal 12 KiB). Vóór vervanging staat de vorige én inkomende borg en het aantal regels op het scherm. Met **Ja, vervang mijn borgboek** bevestig je afzonderlijk. Annuleren en fouten behouden de huidige staat.
 
 ## Gegevenscontract
