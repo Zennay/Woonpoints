@@ -591,6 +591,8 @@ const MOVING_FALLBACK_LIMIT=8192;
 
 /** Private, opt-in recovery across accidental reloads in the same tab only.
  * Never syncs, writes by default, or uses localStorage. JSON schema is always revalidated. */
+const PRIVATE_TAB_RECOVERY_REVOKE_EVENT='woonpoints:private-tab-recovery-revoke:v1';
+const PRIVATE_TAB_RECOVERY_STATUS_EVENT='woonpoints:private-tab-recovery-status:v1';
 function usePrivateTabRecovery<T>(
   storageKey:string,initial:()=>T,encode:(data:T)=>string,
   decode:(raw:string)=>T|null,maxBytes:number
@@ -621,6 +623,19 @@ function usePrivateTabRecovery<T>(
     setHydrated(true);
   },[storageKey,flagKey,decode,maxBytes]);
   useEffect(()=>{
+    const revoke=()=>{
+      setEnabled(false);
+      try{
+        clear();
+        setStorageMessage('Centraal ingetrokken: tabbladherstel gewist; open invoer blijft staan.');
+      }catch{
+        setStorageMessage('Centrale verwijdering niet bevestigd. Wis eventueel de sitegegevens in de browser.');
+      }
+    };
+    window.addEventListener(PRIVATE_TAB_RECOVERY_REVOKE_EVENT,revoke);
+    return ()=>window.removeEventListener(PRIVATE_TAB_RECOVERY_REVOKE_EVENT,revoke);
+  },[storageKey,flagKey]);
+  useEffect(()=>{
     if(!hydrated||!enabled)return;
     try{
       const raw=encode(value);
@@ -634,6 +649,9 @@ function usePrivateTabRecovery<T>(
       setStorageMessage('Automatisch tabbladherstel gestopt: invoer niet herstelbaar of opslag geweigerd. Download zelf een geldige JSON-back-up.');
     }
   },[value,hydrated,enabled,storageKey,flagKey,encode,maxBytes]);
+  useEffect(()=>{
+    if(hydrated)window.dispatchEvent(new Event(PRIVATE_TAB_RECOVERY_STATUS_EVENT));
+  },[enabled,hydrated]);
   function enable(){
     if(!hydrated||enabled)return;
     try{
@@ -926,6 +944,41 @@ type PrivateMovingReadinessRow={
 function PrivateMovingReadinessBoard({rows}:{
   rows:PrivateMovingReadinessRow[]
 }){
+  const [confirmRevokeAll,setConfirmRevokeAll]=useState(false);
+  const [revokeMessage,setRevokeMessage]=useState('');
+  const [activeTabCopies,setActiveTabCopies]=useState<number|null>(null);
+  useEffect(()=>{
+    function refresh(){
+      const keys=[FALLBACK_TAB_STORAGE_KEY,JOURNEY_TAB_STORAGE_KEY,
+        METER_TAB_STORAGE_KEY,UTILITY_TAB_STORAGE_KEY];
+      try{
+        setActiveTabCopies(keys.filter(key=>
+          window.sessionStorage.getItem(key+':opted-in')==='yes').length);
+      }catch{setActiveTabCopies(null);}
+    }
+    refresh();
+    window.addEventListener(PRIVATE_TAB_RECOVERY_STATUS_EVENT,refresh);
+    return ()=>window.removeEventListener(PRIVATE_TAB_RECOVERY_STATUS_EVENT,refresh);
+  },[]);
+  function revokeAllTabRecovery(){
+    if(!confirmRevokeAll)return;
+    // Each mounted hook must also stop future writes. No backend or cross-origin request.
+    window.dispatchEvent(new Event(PRIVATE_TAB_RECOVERY_REVOKE_EVENT));
+    const keys=[FALLBACK_TAB_STORAGE_KEY,JOURNEY_TAB_STORAGE_KEY,
+      METER_TAB_STORAGE_KEY,UTILITY_TAB_STORAGE_KEY];
+    let denied=0;
+    for(const key of keys){
+      try{
+        window.sessionStorage.removeItem(key+':opted-in');
+        window.sessionStorage.removeItem(key);
+      }catch{denied++;}
+    }
+    window.dispatchEvent(new Event(PRIVATE_TAB_RECOVERY_STATUS_EVENT));
+    setConfirmRevokeAll(false);
+    setRevokeMessage(denied>0?
+      'De browser heeft opslagverwijdering niet overal bevestigd. Wis zo nodig sitegegevens handmatig.':
+      'Alle vier tijdelijke herstelkopieën ingetrokken en gewist. Open formulierinvoer blijft staan.');
+  }
   const [preview,setPreview]=useState<{
     signature:string;contents:string;mode:'txt'|'ics'
   }|null>(null);
@@ -1013,6 +1066,34 @@ function PrivateMovingReadinessBoard({rows}:{
       uitsluitend hun huidige tabbladstatus, niet WoningNet, de overheid, de verhuurder
       of een leverancier. Een open stap is geen officiële achterstand; een afgevinkte
       stap is geen bevestiging van een organisatie.</p>
+    <details style={{border:'1px solid #d4dfd5',borderRadius:10,padding:14,margin:'14px 0'}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Privacy: tijdelijke tabbladherstelkopieën beheren
+        {activeTabCopies===null?' (opslagstatus onbekend)':
+          ' ('+activeTabCopies+'/4 ingeschakeld)'}
+      </summary>
+      <p>Woonreis, plan B, meterstanden en nutsvoorzieningen bieden elk een
+        afzonderlijke opt-in voor niet-versleutelde sessie-opslag. De exacte
+        privé-inhoud verschijnt niet in dit regiebord. Met onderstaande optie
+        schakel je alle vier herstelopties voor dit tabblad tegelijk uit
+        en verwijder je hun tijdelijke kopieën. <strong>Je huidige open
+        formuliervelden en eerder gedownloade JSON-bestanden blijven bestaan.</strong>
+        Dit is geen volledige browser-sitegegevensverwijdering en geen externe actie.</p>
+      {!confirmRevokeAll?
+        <button type="button" onClick={()=>{setConfirmRevokeAll(true);setRevokeMessage('');}}
+          style={{minHeight:44}}>Alle vier tabbladherstelopties uitschakelen…</button>:
+        <div>
+          <p>Bevestig: alle vier tijdelijke herstelsnapshots in dit
+            browsertabblad wissen en verdere automatische sessie-opslag stoppen?
+            De open invoer blijft staan, maar kan na herladen verdwijnen
+            totdat je opnieuw bewust opslaan aanzet.</p>
+          <button type="button" onClick={revokeAllTabRecovery}
+            style={{minHeight:44}}>Ja, stop en wis alle vier</button>
+          <button type="button" onClick={()=>setConfirmRevokeAll(false)}
+            style={{minHeight:44,marginLeft:8}}>Annuleren</button>
+        </div>}
+      {revokeMessage&&<p role="status" aria-live="polite">{revokeMessage}</p>}
+    </details>
     <p role="status" aria-live="polite">
       {pending?'Onderdelen worden geladen…':
         <><strong>{complete}/{total}</strong> persoonlijke controlevelden ingevuld

@@ -41,7 +41,16 @@ organisaties, boekingen, accountdata of berichten naar derden.
    interne `#`-ankers. De ICS bevat uitsluitend zelfgekozen datums en vaste
    scenariotitels, dus **geen privéacties, bedragen, contactnamen of adressen**.
    Zonder open datums is de agendaknop uitgeschakeld.
-6. Als een onderdeel nog niet geladen is, wordt geen onvolledig overzicht
+6. Via **Privacy: tijdelijke tabbladherstelkopieën beheren** zie je hoeveel
+   van de vier individuele herstelopties actief zijn in dit tabblad.
+   Het scherm toont uitsluitend het aantal, nooit de privé-inhoud.
+7. **Alle vier tabbladherstelopties uitschakelen…** vraagt een tweede
+   afzonderlijke bevestiging. Daarna stopt iedere bronmodule nieuwe
+   automatische sessie-opslag en worden uitsluitend de vier
+   Woonpoints-herstelkopieën en toestemmingstags voor dit tabblad verwijderd.
+   De geopende formulieren en lokaal gedownloade JSON-bestanden blijven intact.
+   Als de browser opslagverwijdering weigert, verschijnt een waarschuwing.
+8. Als een onderdeel nog niet geladen is, wordt geen onvolledig overzicht
    geëxporteerd. Als invoer vóór het downloaden verandert, vervalt de preview.
 
 ## Gegevensveiligheid
@@ -54,7 +63,9 @@ organisaties, boekingen, accountdata of berichten naar derden.
   Meterstanden en contract-/statusdatums zijn privé-informatie: vermijd
   gedeelde apparaten en maak desgewenst een eigen JSON-download.
   Het stoppen van bewaren verwijdert de bijbehorende tabbladkopie zonder de
-  actieve invoer te wissen. Andere Woonpoints-modules blijven onaangetast.
+  actieve invoer te wissen. De privacysectie in het regiebord kan **alle vier**
+  keuzes in één handmatig bevestigde actie intrekken. Andere Woonpoints-modules
+  en eventuele eerder gedownloade bestanden blijven onaangetast.
 - Geen externe meldingen, agenda-import, betalingen of automatische acties.
 - Agenda-export voldoet aan RFC 5545-regelvouw en geeft zelfgekozen, niet
   officieel gevalideerde dagafspraken; daadwerkelijk importeren blijft een
@@ -72,3 +83,18 @@ Geïntegreerd in de bestaande gesloten productiebron
   `reminders` bevat alleen vaste scenario-ID/naam en zelfgekozen datum;
 het dashboard leest geen private detailwaarden. Toegevoegd aan de bestaande
 anker-/zoeknavigatie. Geen nieuwe dependencies, CI-workflows of QA-bestanden.
+
+## Centrale privacy-intrekking
+
+De vier module-hooks luisteren uitsluitend in dit tabblad naar een lokale
+`woonpoints:private-tab-recovery-revoke:v1`-browsergebeurtenis. De knop
+in het regiebord verstuurt deze gebeurtenis én probeert defensief de vier
+bekende snapshot-/opt-in-sleutels te verwijderen. Iedere hook schakelt
+tegelijk verder schrijven uit. Een afzonderlijke lokale statusgebeurtenis
+werkt het getoonde aantal actieve herstelkopieën bij.
+
+De actie heeft geen externe netwerk- of serverkant, raakt geen andere
+`sessionStorage`-sleutels en wist geen open formulieren. Bij geweigerde
+browseropslag wordt geen onterechte verwijderbevestiging geclaimd. De
+bestaande individuele herstelfuncties en handmatige JSON-imports blijven
+onveranderd.
