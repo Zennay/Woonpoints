@@ -46,6 +46,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
 ];
 const homeCategoryOptions=[
   {id:'snel',label:'Snelstart'},{id:'favorieten',label:'★ Vastgezet'},
+  {id:'recent',label:'↗ Recent'},
   {id:'alles',label:'Alles'},
   {id:'reacties',label:'Reacties'},{id:'woning',label:'Woningen'},
   {id:'verhuizen',label:'Verhuizen'},{id:'inzichten',label:'Inzichten'}
@@ -53,6 +54,32 @@ const homeCategoryOptions=[
 
 const NAV_PINS_STORAGE_KEY='woonpoints:quicknav-pins:v1';
 const MAX_NAV_PINS=8;
+const MAX_RECENT_NAV=6;
+const homeNavAliases:Record<string,string[]>={
+  'manual-progress-heading':['vier reacties','maandteller'],
+  'private-month-pulse-heading':['rapportage','maandverslag'],
+  'private-points-heading':['zoekpunten','puntenstand'],
+  'housing-shortlist-heading':['woning kiezen','selectie'],
+  'private-budget-title':['woonlasten','huur vergelijken'],
+  'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
+  'private-moving-day-heading':['dagplanning','tijdlijn','verhuisdag'],
+  'private-packing-heading':['dozen','inpakken','uitpakken','inventaris'],
+  'private-moving-helpers-heading':['helpers','vrijwilligers'],
+  'private-address-change-heading':['adres doorgeven','post'],
+  'private-handover-heading':['sleuteloverdracht','inspectie'],
+  'private-meter-handover-heading':['gas water licht','meteropname'],
+  'private-utility-transfer-heading':['energie','leverancier wisselen','internet'],
+  'private-utility-contacts-heading':['contact leverancier','bellen'],
+  'private-document-readiness-heading':['papieren','documentcheck'],
+  'private-moving-expenses-heading':['uitgaven','verhuisbudget','bonnetjes'],
+  'private-moving-quotes-heading':['offertes','aannemers'],
+  'private-cost-split-heading':['kosten verdelen','afrekenen'],
+  'nazorg-contactlijn':['contactgeschiedenis','gesprekken'],
+  'nazorg':['gebreken','reparaties','klachten'],
+};
+function normalizeNavQuery(value:string):string {
+  return value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL').trim();
+}
 /** Only allow known, bounded anchor IDs; never save typed search queries or personal text. */
 function decodeNavPins(raw:string|null):string[]|null{
   if(raw===null)return [];
@@ -98,7 +125,25 @@ export default function HomePage() {
     return [label,value,detail];
   });
   const [navigationCategory,setNavigationCategory]=useState<
-    'snel'|'favorieten'|'alles'|HomeNavCategory>('snel');
+    'snel'|'favorieten'|'recent'|'alles'|HomeNavCategory>('snel');
+  const [recentNavIds,setRecentNavIds]=useState<string[]>([]);
+  const navSearchRef=useRef<HTMLInputElement|null>(null);
+  useEffect(()=>{
+    function onShortcut(event:KeyboardEvent){
+      if((event.ctrlKey||event.metaKey)&&!event.altKey&&!event.shiftKey&&
+        event.key.toLowerCase()==='k'){
+        event.preventDefault();
+        navSearchRef.current?.focus();
+        navSearchRef.current?.select();
+      }
+    }
+    window.addEventListener('keydown',onShortcut);
+    return()=>window.removeEventListener('keydown',onShortcut);
+  },[]);
+  function recordNavigation(id:string){
+    if(!homepageDestinations.some(item=>item.id===id))return;
+    setRecentNavIds(previous=>[id,...previous.filter(value=>value!==id)].slice(0,MAX_RECENT_NAV));
+  }
   const [pinnedNavIds,setPinnedNavIds]=useState<string[]>([]);
   const [pinMessage,setPinMessage]=useState('');
   const [pinStorageState,setPinStorageState]=useState<'unknown'|'persistent'|'temporary'>('unknown');
@@ -159,6 +204,34 @@ export default function HomePage() {
         'bestaande onbekende voorkeuren zijn niet overschreven.');
     }
   }
+  function moveNavPin(id:string,offset:-1|1){
+    if(!pinnedNavIds.includes(id))return;
+    function reordered(ids:string[]){
+      const current=ids.indexOf(id);
+      const target=current+offset;
+      if(current<0||target<0||target>=ids.length)return ids;
+      const copy=[...ids];
+      [copy[current],copy[target]]=[copy[target],copy[current]];
+      return copy;
+    }
+    const fallback=reordered(pinnedNavIds);
+    try{
+      const stored=decodeNavPins(window.localStorage.getItem(NAV_PINS_STORAGE_KEY));
+      if(stored===null)throw Error('unknown saved pins');
+      const next=reordered(stored);
+      const raw=JSON.stringify(next);
+      window.localStorage.setItem(NAV_PINS_STORAGE_KEY,raw);
+      if(window.localStorage.getItem(NAV_PINS_STORAGE_KEY)!==raw)
+        throw Error('unverified preference write');
+      setPinnedNavIds(next);
+      setPinStorageState('persistent');
+      setPinMessage('Volgorde van je favorieten lokaal bijgewerkt.');
+    }catch{
+      setPinnedNavIds(fallback);
+      setPinStorageState('temporary');
+      setPinMessage('Nieuwe volgorde werkt alleen in dit tabblad; onbekende voorkeuren zijn niet overschreven.');
+    }
+  }
   function clearNavPins(){
     try{
       window.localStorage.removeItem(NAV_PINS_STORAGE_KEY);
@@ -180,14 +253,22 @@ export default function HomePage() {
       ?.scrollIntoView({behavior:'smooth',block:'start'}),0);
   }
   const [navigationSearch,setNavigationSearch]=useState('');
-  const searchTerm=navigationSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+  const searchTerm=normalizeNavQuery(navigationSearch);
   const navigationResults=homepageDestinations.filter(destination=>{
-    if(searchTerm)return destination.title.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(searchTerm);
+    if(searchTerm)return [destination.title,...(homeNavAliases[destination.id]??[])]
+      .some(value=>normalizeNavQuery(value).includes(searchTerm));
     if(navigationCategory==='favorieten')return pinnedNavIds.includes(destination.id);
+    if(navigationCategory==='recent')return recentNavIds.includes(destination.id);
     return navigationCategory==='alles'||(navigationCategory==='snel'?
       destination.category==='essentieel'||pinnedNavIds.includes(destination.id):
       destination.category===navigationCategory);
-  }).sort((a,b)=>Number(pinnedNavIds.includes(b.id))-Number(pinnedNavIds.includes(a.id)));
+  }).sort((a,b)=>{
+    if(!searchTerm&&navigationCategory==='recent')
+      return recentNavIds.indexOf(a.id)-recentNavIds.indexOf(b.id);
+    if(!searchTerm&&navigationCategory==='favorieten')
+      return pinnedNavIds.indexOf(a.id)-pinnedNavIds.indexOf(b.id);
+    return Number(pinnedNavIds.includes(b.id))-Number(pinnedNavIds.includes(a.id));
+  });
   return (
     <main className="shell">
       <section className="hero">
@@ -209,7 +290,11 @@ export default function HomePage() {
           style={{display:'block',margin:'12px 0 5px',fontWeight:700}}>
           Zoek een onderdeel
         </label>
-        <input id="woonpoints-nav-search" type="search" value={navigationSearch}
+        <p id="woonpoints-nav-help">Ctrl+K (Mac: ⌘K) opent de zoekbalk;
+          Escape wist je zoekopdracht. Zoek bijvoorbeeld op dozen, bonnetjes of gebreken.</p>
+        <input id="woonpoints-nav-search" ref={navSearchRef} type="search" value={navigationSearch}
+          aria-describedby="woonpoints-nav-help"
+          onKeyDown={event=>{if(event.key==='Escape'){setNavigationSearch('');event.currentTarget.blur();}}}
           onChange={event=>setNavigationSearch(event.target.value)}
           maxLength={60} autoComplete="off"
           placeholder="Bijv. paklijst, maandrapport of nazorg"
@@ -232,9 +317,11 @@ export default function HomePage() {
         {navigationResults.length===0?
           <p>{navigationCategory==='favorieten'&&!searchTerm
             ?'Nog niets vastgezet. Open Alles en kies ☆ Vastzetten bij je favoriete onderdelen.'
-            :'Geen onderdeel gevonden. Wis je zoektekst of kies Alles.'}</p>:
+            :navigationCategory==='recent'&&!searchTerm
+              ?'Nog geen onderdelen geopend. Kies een onderdeel om het hier tijdelijk terug te vinden.'
+              :'Geen onderdeel gevonden. Wis je zoektekst of kies Alles.'}</p>:
           <ul className="quick-nav-links">{navigationResults.map(item=><li key={item.id}>
-            <a href={'#'+item.id}>{item.title}</a>
+            <a href={'#'+item.id} onClick={()=>recordNavigation(item.id)}>{item.title}</a>
             <button type="button" aria-pressed={pinnedNavIds.includes(item.id)}
               aria-label={(pinnedNavIds.includes(item.id)?'Verwijder ':'Zet vast: ')+item.title}
               onClick={()=>toggleNavPin(item.id)}
@@ -244,6 +331,17 @@ export default function HomePage() {
                 color:'#355e42',cursor:'pointer'}}>
               {pinnedNavIds.includes(item.id)?'★ Vastgezet':'☆ Vastzetten'}
             </button>
+            {navigationCategory==='favorieten'&&!searchTerm&&pinnedNavIds.includes(item.id)&&
+              <span style={{display:'inline-flex',gap:4,marginLeft:6}}>
+                <button type="button" className="secondary"
+                  aria-label={'Zet '+item.title+' hoger in favorieten'}
+                  disabled={pinnedNavIds.indexOf(item.id)===0}
+                  onClick={()=>moveNavPin(item.id,-1)}>↑</button>
+                <button type="button" className="secondary"
+                  aria-label={'Zet '+item.title+' lager in favorieten'}
+                  disabled={pinnedNavIds.indexOf(item.id)===pinnedNavIds.length-1}
+                  onClick={()=>moveNavPin(item.id,1)}>↓</button>
+              </span>}
           </li>)}</ul>}
         {!searchTerm&&navigationCategory!=='alles'&&<button type="button"
           onClick={()=>setNavigationCategory('alles')}
@@ -252,15 +350,20 @@ export default function HomePage() {
           Toon alle {homepageDestinations.length} onderdelen
         </button>}
         <p><strong>{pinnedNavIds.length} van {MAX_NAV_PINS} favorieten</strong> ingesteld.
-          Vastgezette onderdelen staan bovenaan en verschijnen ook bij Snelstart.</p>
+          In ★ Vastgezet kun je de volgorde met ↑ en ↓ aanpassen; ze verschijnen ook bij Snelstart.</p>
         {pinnedNavIds.length>0&&<button type="button" className="secondary"
           onClick={clearNavPins}>Wis mijn vastgezette onderdelen</button>}
+        {recentNavIds.length>0&&<p>{recentNavIds.length} laatst geopende onderdelen
+          zijn in dit tabblad bereikbaar via ↗ Recent.
+          {' '}<button type="button" className="secondary"
+            onClick={()=>setRecentNavIds([])}>Wis recente navigatie</button></p>}
         <p role="status" aria-live="polite">{pinMessage}</p>
         <p>Vastzetten bewaart uitsluitend vooraf bekende onderdeelcodes op dit apparaat,
           nooit je zoekwoorden, adressen, notities of accountgegevens. Opslagstatus:
           {' '}{pinStorageState==='persistent'?'alleen deze browser':
             pinStorageState==='temporary'?'alleen dit tabblad':'nog onbekend'}.
-          Navigeren en zoeken verstuurt niets naar een server.</p>
+          Recente navigatie blijft uitsluitend in het geheugen van dit tabblad
+          en verdwijnt bij herladen. Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
       <PrivateHousingJourney />
