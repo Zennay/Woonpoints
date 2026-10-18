@@ -5394,6 +5394,12 @@ function cleaned(value: string, limit: number) {
   return value.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').trim().slice(0, limit);
 }
 
+/** An explicit packing-box reference, not free-form contents, on the printed label. */
+function printedBoxCode(contents:string,count:number):string|null{
+  if(count!==1)return null;
+  const match=/^Dooscode: ([^\u0000-\u001f\u007f-\u009f]{1,30})$/.exec(contents);
+  return match&&cleaned(match[1],30)===match[1]?match[1]:null;
+}
 function escapeCsv(value: string) {
   // Protect spreadsheet importers, including Unicode-normalized leading formula characters.
   const normalized = value.normalize('NFKC');
@@ -5408,6 +5414,8 @@ export function PrivateMovingBoxLabels() {
   const [nextId, setNextId] = useState(1);
   const [message, setMessage] = useState('');
   const [showContentsInCsv, setShowContentsInCsv] = useState(false);
+  const [printRoom,setPrintRoom] = useState('alle');
+  const [printPriority,setPrintPriority] = useState<'alle'|Priority>('alle');
   const [clearRequested, setClearRequested] = useState(false);
   const [approvedBackup, setApprovedBackup] = useState<string | null>(null);
   const [pendingImport, setPendingImport] = useState<{
@@ -5424,7 +5432,14 @@ export function PrivateMovingBoxLabels() {
     number: n + 1,
     ...b
   }))), [batches]);
-  const pages = useMemo(() => Array.from({length: Math.ceil(labels.length / 6)}, (_, i) => labels.slice(i * 6, i * 6 + 6)), [labels]);
+  const printRooms=useMemo(()=>[...new Set(batches.map(b=>b.room))].sort((a,b)=>
+    a.localeCompare(b,'nl-NL')),[batches]);
+  const printLabels=useMemo(()=>labels.filter(label=>
+    (printRoom==='alle'||label.room===printRoom)&&
+    (printPriority==='alle'||label.priority===printPriority)
+  ),[labels,printRoom,printPriority]);
+  const pages = useMemo(() => Array.from({length: Math.ceil(printLabels.length / 6)},
+    (_, i) => printLabels.slice(i * 6, i * 6 + 6)), [printLabels]);
   const backupPreview = useMemo(() => writeBoxLabelBackup(batches), [batches]);
   const batchStamp = useMemo(() => JSON.stringify(batches), [batches]);
   useEffect(()=>{
@@ -5749,10 +5764,33 @@ export function PrivateMovingBoxLabels() {
       </section>
       <section className="boxPanel" aria-labelledby="box-output">
         <h2 id="box-output">Afdrukken en eigen CSV</h2>
-        <p>{pages.length} A4-{pages.length === 1 ? 'vel' : 'vellen'} met maximaal zes etiketten per vel. Controleer de voorbeelden vóór het afdrukken.</p>
+        <p>Kies welke labels je nu wilt afdrukken. Deze afdrukfilter verandert geen reeksen,
+          je JSON-back-up of het volledige CSV-overzicht.</p>
+        <div className="boxPrintFilters">
+          <label>Kamer voor afdruk
+            <select value={printRooms.includes(printRoom)?printRoom:'alle'}
+              onChange={event=>setPrintRoom(event.target.value)}>
+              <option value="alle">Alle kamers</option>
+              {printRooms.map(room=><option key={room} value={room}>{room}</option>)}
+            </select>
+          </label>
+          <label>Prioriteit voor afdruk
+            <select value={printPriority}
+              onChange={event=>setPrintPriority(event.target.value as 'alle'|Priority)}>
+              <option value="alle">Alle prioriteiten</option>
+              <option value="direct">Direct nodig</option>
+              <option value="eerst">Bij aankomst</option>
+              <option value="later">Kan wachten</option>
+            </select>
+          </label>
+        </div>
+        <p><strong>{printLabels.length} van {labels.length} labels</strong> zichtbaar op
+          {pages.length} A4-{pages.length===1?'vel':'vellen'} met maximaal zes per vel.
+          {printLabels.length===0?' Geen labels voor deze combinatie: kies andere filters.':''}
+          Controleer de voorbeelden vóór afdrukken.</p>
         <div className="boxActions">
-          <button type="button" disabled={!labels.length} onClick={() => window.print()}>Print mijn labels / PDF</button>
-          <button type="button" className="boxSecondary" disabled={!labels.length} onClick={saveCsv}>Download CSV-overzicht</button>
+          <button type="button" disabled={!printLabels.length} onClick={() => window.print()}>Print zichtbare labels / PDF</button>
+          <button type="button" className="boxSecondary" disabled={!labels.length} onClick={saveCsv}>Download volledig CSV-overzicht</button>
         </div>
         <label className="boxCheckbox"><input type="checkbox" checked={showContentsInCsv} onChange={e => setShowContentsInCsv(e.target.checked)}/> Neem mijn vrije inhoudnotities ook op in de CSV (standaard uit)</label>
         <p className="boxStatus" role="status" aria-live="polite">{message}</p>
@@ -5792,8 +5830,12 @@ export function PrivateMovingBoxLabels() {
           {page.map(label => <article className="boxLabel" key={label.key}>
             <span className="boxLabelEyebrow">VERHUIZEN · EIGEN LABEL</span>
             <div className="boxLabelRoom">{label.room}</div>
-            <p className="boxLabelNumber">DOOS {label.number} / {label.count}</p>
-            <p className="boxLabelContents">{label.contents || 'Inhoud niet ingevuld'}</p>
+            <p className="boxLabelNumber">{printedBoxCode(label.contents,label.count)
+              ?'DOOS '+printedBoxCode(label.contents,label.count)
+              :'DOOS '+label.number+' / '+label.count}</p>
+            <p className="boxLabelContents">{printedBoxCode(label.contents,label.count)
+              ?'Volgens eigen paklijst · controleer dooscode bij inladen'
+              :label.contents||'Inhoud niet ingevuld'}</p>
             <div className="boxLabelBottom">
               <strong>{priorityText[label.priority]}</strong>
               {label.fragile && <strong className="boxFragile">⚠ BREKBAAR</strong>}
