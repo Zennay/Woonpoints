@@ -565,6 +565,14 @@ hoeveel werk er nog resteert. Een eigen taak kan worden verwijderd.
   De bestaande lijst blijft ongewijzigd tot de gebruiker **Vervang mijn
   huidige checklist** kiest. Bij **Begin opnieuw** is opnieuw een expliciete
   bevestiging vereist.
+- **Bewaar open fases als agenda-ICS…** verschijnt na het kiezen van een
+  geldige verhuisdatum. De gebruiker maakt op eigen verzoek maximaal vijf
+  voorlopige agenda-afspraken (09:00–09:30 lokale agendatijd): één per fase
+  met onafgeronde stappen, inclusief eigen taaklabels in de beschrijving.
+  RFC 5545-tekst wordt ge-escaped en UTF-8-fysieke regels worden op een
+  beperkte octetlengte gevouwen. Een kalender-app kan deze gegevens
+  synchroniseren naar een cloud; dit gebeurt nooit automatisch vanuit
+  Woonpoints. Er worden geen officiële deadlines of boekingen gemaakt.
 - Er is geen koppeling met het privé-reactiedagboek, zoekpunten of
   WoningNet. Het project blijft in dry-run tot afzonderlijke
   toestemming-, bron- en releasevoorwaarden zijn vervuld.
