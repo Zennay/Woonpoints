@@ -208,3 +208,24 @@ tot je agenda of WoningNet en verstuurt geen reactie. Externe bestands- en
 agendaproviders kunnen bestanden synchroniseren. De planner bewaart geen invoer
 in localStorage, cookies of een server: sluit je het tabblad zonder JSON-export,
 dan vervalt de tabbladplanning.
+
+
+### Twee woningen handmatig vergelijken op totale kosten
+
+De nieuwe sectie **Wat kost wonen je écht per maand?** toont twee volledig
+zelf ingevoerde scenario's met een anoniem label, maandhuur, servicekosten,
+geschatte energie- en reiskosten en éénmalige verhuiskosten. Met
+**Vergelijk mijn bedragen** zie je het totaal per maand, twaalf maanden
+inclusief de eigen startkosten en een volgend jaar zonder die éénmalige
+last. Het verschil per maand en eerste jaar wordt apart uitgelegd.
+Met één knop wis je beide scenario's uit het tabblad. Als je dat zelf
+kiest, kun je een TXT-afweging downloaden; een eigen cloudopslagprovider
+kan dit bestand vervolgens synchroniseren.
+
+Geen woning wordt opgezocht, geen gegevens verzonden of automatisch
+opgeslagen, geen officiële huurprijs, subsidie/huurtoeslag,
+inkomenscontrole of toekomstige prijswijziging wordt verondersteld.
+Dit is uitsluitend een privé-rekenblad op basis van eigen aannames:
+gebruik geen adressen, namen of andere persoonsgegevens als labels.
+De maandvergelijking maakt geen claim over toewijzingskansen, betaalbaarheid
+of WoningNet-toestemming. De bestaande live-actiegate blijft ongewijzigd.
