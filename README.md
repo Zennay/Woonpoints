@@ -436,6 +436,15 @@ afzonderlijk na bevestiging verwijderen.
 geen officiële puntenregistratie, geen zoekpuntentoekenning en geen
 wijziging aan het automatische reactiegedrag. De invoer blijft alleen in
 het tabgeheugen: sluiten zonder zelf exporteren verliest de notities.
+Naast versiegebonden JSON is er nu ook **Bewaar eigen maandstanden als CSV**
+en een eigen CSV-import. Dat bestand bevat alleen de vaste header
+`month,points` en uitsluitend regels zoals `2026-10,12`, zonder
+formules, labels, vrije tekst of verborgen persoonsgegevens. CSV-import
+is beperkt tot 4 KiB en weigert onbekende kolommen, ongeldige maanden,
+niet-gehele of dubbele puntenstanden en vreemde controletekens.
+Ook CSV-herstel vervangt bestaande notities pas na afzonderlijke
+bevestiging. Er vindt geen serverupload plaats.
+
 Via **Bewaar eigen maandstanden als JSON** kun je bewust een klein,
 versiebeperkt bestand naar een zelfgekozen locatie wegschrijven. Import
 accepteert uitsluitend het precieze JSON-formaat, één unieke geldige
