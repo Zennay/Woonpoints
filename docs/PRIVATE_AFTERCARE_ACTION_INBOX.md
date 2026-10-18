@@ -23,3 +23,11 @@ Deze schermen gebruiken de bestaande `items` en `history` React-state; import/un
 - Het afzonderlijk bevestigde herstel van een privé-nazorg-JSON opent daarna expliciet alle punten, zodat eerder actieve lokale filters geen herstelde records verhullen. De bestaande volledige import-preview/undo, 16-KiB grens en versie-1/2-compatibiliteit blijven ongewijzigd.
 
 Alles blijft privé in React-browsertabbladgeheugen. Er is geen achtergrondsync, automatische bestandsexport, WoningNet-account, gecertificeerde reactie, juridische actie of bericht aan een verhuurder.
+
+## Meerdere eigen statuswijzigingen, bewust per selectie
+
+Het volledige privé-nazorgdossier ondersteunt nu lokale bulkacties op maximaal de 80 zichtbare records. Kies individuele regels of **Selecteer alle zichtbare punten**, en daarna bewust **Markeer geselecteerde als afgerond** of **Heropen geselecteerde punten**. De UI toont de geselecteerde aantallen en vereist een aparte tweede bevestiging. Alleen de actuele **zichtbare** geselecteerde records worden veranderd; niet-zichtbare eerder geselecteerde records worden nooit stilzwijgend verwerkt.
+
+Voor de tweede bevestiging is de exacte huidige combinatie van statusfilter, zoekterm, ruimte, prioriteit, geselecteerde zichtbare IDs en de gehele originele itemset vastgelegd. Bij verandering vervalt de eerdere bevestiging. Wijzigingen blijven onder de bestaande 16-KiB privé-JSON-exportgrens, passen **geen** contacthistorie of notities aan, en wissen de tijdelijke selectie na succes. De status `gemeld` kan bewust niet als bulkactie worden gezet: een officiële kennisgeving of feitelijke verzending kan nooit collectief worden aangenomen.
+
+Dit wijzigt geen WoningNet-account, reactiestatus, verhuurderbericht, gebruikersrechten, serverdatabase, worker of live feature gate. Alle bulkwijzigingen zijn uitsluitend zelf ingetikte tabbladstatus, geen bewijs van afronding.
