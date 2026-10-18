@@ -963,13 +963,19 @@ function PrivateMoveAftercare() {
       setMessage('Controleer de titel, ruimte, datum en notitie.'); return;
     }
     if (!editing && items.length >= LIMIT) { setMessage('Maximum van 80 aandachtspunten bereikt.'); return; }
-    if (editing) {
-      setItems(prev => prev.map(item => item.id === editing ? { ...item, ...clean } : item));
-    } else {
-      setItems(prev => [...prev, {
-        ...clean, id: 'item-' + crypto.randomUUID(), created: today(), status: 'open'
-      }]);
+    const nextItems: Item[] = editing
+      ? items.map(item => item.id === editing ? { ...item, ...clean } : item)
+      : [...items, { ...clean, id: 'item-' + crypto.randomUUID(), created: today(), status: 'open' }];
+    if (editing && !items.some(item => item.id === editing)) {
+      setMessage('Dit aandachtspunt is niet meer aanwezig; niets aangepast.'); return;
     }
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: nextItems, history
+    }, null, 2)).length > MAX_BYTES) {
+      setMessage('Wijziging niet opgeslagen: de privé-JSON-back-up zou groter dan 16 KiB worden. Verkort eerst notities of verwijder oude punten.');
+      return;
+    }
+    setItems(nextItems);
     setDraft(EMPTY);
     setEditing(null);
     setIncoming(null);
@@ -982,7 +988,14 @@ function PrivateMoveAftercare() {
     document.getElementById('nazorg-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function setStatus(id: string, status: Status) {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, status } : item));
+    if (!items.some(item => item.id === id)) return;
+    const nextItems = items.map(item => item.id === id ? { ...item, status } : item);
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: nextItems, history
+    }, null, 2)).length > MAX_BYTES) {
+      setMessage('Status niet aangepast: verkort eerst je eigen dossier voor een geldige JSON-back-up.'); return;
+    }
+    setItems(nextItems);
     setMessage(status === 'gemeld'
       ? 'Zelf als gemeld gemarkeerd. Er is niets aan een verhuurder verstuurd.'
       : 'Eigen status aangepast. Geen externe bevestiging.');
