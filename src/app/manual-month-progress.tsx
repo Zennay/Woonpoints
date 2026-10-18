@@ -2371,6 +2371,25 @@ export function PrivateMovingExpenseLedger(){
   const [pendingRestore,setPendingRestore]=useState<MovingExpenseLine[]|null>(null);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'expenses',data:{lines}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[lines]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setLines(archive.expenses.lines);setEditing(null);setForm(emptyExpenseForm());setPendingBudget(null);setPendingDelete(null);setPendingRestore(null);setPendingReport(null);setClearPending(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const [clearPending,setClearPending]=useState(false);
   const planned=lines.reduce((sum,line)=>sum+line.plannedCents,0);
   const actualKnown=lines.reduce((sum,line)=>sum+(line.actualCents??0),0);
@@ -2643,6 +2662,25 @@ export function PrivateMovingQuoteComparison(){
   const [pendingOffer,setPendingOffer]=useState<MovingQuote|null>(null);
   const [clearConfirm,setClearConfirm]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'quotes',data:{quotes,selected}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[quotes,selected]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setQuotes(archive.quotes.quotes);setSelected(archive.quotes.selected);setForm(quoteBlank());setEditing(null);setPendingOffer(null);setPendingDelete(null);setPendingRestore(null);setPendingReport(null);setClearConfirm(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   const sorted=[...quotes].sort((a,b)=>quoteTotal(a)-quoteTotal(b)||a.name.localeCompare(b.name,'nl-NL'));
   const best=sorted[0]||null;
   const selectedQuote=quotes.find(q=>q.id===selected)||null;
@@ -2875,6 +2913,25 @@ export function PrivateMovingCostSplit(){
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [confirmClear,setConfirmClear]=useState(false);
   const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
+      detail:{version:1,section:'split',data:{members,total}}
+    }));
+    window.addEventListener('woonpoints:moving-workspace:request',publish);
+    publish();
+    return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
+  },[members,total]);
+  useEffect(()=>{
+    function restore(event:Event){
+      const archive=(event as CustomEvent<unknown>).detail;
+      if(!validMovingWorkspaceArchive(archive))return;
+      setMembers(archive.split.members);setTotal(archive.split.total);setPendingOffer(null);setPendingCount(null);setPendingBackup(null);setPendingReport(null);setConfirmClear(false);
+      setNotice('Dit privé-onderdeel is na expliciete bevestiging vanuit de werkmap hersteld.');
+    }
+    window.addEventListener('woonpoints:moving-workspace:restore',restore);
+    return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
+  },[]);
+
   useEffect(()=>{
     function onOffer(event:Event){
       const value=(event as CustomEvent<unknown>).detail;
