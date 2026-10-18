@@ -2010,13 +2010,14 @@ function readPrivateCostOption(raw: PrivateCostInputs): PrivateCostOption | null
   if (rent === null || extras === null || moving === null || growth === null) return null;
   return {rent, extras, moving, growth};
 }
-function projectPrivateHousingCosts(option: PrivateCostOption, years: number) {
+function projectPrivateHousingCosts(option: PrivateCostOption, years: number, extrasGrowth = 0) {
   let cumulative = 0;
   return Array.from({length: years}, (_, i) => {
     const year = i + 1;
     const monthlyRent = option.rent * Math.pow(1 + option.growth / 100, i);
     // Include one-time moving costs in year one, never in later years.
-    const yearly = (monthlyRent + option.extras) * 12 + (i === 0 ? option.moving : 0);
+    const monthlyExtras = option.extras * Math.pow(1 + extrasGrowth / 100, i);
+    const yearly = (monthlyRent + monthlyExtras) * 12 + (i === 0 ? option.moving : 0);
     cumulative += yearly;
     return {year, monthlyRent, yearly, cumulative};
   });
@@ -2067,6 +2068,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   const [first, setFirst] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
   const [second, setSecond] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
   const [horizon, setHorizon] = useState('5');
+  const [rentStress, setRentStress] = useState('3');
+  const [extrasStress, setExtrasStress] = useState('4');
   const [message, setMessage] = useState('');
   const [pendingRestore, setPendingRestore] = useState<LongTermPrivateBackup | null>(null);
   const left = readPrivateCostOption(first);
@@ -2092,6 +2095,29 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     ? leftRows.map((a,i) => ({a,b:rightRows[i]})) : [];
   const last = rows.length ? rows[rows.length - 1] : null;
   const diff = last ? last.a.cumulative - last.b.cumulative : 0;
+  const parseStress = (value: string) => /^(?:0|[1-9]|1[0-9]|20)(?:[.,]\d{1,2})?$/.test(value)
+    ? Number(value.replace(',', '.')) : null;
+  const rentBump = parseStress(rentStress);
+  const extrasBump = parseStress(extrasStress);
+  const stressReady = Boolean(left && right && years && rentBump !== null && extrasBump !== null);
+  // Both homes face the same *additional* user-chosen stress; no invented official cap.
+  const stressVariants = stressReady && left && right && years && rentBump !== null && extrasBump !== null
+    ? ([
+      {id:'base', name:'Basis: jouw ingevulde aannames', rentExtra:0, extrasExtra:0},
+      {id:'rent', name:'Huurstress: extra stijging in beide woningen', rentExtra:rentBump, extrasExtra:0},
+      {id:'combined', name:'Gecombineerd: huur + andere woonlasten', rentExtra:rentBump, extrasExtra:extrasBump}
+    ] as const).map(variant => {
+      const aOption = {...left, growth:left.growth+variant.rentExtra};
+      const bOption = {...right, growth:right.growth+variant.rentExtra};
+      if (aOption.growth > 45 || bOption.growth > 45) return null;
+      const leftRows = projectPrivateHousingCosts(aOption,years,variant.extrasExtra);
+      const rightRows = projectPrivateHousingCosts(bOption,years,variant.extrasExtra);
+      const finalA = leftRows[years-1].cumulative, finalB = rightRows[years-1].cumulative;
+      const preferred = Math.abs(finalA-finalB)<.005 ? 'gelijk' : finalA < finalB ? 'A' : 'B';
+      return {...variant,aGrowth:aOption.growth,bGrowth:bOption.growth,
+        finalA,finalB,preferred,margin:Math.abs(finalA-finalB)};
+    }).filter((variant): variant is NonNullable<typeof variant> => variant !== null)
+    : [];
   let firstChangeYear: number | null = null;
   if (left && right) {
     let previous = left.moving - right.moving;
@@ -2101,6 +2127,25 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           Math.sign(previous) !== Math.sign(current)) firstChangeYear = entry.a.year;
       previous = current;
     }
+  }
+  function exportStressCsv() {
+    if (!stressVariants.length || !years) return;
+    const csv = [
+      'scenario;duur_jaren;extra_huurgroei_procentpunt;andere_lasten_jaargroei_procent;huurgroei_a_procent;huurgroei_b_procent;totaal_a_eur;totaal_b_eur;verschil_a_min_b_eur',
+      ...stressVariants.map(variant=>[
+        variant.id,years,variant.rentExtra.toFixed(2),variant.extrasExtra.toFixed(2),
+        variant.aGrowth.toFixed(2),variant.bGrowth.toFixed(2),variant.finalA.toFixed(2),
+        variant.finalB.toFixed(2),(variant.finalA-variant.finalB).toFixed(2)
+      ].join(';'))
+    ].join('\r\n')+'\r\n';
+    const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href=url;
+    anchor.download='woonpoints-eigen-kostenstresstabel.csv';
+    anchor.rel='noopener';
+    document.body.appendChild(anchor);anchor.click();anchor.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen stresstabel als numerieke CSV aangeboden. Geen voorspelling of wettelijk maximum.');
   }
   function saveCompleteBackup() {
     if (!left || !right || !years) return;
@@ -2231,6 +2276,63 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           maandhuur (€1–€20.000), overige maandlasten (€0–€20.000),
           verhuiskosten (€0–€50.000), huurstijging (0–25%) en duur (1–10 jaar) in.
           Een komma of punt voor centen is toegestaan.</p>}
+        <div className="private-budget-provenance" aria-labelledby="private-stress-title">
+          <h3 id="private-stress-title">Hoe gevoelig is jouw vergelijking voor kostenstijgingen?</h3>
+          <p>Vergelijk dezelfde twee woningen in drie uitdrukkelijk hypothetische
+            scenario’s, zonder je oorspronkelijke bedragen te veranderen.
+            Het extra percentage wordt boven op de jaarlijks gekozen
+            huurstijging van beide woningen geteld; bij gecombineerde
+            kostenstress stijgen ook de overige maandlasten ieder jaar
+            samengesteld. Startkosten blijven eenmalig in jaar één.</p>
+          <div className="private-budget-grid">
+            <label htmlFor="private-rent-stress">Extra jaarlijkse huurstijging voor
+              beide woningen (procentpunten, 0–20)
+              <input id="private-rent-stress" type="number" inputMode="decimal"
+                min="0" max="20" step=".01" value={rentStress}
+                onChange={event=>{setRentStress(event.target.value);setMessage('');}} />
+            </label>
+            <label htmlFor="private-extras-stress">Jaarlijkse stijging andere
+              woonlasten in gecombineerd scenario (%, 0–20)
+              <input id="private-extras-stress" type="number" inputMode="decimal"
+                min="0" max="20" step=".01" value={extrasStress}
+                onChange={event=>{setExtrasStress(event.target.value);setMessage('');}} />
+            </label>
+          </div>
+          {stressReady && stressVariants.length===3 ? <>
+            <div className="private-budget-table-wrap">
+              <table>
+                <caption>Eigen scenario’s over {years} jaar: geschatte cumulatieve
+                  uitgaven, geen officiële huurstijgingsprognose</caption>
+                <thead><tr>
+                  <th scope="col">Scenario</th><th scope="col">Woning A totaal</th>
+                  <th scope="col">Woning B totaal</th>
+                  <th scope="col">Verschil</th><th scope="col">Goedkoper</th>
+                </tr></thead>
+                <tbody>{stressVariants.map(variant=><tr key={variant.id}>
+                  <th scope="row">{variant.name}</th>
+                  <td>{format(variant.finalA)}</td><td>{format(variant.finalB)}</td>
+                  <td>{format(variant.margin)}</td>
+                  <td>{variant.preferred === 'gelijk' ? 'Even hoog' :
+                    'Woning '+variant.preferred}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            {stressVariants[0].preferred !== stressVariants[2].preferred &&
+              <p role="status"><strong>Let op:</strong> de woning met de laagste
+                geraamde totale kosten verandert tussen je basis- en
+                gecombineerde scenario. Bekijk zelf welke aannames realistisch zijn.</p>}
+            <button type="button" onClick={exportStressCsv}>
+              Bewaar de drie scenario’s als eigen numerieke CSV…
+            </button>
+          </> : <p role="status">Vul eerst beide geldige woningen, de periode en
+            extra percentages tussen 0 en 20 in. De som van de basishuurgroei
+            en de extra huurstijging mag in dit rekenmodel maximaal 45% zijn.</p>}
+          <p>Deze stresstest is een scenariovergelijking, <strong>geen advies of
+            verwachting</strong>. Wettelijke huurverhogingen, contracten,
+            toeslagen, inkomensverandering of energieprijzen zijn niet bekend.
+            De stressinstellingen worden niet automatisch toegevoegd aan de
+            eerdere versie-1 JSON-back-up; noteer of exporteer ze apart.</p>
+        </div>
         <div className="private-budget-provenance">
           <h3>Volledige privévergelijking bewaren of terugzetten</h3>
           <p>Bewaar op eigen verzoek zowel woning A/B, alle zelfgekozen bedragen,
