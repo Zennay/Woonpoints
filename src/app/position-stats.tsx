@@ -1380,6 +1380,47 @@ function calculateBudgetForecast(cost: CostResult, plan: BudgetInputs): BudgetFo
   };
 }
 
+
+type PrivateBudgetBackup = {
+  schema: 1;
+  scenarioA: CostDraft;
+  scenarioB: CostDraft;
+  budget: BudgetDraft;
+  saving: {months: string; reserveMonths: string};
+};
+/** Exact-version, plain-data JSON only: imported files never become authorization evidence. */
+function readPrivateBudgetBackup(text: string): PrivateBudgetBackup | null {
+  if (new TextEncoder().encode(text).length > 16384) return null;
+  let data: unknown;
+  try { data = JSON.parse(text); } catch { return null; }
+  const fields = (value: unknown, keys: readonly string[]): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype &&
+    Object.keys(value).length === keys.length &&
+    keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+  if (!fields(data, ['schema', 'scenarioA', 'scenarioB', 'budget', 'saving']) ||
+    data.schema !== 1) return null;
+  const costKeys = ['label', 'rent', 'service', 'energy', 'travel', 'start'];
+  const budgetKeys = ['income', 'essentials', 'savings', 'dip', 'rise'];
+  const scenarios = [data.scenarioA, data.scenarioB];
+  if (scenarios.some(value => !fields(value, costKeys) ||
+    costKeys.some(key => typeof value[key] !== 'string'))) return null;
+  if (!fields(data.budget, budgetKeys) ||
+    budgetKeys.some(key => typeof data.budget[key] !== 'string')) return null;
+  if (!fields(data.saving, ['months', 'reserveMonths']) ||
+    typeof data.saving.months !== 'string' || typeof data.saving.reserveMonths !== 'string') return null;
+  const first = data.scenarioA as CostDraft;
+  const second = data.scenarioB as CostDraft;
+  const budget = data.budget as BudgetDraft;
+  const saving = data.saving as PrivateBudgetBackup['saving'];
+  if (!calculatePrivateCosts(first) || !calculatePrivateCosts(second) ||
+    !readBudgetInputs(budget) ||
+    !/^(?:[1-9]|[12]\d|3[0-6])$/.test(saving.months) ||
+    !/^(?:[0-9]|1[0-2])$/.test(saving.reserveMonths)) return null;
+  return {schema: 1, scenarioA: {...first}, scenarioB: {...second},
+    budget: {...budget}, saving: {...saving}};
+}
+
 type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
 
 
@@ -1407,6 +1448,9 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
   const [fromShortlist, setFromShortlist] = useState(false);
+  const [pendingBudgetRestore, setPendingBudgetRestore] = useState<PrivateBudgetBackup | null>(null);
+  const [budgetArchiveMessage, setBudgetArchiveMessage] = useState('');
+
   const [movePlan, setMovePlan] = useState({months: '6', reserveMonths: '3'});
   const [budgetDraft, setBudgetDraft] = useState<BudgetDraft>({
     income: '', essentials: '0', savings: '0', dip: '15', rise: '10'
@@ -1454,6 +1498,53 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
     ['Verwachte buffer na 12 maanden, basis', forecastA.baselineYear, forecastB.baselineYear],
     ['Verwachte buffer na 12 maanden, tegenslag', forecastA.stressedYear, forecastB.stressedYear]
   ] : [];
+
+  function exportPrivateBudgetBackup() {
+    if (!ready || !budgetInputs || !moveMonths || reserveMonths === null ||
+      !left || !right || !show) return;
+    const snapshot: PrivateBudgetBackup = {schema: 1,
+      scenarioA: {...a}, scenarioB: {...b}, budget: {...budgetDraft}, saving: {...movePlan}};
+    const raw = JSON.stringify(snapshot);
+    // Do not offer a backup that the own restore validator would reject.
+    if (new TextEncoder().encode(raw).length > 16384 || !readPrivateBudgetBackup(raw)) {
+      setBudgetArchiveMessage('Deze invoer kan niet veilig worden geback-upt. Controleer je gegevens.');
+      return;
+    }
+    downloadPrivatePlanFile(raw + '\n', 'application/json;charset=utf-8',
+      'woonpoints-eigen-kosten-en-buffer.json');
+    setBudgetArchiveMessage('Privé-JSON aangeboden. Bewaar het zorgvuldig: de gekozen opslaglocatie kan synchroniseren.');
+  }
+  async function selectBudgetRestore(file: File | undefined) {
+    setPendingBudgetRestore(null);
+    setBudgetArchiveMessage('');
+    if (!file) return;
+    if (file.size === 0 || file.size > 16384) {
+      setBudgetArchiveMessage('Herstelbestand geweigerd: maximaal 16 KiB geldig Woonpoints-JSON.');
+      return;
+    }
+    try {
+      const incoming = readPrivateBudgetBackup(await file.text());
+      if (!incoming) throw new TypeError('invalid');
+      setPendingBudgetRestore(incoming);
+      setBudgetArchiveMessage('Geldige privégegevens ingelezen. Bevestig apart voordat je huidige scenario’s worden vervangen.');
+    } catch {
+      setBudgetArchiveMessage('Herstelbestand geweigerd. Huidige bedragen en plannen zijn ongewijzigd.');
+    }
+  }
+  function applyBudgetRestore() {
+    if (!pendingBudgetRestore) return;
+    const snapshot = pendingBudgetRestore;
+    setA({...snapshot.scenarioA});
+    setB({...snapshot.scenarioB});
+    setBudgetDraft({...snapshot.budget});
+    setMovePlan({...snapshot.saving});
+    setFromShortlist(false); // Imported personal backup is NOT an original property provenance receipt.
+    setShow(true);
+    setPendingBudgetRestore(null);
+    setBudgetArchiveMessage('Privé-vergelijking hersteld in dit tabblad; geen server of WoningNet geraadpleegd.');
+    setNotice('Financiële gegevens uit eigen herstelbestand overgenomen; brongegevens blijven ongeverifieerd.');
+  }
+
   function exportBudgetForecast() {
     if (!left || !right || !budgetInputs || !forecastA || !forecastB || !show) return;
     const formatScenario = (cost: CostResult, data: BudgetForecast) => [
@@ -1780,6 +1871,40 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
                 de startkosten of een negatieve buffer binnen twaalf maanden.
                 Dit is een indicatie op basis van je eigen invoer, geen financieel advies.</p>}
             <button type="button" onClick={exportBudgetForecast}>Bewaar eigen bufferprognose als TXT…</button>
+            <div className="private-budget-provenance">
+              <h4>Eigen vergelijking later hervatten (alleen na jouw keuze)</h4>
+              <p>Download een privé-JSON met beide woningen, jouw financiële aannames en
+                verhuis-spaarplan. Dit bevat gevoelige privébedragen. Er wordt niets
+                automatisch bewaard of verstuurd. Een cloudbestandsprovider kan
+                de gekozen JSON wel synchroniseren.</p>
+              <button type="button" onClick={exportPrivateBudgetBackup}>
+                Bewaar complete privévergelijking als JSON…
+              </button>
+              <label htmlFor="budget-restore-file">Lees een eigen Woonpoints-herstelbestand
+                (JSON, maximaal 16 KiB)</label>
+              <input id="budget-restore-file" type="file" accept=".json,application/json"
+                onChange={event => {
+                  const selected = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  void selectBudgetRestore(selected);
+                }} />
+              {pendingBudgetRestore && <div className="housing-confirm" role="group"
+                aria-label="Bevestig herstel van financiële privégegevens">
+                <p><strong>Vervang huidige privévergelijking?</strong> Beide bestaande
+                  woning- en budgetscenario&apos;s en de verhuis-spaartermijn worden
+                  vervangen. De geïmporteerde invoer is niet officieel gecontroleerd;
+                  oorspronkelijke woninglijstbewijzen worden niet hersteld.</p>
+                <div className="private-budget-buttons">
+                  <button type="button" onClick={applyBudgetRestore}>Ja, herstel lokaal</button>
+                  <button type="button" className="secondary" onClick={() => {
+                    setPendingBudgetRestore(null);
+                    setBudgetArchiveMessage('Herstel geannuleerd. Bestaande invoer behouden.');
+                  }}>Annuleer herstel</button>
+                </div>
+              </div>}
+              {budgetArchiveMessage && <p role="status">{budgetArchiveMessage}</p>}
+            </div>
+
             <p>Bestand alleen na jouw klik; een gekozen cloudbestandslocatie kan je
               zelf ingevoerde financiële gegevens synchroniseren.</p>
           </div>}
