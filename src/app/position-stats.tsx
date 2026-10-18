@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import ManualMonthProgress from './manual-month-progress';
 import { localMonthKey, MANUAL_MONTHLY_GOAL } from '../lib/manual-month-progress.mjs';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
