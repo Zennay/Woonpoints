@@ -3058,18 +3058,62 @@ function PrivateMoveAftercare() {
                 inclusief wijzigingen aan verborgen notities, maar nooit hun vrije tekst.</p>}
               {incomingMode === 'merge' && incomingMerge && <div className="aftercare-history"
                 role="status" aria-live="polite">
-                <h4>Voorbeeld veilig samenvoegen (zonder overschrijven)</h4>
+                <h4>Voorbeeld samenvoegen: alleen nieuwe records en handmatig gekozen wijzigingen</h4>
                 <p><strong>{incomingMerge.newPoints} extra eigen punten</strong> en
                   <strong> {incomingMerge.newContacts} extra contactmomenten</strong>.
                   {' '}{incomingMerge.skippedPoints} identieke punten en
                   {' '}{incomingMerge.skippedContacts} identieke contactmomenten blijven ongewijzigd.</p>
-                <p>Bestaande {items.length} punten en {history.length} contactnotities blijven intact.
-                  Na samenvoegen zijn er {incomingMerge.items.length} punten en
+                <p>Je huidige {items.length} punten en {history.length} contactmomenten
+                  blijven bewaard, behalve de <strong>{incomingMerge.updatedPoints} punten</strong> en
+                  <strong> {incomingMerge.updatedContacts} contactmomenten</strong>
+                  waarvoor je hieronder afzonderlijk kiest de versie uit het bestand over te nemen.
+                  Na de samenvoeging zijn er {incomingMerge.items.length} punten en
                   {' '}{incomingMerge.history.length} contactmomenten.</p>
                 <p>{incomingMerge.conflictingPoints} conflicterende punt-ID’s en
                   {' '}{incomingMerge.conflictingContacts} conflicterende contact-ID’s.
-                  Bij hetzelfde ID met andere velden wordt <strong>niets</strong> overschreven,
-                  ook geen verborgen privétekst of zelf genoteerde verzendstatus.</p>
+                  Er blijven nog <strong>{incomingMerge.unresolved} onbesliste conflicten</strong>.
+                  Zonder een expliciete keuze bij elk conflict wordt niets toegepast.</p>
+                {incomingMerge.conflicts.length > 0 && <fieldset
+                  className="aftercare-notice-picks" aria-label="Elk eigen importconflict afzonderlijk oplossen">
+                  <legend>Beslis over elk afwijkend eigen record</legend>
+                  <ol>{incomingMerge.conflicts.map((conflict, index) =>
+                    <li key={conflict.key} className="aftercare-item">
+                      <strong>{conflict.kind}: {conflict.label}</strong>
+                      <p>Dezelfde ID komt in beide dossiers voor met andere velden.
+                        Dat kan een status, titel, datum, koppeling of verborgen privénotitie zijn.</p>
+                      <details className="aftercare-history">
+                        <summary>Bekijk beide volledige versies (inclusief eigen privénotities)</summary>
+                        <p><strong>Mijn huidige tabblad</strong></p>
+                        <pre className="aftercare-note" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                          {conflict.existingDetails}
+                        </pre>
+                        <p><strong>Het gekozen privébestand</strong></p>
+                        <pre className="aftercare-note" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                          {conflict.incomingDetails}
+                        </pre>
+                      </details>
+                      <label htmlFor={'nazorg-merge-choice-' + index}>Mijn beslissing voor deze ID</label>
+                      <select id={'nazorg-merge-choice-' + index}
+                        value={conflict.choice || ''}
+                        onChange={event => {
+                          const choice = event.target.value;
+                          setMergeConflictChoices(current => {
+                            const next = {...current};
+                            if (choice === 'keep' || choice === 'incoming') {
+                              next[conflict.key] = choice;
+                            } else {
+                              delete next[conflict.key];
+                            }
+                            return next;
+                          });
+                          setIncomingRiskApproved(false);
+                        }}>
+                        <option value="">Nog niet beslist — niets wordt toegepast</option>
+                        <option value="keep">Behoud mijn huidige tabbladversie</option>
+                        <option value="incoming">Vervang uitsluitend deze record-ID door mijn bestandsversie</option>
+                      </select>
+                    </li>)}</ol>
+                </fieldset>}
                 {!incomingMerge.ready && <p className="aftercare-warning" role="alert">
                   Samenvoegen is niet mogelijk: {incomingMerge.reason}
                 </p>}
@@ -3103,7 +3147,7 @@ function PrivateMoveAftercare() {
                   disabled={!incomingCurrent || (incomingMode === 'merge' && !incomingMerge?.ready)}
                   onChange={event => setIncomingRiskApproved(event.target.checked)}/>
                 {incomingMode === 'merge'
-                  ? 'Ik kies uitsluitend nieuwe, niet-conflicterende eigen punten en contactnotities toe te voegen. Ik heb de aantallen en grenzen gecontroleerd; mijn huidige dossier wordt niet vervangen.'
+                  ? 'Ik heb alle conflicten afzonderlijk beoordeeld, mijn keuzes en eigen verborgen privégegevens gecontroleerd, en keur uitsluitend de getoonde nieuwe en expliciet gekozen gewijzigde records goed.'
                   : 'Ik begrijp welke eigen nazorgpunten en contactmomenten verdwijnen of wijzigen, inclusief verborgen privéinhoud. Ik heb zo nodig een eigen back-up gemaakt.'}
               </label>
               <div className="aftercare-actions">
