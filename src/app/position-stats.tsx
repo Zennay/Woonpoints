@@ -4999,6 +4999,60 @@ function privateHelperIcs(rows:PrivateMovingHelper[]):string{
     'METHOD:PUBLISH',...events,'END:VCALENDAR',''].join('\r\n');
 }
 
+
+function privateHelperOverlaps(rows:PrivateMovingHelper[]):Array<[PrivateMovingHelper,PrivateMovingHelper]>{
+  const current=rows.filter(row=>row.date&&row.start&&row.end&&row.state!=='Afgerond');
+  const conflicts:Array<[PrivateMovingHelper,PrivateMovingHelper]>=[];
+  for(let i=0;i<current.length;i++){
+    for(let j=i+1;j<current.length;j++){
+      const a=current[i],b=current[j];
+      if(a.date===b.date&&a.alias.toLocaleLowerCase('nl-NL')===
+        b.alias.toLocaleLowerCase('nl-NL')&&
+        a.start<b.end&&b.start<a.end)conflicts.push([a,b]);
+    }
+  }
+  return conflicts;
+}
+function privateHelperDayBriefing(rows:PrivateMovingHelper[]):string{
+  const ordered=rows.slice().sort((a,b)=>
+    (a.date||'9999').localeCompare(b.date||'9999')||
+    (a.start||'99:99').localeCompare(b.start||'99:99')||
+    a.alias.localeCompare(b.alias,'nl-NL'));
+  const dates=[...new Set(ordered.filter(row=>row.date).map(row=>row.date))];
+  const conflicts=privateHelperOverlaps(rows);
+  const lines=['WOONPOINTS - EIGEN VERHUISHULP DRAAIBOEK',
+    'Alleen zelf opgegeven afspraken en statussen, niet onafhankelijk bevestigd.',
+    'In totaal '+rows.length+' eigen afspraken, waarvan '+
+      rows.filter(row=>row.state==='Bevestigd').length+' door jezelf als bevestigd gemarkeerd.',''];
+  for(const day of dates){
+    const onDay=ordered.filter(row=>row.date===day);
+    lines.push('=== '+day+' ===');
+    for(const row of onDay){
+      lines.push((row.start&&row.end?row.start+' - '+row.end:'geen volledig tijdvak')+
+        ' | '+row.task+' | '+row.alias+' | '+row.state+
+        (row.note?' | eigen opmerking: '+row.note:''));
+    }
+    lines.push('Eigen aandachtspunten: '+
+      (onDay.filter(row=>row.state==='Nog vragen').length)+' nog vragen, '+
+      onDay.filter(row=>!row.start||!row.end).length+' zonder volledig tijdvak.','');
+  }
+  const unscheduled=ordered.filter(row=>!row.date);
+  if(unscheduled.length){
+    lines.push('=== ZONDER DATUM ===');
+    for(const row of unscheduled)lines.push(row.alias+' | '+row.task+' | '+row.state+
+      (row.note?' | '+row.note:''));
+    lines.push('');
+  }
+  lines.push('=== MOGELIJK DUBBEL INGEPLAND (zelfde eigen alias) ===');
+  if(!conflicts.length)lines.push('Geen overlappende tijdvakken met dezelfde alias genoteerd.');
+  for(const [a,b] of conflicts)lines.push(a.date+' | '+a.alias+' | '+
+    a.start+'-'+a.end+' ('+a.task+') / '+b.start+'-'+b.end+' ('+b.task+')');
+  lines.push('', 'Controleer rechtstreeks met alle betrokkenen of afspraken daadwerkelijk bestaan.',
+    'Dit document verstuurt geen bericht, uitnodiging, reservering of automatische notificatie.',
+    'Opslaan/delen is jouw eigen expliciete keuze; vermijd gevoelige gegevens.');
+  return lines.join('\n')+'\n';
+}
+
 /** Human-scheduled helpers, never messages, invites or online bookings. */
 export function PrivateMovingHelperRoster(){
   const [helpers,setHelpers]=useState<PrivateMovingHelper[]>([]);
@@ -5008,6 +5062,7 @@ export function PrivateMovingHelperRoster(){
   const [pendingDelete,setPendingDelete]=useState<string|null>(null);
   const [pendingBackup,setPendingBackup]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [pendingBriefing,setPendingBriefing]=useState<string|null>(null);
   const [pendingRestore,setPendingRestore]=useState<PrivateMovingHelperArchive|null>(null);
   const [confirmReset,setConfirmReset]=useState(false);
   const [notice,setNotice]=useState('');
@@ -5022,9 +5077,12 @@ export function PrivateMovingHelperRoster(){
     (a.start||'99:99').localeCompare(b.start||'99:99')||
     a.alias.localeCompare(b.alias,'nl-NL'));
   const visible=upcoming.filter(row=>filter==='Alle taken'||row.task===filter);
+  const activeConflicts=privateHelperOverlaps(helpers);
+  const dayDates=[...new Set(scheduled.map(row=>row.date))].sort();
+  const briefing=privateHelperDayBriefing(helpers);
   const resetPending=()=>{
-    setPendingDelete(null);setPendingCalendar(null);setPendingBackup(null);
-    setPendingRestore(null);setConfirmReset(false);setNotice('');
+    setPendingDelete(null);setPendingCalendar(null);setPendingBriefing(null);
+    setPendingBackup(null);setPendingRestore(null);setConfirmReset(false);setNotice('');
   };
   function save(){
     const alias=draft.alias.trim(),note=draft.note.trim();
@@ -5074,6 +5132,16 @@ export function PrivateMovingHelperRoster(){
     privateHelperDownload('woonpoints-prive-verhuishulp.json',
       JSON.stringify(archive,null,2)+'\n','application/json;charset=utf-8');
     setPendingBackup(null);setNotice('Privé-back-up lokaal aangeboden; controleer je opslaglocatie.');
+  }
+  function saveBriefing(){
+    if(pendingBriefing!==signature||!helpers.length){
+      setPendingBriefing(null);setNotice('Je hulpplanning is gewijzigd. Bekijk het draaiboek opnieuw.');
+      return;
+    }
+    privateHelperDownload('woonpoints-prive-verhuishulp-draaiboek.txt',
+      briefing,'text/plain;charset=utf-8');
+    setPendingBriefing(null);
+    setNotice('Persoonlijk draaiboek lokaal aangeboden. Geen helpers automatisch benaderd.');
   }
   function saveCalendar(){
     if(pendingCalendar!==calendarSignature||!calendarRows.length){
@@ -5166,6 +5234,48 @@ export function PrivateMovingHelperRoster(){
         <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
       </div>}
     </li>)}</ol>
+
+    <section aria-labelledby="private-helper-daily-heading">
+      <h3 id="private-helper-daily-heading">Eigen draaiboek per verhuisdag</h3>
+      <p>Een dagoverzicht uit je eigen hulpafspraken. Per dag staan
+        de taakverdeling, tijden en nog niet bevestigde of onvolledige
+        afspraken bij elkaar. Dit is geen echte aanwezigheidscontrole.</p>
+      {dayDates.length===0&&<p>Nog geen volledig geplande tijdvakken genoteerd.</p>}
+      {dayDates.map(day=>{
+        const rows=upcoming.filter(row=>row.date===day);
+        return <div key={day}>
+          <h4>{day}</h4>
+          <p>{rows.length} eigen afspraken, waarvan
+            {' '+rows.filter(row=>row.state==='Bevestigd').length} zelf bevestigd
+            en {' '+rows.filter(row=>row.state==='Nog vragen').length} nog te vragen.</p>
+          <ul>{rows.map(row=><li key={row.id}>
+            {row.start&&row.end?row.start+'–'+row.end:'geen tijdvak'}{' · '}
+            <strong>{row.task}</strong> · {row.alias} · {row.state}
+          </li>)}</ul>
+        </div>;
+      })}
+      {activeConflicts.length>0&&<div role="status">
+        <h4>Zelfde alias in overlappende tijdvakken</h4>
+        <p>Controleer deze mogelijke dubbele planning; Woonpoints annuleert niets.</p>
+        <ul>{activeConflicts.map(([a,b])=><li key={a.id+'|'+b.id}>
+          {a.date} · {a.alias}: {a.start}–{a.end} ({a.task}) en
+          {' '+b.start}–{b.end} ({b.task})
+        </li>)}</ul>
+      </div>}
+      <button type="button" disabled={!helpers.length} onClick={()=>{
+        setPendingBriefing(signature);setPendingCalendar(null);setPendingBackup(null);setNotice('');
+      }}>Bekijk eigen verhuisdagdraaiboek als TXT…</button>
+      {pendingBriefing===signature&&helpers.length>0&&
+        <div role="group" aria-label="Bevestig verhuishulp-draaiboek">
+          <p>Bekijk hieronder alle zelf ingevulde roepnamen, datums,
+            eigen statussen en taaknotities vóór je dit bestand bewust opslaat.
+            De opslaglocatie kan buiten de app synchroniseren.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+            maxHeight:'25rem',overflowY:'auto'}}>{briefing}</pre>
+          <button type="button" onClick={saveBriefing}>Bevestig privé-draaiboekdownload</button>
+          <button type="button" onClick={()=>setPendingBriefing(null)}>Annuleren</button>
+        </div>}
+    </section>
     <h3>Bewaar of herstel bewust</h3>
     <p>Een privé-JSON bevat eigen roepnamen, taaknotities en tijdvakken.
       Het bijbehorende agenda-bestand bevat alleen werkelijk door jou als

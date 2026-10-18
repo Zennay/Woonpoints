@@ -1165,3 +1165,29 @@ toewijzingen, geverifieerde afspraken, werkgeversroosters of
 WoningNet-acties. Vermijd telefoonnummers, adressen en gevoelige
 persoonsgegevens in roepnaam of notitie. De bestaande dry-run-,
 toestemmings- en productievoorwaarden blijven intact.
+
+
+## Eigen verhuisdagdraaiboek en overlapwaarschuwing
+
+In **Wie helpt wanneer?** toont Woonpoints nu ook een samengevoegd
+**draaiboek per verhuisdag**. Dezelfde door jezelf ingevoerde afspraken
+worden per datum en tijdvak weergegeven, met taak, alias en de door jou
+zelf gemarkeerde status. Onbevestigde afspraken blijven expliciet
+**Nog vragen**, niet stilzwijgend bevestigd.
+
+- Als dezelfde **eigen alias** op dezelfde kalenderdag in overlappende
+  tijdvakken staat en beide taken nog niet als afgerond zijn gemarkeerd,
+  geeft het scherm een zichtbare overlapwaarschuwing. Dit is een
+  handmatig planningssignaal, geen geverifieerde persoonherkenning
+  en er wordt niets automatisch verwijderd of verplaatst.
+- De knop **Bekijk eigen verhuisdagdraaiboek als TXT…** toont alle
+  persoonlijke afspraken, ook die zonder datum, plus open
+  bevestigingen, ontbrekende tijden en eventuele dubbele tijdvakken.
+  Alleen na aparte bevestiging wordt het tekstbestand lokaal aangeboden.
+- Eigen aliases, korte notities en tijdvakken blijven privé in
+  het tabblad totdat je zelf exporteert. Een buiten de app gekozen
+  opslaglocatie kan synchroniseren. Er zijn geen e-mails, apps,
+  automatische uitnodigingen, WoningNet-acties of achtergrondjobs.
+
+Dit is een persoonlijke planning voor eigen verhuishulp, geen
+garantie op aanwezigheid, boeking, verzekering of voltooide verhuizing.
