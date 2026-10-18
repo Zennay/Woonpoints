@@ -971,71 +971,6 @@ type PrivateMovingReadinessRow={
   id:string;title:string;href:string;hint:string;pulse:PrivateMovePulse|null
 };
 
-type PrivateMovingBundleData=Record<string,string>;
-const PRIVATE_MOVING_BUNDLE_KIND='woonpoints-private-moving-bundle';
-const PRIVATE_MOVING_BUNDLE_LIMIT=32768;
-const PRIVATE_MOVING_BUNDLE_PARTS=[
-  {field:'journey',key:JOURNEY_TAB_STORAGE_KEY,title:'Mijn woonreis'},
-  {field:'fallback',key:FALLBACK_TAB_STORAGE_KEY,title:'Verhuisdag plan B'},
-  {field:'meters',key:METER_TAB_STORAGE_KEY,title:'Meterstanden'},
-  {field:'utilities',key:UTILITY_TAB_STORAGE_KEY,title:'Nutsvoorzieningen'}
-] as const;
-function privateMovingBundleCurrent(snapshots:PrivateMovingBundleData):boolean{
-  return PRIVATE_MOVING_BUNDLE_PARTS.every(part=>typeof snapshots[part.key]==='string');
-}
-function privateMovingBundleSignature(snapshots:PrivateMovingBundleData):string{
-  return JSON.stringify(PRIVATE_MOVING_BUNDLE_PARTS.map(part=>snapshots[part.key]??null));
-}
-function privateMovingBundleSerialize(snapshots:PrivateMovingBundleData):string{
-  if(!privateMovingBundleCurrent(snapshots))throw Error('Er ontbreken nog onderdelen.');
-  const journey=JSON.parse(snapshots[JOURNEY_TAB_STORAGE_KEY]);
-  const fallback=JSON.parse(snapshots[FALLBACK_TAB_STORAGE_KEY]);
-  const meters=JSON.parse(snapshots[METER_TAB_STORAGE_KEY]);
-  const utilities=JSON.parse(snapshots[UTILITY_TAB_STORAGE_KEY]);
-  const valid=decodeJourneyTab(snapshots[JOURNEY_TAB_STORAGE_KEY])!==null&&
-    decodeFallbackTab(snapshots[FALLBACK_TAB_STORAGE_KEY])!==null&&
-    decodeMeterTab(snapshots[METER_TAB_STORAGE_KEY])!==null&&
-    decodeUtilityTab(snapshots[UTILITY_TAB_STORAGE_KEY])!==null;
-  if(!valid)throw Error('Een brononderdeel bevat ongeldige invoer.');
-  const text=JSON.stringify({
-    kind:PRIVATE_MOVING_BUNDLE_KIND,version:1,
-    journey,fallback,meters,utilities
-  },null,2)+'\n';
-  if(new TextEncoder().encode(text).length>PRIVATE_MOVING_BUNDLE_LIMIT)
-    throw Error('Gecombineerd privébestand te groot.');
-  return text;
-}
-/** Strict, canonical and fail-closed. No partial application before all modules validate. */
-function privateMovingBundleParse(raw:string):PrivateMovingBundleData|null{
-  try{
-    if(new TextEncoder().encode(raw).length>PRIVATE_MOVING_BUNDLE_LIMIT)return null;
-    const data:unknown=JSON.parse(raw);
-    if(!data||typeof data!=='object'||Array.isArray(data))return null;
-    const obj=data as Record<string,unknown>;
-    if(Object.keys(obj).sort().join(',')!=='fallback,journey,kind,meters,utilities,version'||
-      obj.kind!==PRIVATE_MOVING_BUNDLE_KIND||obj.version!==1||
-      !obj.journey||typeof obj.journey!=='object'||Array.isArray(obj.journey)||
-      !obj.fallback||typeof obj.fallback!=='object'||Array.isArray(obj.fallback)||
-      !obj.meters||typeof obj.meters!=='object'||Array.isArray(obj.meters)||
-      !obj.utilities||typeof obj.utilities!=='object'||Array.isArray(obj.utilities))return null;
-    const journey=JSON.stringify(obj.journey);
-    const fallback=JSON.stringify(obj.fallback);
-    const meterData=obj.meters as Record<string,unknown>;
-    const utilityData=obj.utilities as Record<string,unknown>;
-    const meters=handoverBackup(meterData.readings as PrivateMeterTabData['readings'],
-      meterData.included as PrivateMeterTabData['included']);
-    const utilities=privateUtilityBackup(utilityData.entries as Record<PrivateUtilityKey,PrivateUtilityStep>);
-    const snapshots:PrivateMovingBundleData={
-      [JOURNEY_TAB_STORAGE_KEY]:journey,
-      [FALLBACK_TAB_STORAGE_KEY]:fallback,
-      [METER_TAB_STORAGE_KEY]:meters,
-      [UTILITY_TAB_STORAGE_KEY]:utilities
-    };
-    if(privateMovingBundleSerialize(snapshots)!==raw)return null;
-    return snapshots;
-  }catch{return null;}
-}
-
 function PrivateMovingReadinessBoard({rows,snapshots}:{
   rows:PrivateMovingReadinessRow[];
   snapshots:Record<string,string>
@@ -7141,6 +7076,72 @@ function decodeJourneyTab(raw:string):string[]|null{
       !data.checked.every((id:unknown)=>typeof id==='string'&&JOURNEY_IDS.has(id))||
       new Set(data.checked).size!==data.checked.length)return null;
     return data.checked as string[];
+  }catch{return null;}
+}
+
+
+type PrivateMovingBundleData=Record<string,string>;
+const PRIVATE_MOVING_BUNDLE_KIND='woonpoints-private-moving-bundle';
+const PRIVATE_MOVING_BUNDLE_LIMIT=32768;
+const PRIVATE_MOVING_BUNDLE_PARTS=[
+  {field:'journey',key:JOURNEY_TAB_STORAGE_KEY,title:'Mijn woonreis'},
+  {field:'fallback',key:FALLBACK_TAB_STORAGE_KEY,title:'Verhuisdag plan B'},
+  {field:'meters',key:METER_TAB_STORAGE_KEY,title:'Meterstanden'},
+  {field:'utilities',key:UTILITY_TAB_STORAGE_KEY,title:'Nutsvoorzieningen'}
+] as const;
+function privateMovingBundleCurrent(snapshots:PrivateMovingBundleData):boolean{
+  return PRIVATE_MOVING_BUNDLE_PARTS.every(part=>typeof snapshots[part.key]==='string');
+}
+function privateMovingBundleSignature(snapshots:PrivateMovingBundleData):string{
+  return JSON.stringify(PRIVATE_MOVING_BUNDLE_PARTS.map(part=>snapshots[part.key]??null));
+}
+function privateMovingBundleSerialize(snapshots:PrivateMovingBundleData):string{
+  if(!privateMovingBundleCurrent(snapshots))throw Error('Er ontbreken nog onderdelen.');
+  const journey=JSON.parse(snapshots[JOURNEY_TAB_STORAGE_KEY]);
+  const fallback=JSON.parse(snapshots[FALLBACK_TAB_STORAGE_KEY]);
+  const meters=JSON.parse(snapshots[METER_TAB_STORAGE_KEY]);
+  const utilities=JSON.parse(snapshots[UTILITY_TAB_STORAGE_KEY]);
+  const valid=decodeJourneyTab(snapshots[JOURNEY_TAB_STORAGE_KEY])!==null&&
+    decodeFallbackTab(snapshots[FALLBACK_TAB_STORAGE_KEY])!==null&&
+    decodeMeterTab(snapshots[METER_TAB_STORAGE_KEY])!==null&&
+    decodeUtilityTab(snapshots[UTILITY_TAB_STORAGE_KEY])!==null;
+  if(!valid)throw Error('Een brononderdeel bevat ongeldige invoer.');
+  const text=JSON.stringify({
+    kind:PRIVATE_MOVING_BUNDLE_KIND,version:1,
+    journey,fallback,meters,utilities
+  },null,2)+'\n';
+  if(new TextEncoder().encode(text).length>PRIVATE_MOVING_BUNDLE_LIMIT)
+    throw Error('Gecombineerd privébestand te groot.');
+  return text;
+}
+/** Strict, canonical and fail-closed. No partial application before all modules validate. */
+function privateMovingBundleParse(raw:string):PrivateMovingBundleData|null{
+  try{
+    if(new TextEncoder().encode(raw).length>PRIVATE_MOVING_BUNDLE_LIMIT)return null;
+    const data:unknown=JSON.parse(raw);
+    if(!data||typeof data!=='object'||Array.isArray(data))return null;
+    const obj=data as Record<string,unknown>;
+    if(Object.keys(obj).sort().join(',')!=='fallback,journey,kind,meters,utilities,version'||
+      obj.kind!==PRIVATE_MOVING_BUNDLE_KIND||obj.version!==1||
+      !obj.journey||typeof obj.journey!=='object'||Array.isArray(obj.journey)||
+      !obj.fallback||typeof obj.fallback!=='object'||Array.isArray(obj.fallback)||
+      !obj.meters||typeof obj.meters!=='object'||Array.isArray(obj.meters)||
+      !obj.utilities||typeof obj.utilities!=='object'||Array.isArray(obj.utilities))return null;
+    const journey=JSON.stringify(obj.journey);
+    const fallback=JSON.stringify(obj.fallback);
+    const meterData=obj.meters as Record<string,unknown>;
+    const utilityData=obj.utilities as Record<string,unknown>;
+    const meters=handoverBackup(meterData.readings as PrivateMeterTabData['readings'],
+      meterData.included as PrivateMeterTabData['included']);
+    const utilities=privateUtilityBackup(utilityData.entries as Record<PrivateUtilityKey,PrivateUtilityStep>);
+    const snapshots:PrivateMovingBundleData={
+      [JOURNEY_TAB_STORAGE_KEY]:journey,
+      [FALLBACK_TAB_STORAGE_KEY]:fallback,
+      [METER_TAB_STORAGE_KEY]:meters,
+      [UTILITY_TAB_STORAGE_KEY]:utilities
+    };
+    if(privateMovingBundleSerialize(snapshots)!==raw)return null;
+    return snapshots;
   }catch{return null;}
 }
 
