@@ -22,3 +22,7 @@ Een gewijzigd dossier, kalenderdag, periode, selectie of afspraaklijst maakt eer
 - Geen aanpassing van WoningNet live capability, BOT_DRY_RUN, server, VPS, worker of queue. Geen enkele status in dit overzicht vormt geverifieerd bewijs of juridisch advies.
 
 De feature is broncodefunctionaliteit, niet automatisch een productie-deploy. Bestaande exacte GitHub-CI, review, deploy- en toestemmingsgates blijven van toepassing.
+
+## Geplande acties naar bestaande berichteneditor
+
+Een selectie van **1–12 actuele punten** kan rechtstreeks worden klaargezet voor een zelf te beoordelen eerste-meldingsconcept of opvolgconcept. Het plan overschrijft geen dossier- of contactgegevens. Het onderdeel zet alleen de geselecteerde ID's en de gekozen soort concept over; eerder geopende concept- en toestemmingstoestand vervalt. De bestaande editor stelt vervolgens de tekst op en vereist nog steeds een afzonderlijke expliciete menselijke bevestiging. Bij meer dan 12 punten blijft deze handoff uitgeschakeld en kies je eerst een kleinere selectie. Er gaat géén bericht uit, ook wordt de eigen status niet automatisch op gemeld gezet.
