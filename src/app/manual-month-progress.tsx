@@ -2096,3 +2096,176 @@ export function PrivateMovingHandover() {
     </section>
   );
 }
+
+
+/** Optional tenant's own document-readiness tracker; titles/status only, no document files. */
+type ReadinessState='needed'|'ready'|'skip';
+type ReadinessDoc={id:string;title:string};
+type ReadinessBackup={extras:ReadinessDoc[];states:Record<string,ReadinessState>;dates:Record<string,string>};
+const READINESS_DEFAULTS:ReadinessDoc[]=[
+  {id:'rental',title:'Zelf huurafspraken of huuraanbod nalopen'},
+  {id:'identity',title:'Zelf controleren hoe identiteit veilig getoond moet worden'},
+  {id:'income',title:'Zelf nagaan of inkomensstukken gevraagd zijn'},
+  {id:'current',title:'Zelf vorige huur- of adreszaken controleren'},
+  {id:'utilities',title:'Zelf contracten voor water, energie en internet nalopen'},
+  {id:'insurance',title:'Zelf verzekeringen bij verhuizing controleren'},
+  {id:'handover',title:'Zelf sleutel- of opleverafspraak nalopen'},
+  {id:'municipality',title:'Zelf nagaan welke adreswijziging nodig is'}
+];
+
+export function PrivateMoveDocumentReadiness(){
+  const [extras,setExtras]=useState<ReadinessDoc[]>([]);
+  const [states,setStates]=useState<Record<string,ReadinessState>>({});
+  const [dates,setDates]=useState<Record<string,string>>({});
+  const [title,setTitle]=useState('');
+  const [pendingBackup,setPendingBackup]=useState<ReadinessBackup|null>(null);
+  const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [pendingClear,setPendingClear]=useState(false);
+  const [notice,setNotice]=useState('');
+  const docs=[...READINESS_DEFAULTS,...extras];
+  const actionable=docs.filter(item=>(states[item.id]||'needed')!=='skip');
+  const ready=actionable.filter(item=>states[item.id]==='ready').length;
+  const report= [
+    'Woonpoints · Eigen documentenchecklist',
+    'Alleen persoonlijke herinneringen. Geen officiële portaal-, huur- of identiteitscontrole.',
+    ...docs.map(item=>{
+      const label=states[item.id]==='ready'?'Zelf afgevinkt':states[item.id]==='skip'?'Niet van toepassing':'Nog na te gaan';
+      return `${item.title} — ${label}${dates[item.id]?` — Eigen datum: ${dates[item.id]}`:''}`;
+    }), 'Geen documentinhoud, bestanden of geverifieerde rechten opgenomen.'
+  ].join('\\n')+'\\n';
+  const receipt=JSON.stringify({extras,states,dates});
+  function changed(){setPendingReport(null);setPendingBackup(null);setNotice('');setPendingClear(false);}
+  function add(){
+    const next=title.trim().replace(/[\\u0000-\\u001f\\u007f]/g,' ');
+    if(!next || next.length>60 || extras.length>=8){
+      setNotice('Eigen regel niet toegevoegd: gebruik maximaal acht extra regels van 60 tekens.');
+      return;
+    }
+    setExtras(old=>[...old,{id:`custom-${Date.now()}-${old.length}`,title:next}]);
+    setTitle('');changed();
+  }
+  async function readBackup(file:File|undefined){
+    setPendingBackup(null);setPendingReport(null);
+    if(!file)return;
+    if(file.size===0||file.size>8192){setNotice('Back-up geweigerd: maximaal 8 KiB.');return;}
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('format');
+      const data=raw as Record<string,unknown>;
+      if(data.format!=='woonpoints-document-readiness'||data.version!==1 ||
+        !Array.isArray(data.extras)||data.extras.length>8 ||
+        !data.states||typeof data.states!=='object'||Array.isArray(data.states)||
+        !data.dates||typeof data.dates!=='object'||Array.isArray(data.dates))throw Error('schema');
+      const restored:ReadinessDoc[]=data.extras.map(item=>{
+        if(!item||typeof item!=='object'||Array.isArray(item))throw Error('doc');
+        const obj=item as Record<string,unknown>;
+        if(typeof obj.id!=='string'||!/^custom-[0-9]+-[0-9]+$/.test(obj.id)||
+          typeof obj.title!=='string'||!obj.title.trim()||obj.title!==obj.title.trim()||
+          obj.title.length>60||/[\\u0000-\\u001f\\u007f]/.test(obj.title))throw Error('doc');
+        return {id:obj.id,title:obj.title};
+      });
+      const ids=[...READINESS_DEFAULTS,...restored].map(doc=>doc.id);
+      const allowed=new Set(ids);
+      if(allowed.size!==ids.length)throw Error('duplicates');
+      const rs=data.states as Record<string,unknown>,ds=data.dates as Record<string,unknown>;
+      if(Object.keys(rs).length>16||Object.keys(ds).length>16 ||
+        Object.keys(rs).some(key=>!allowed.has(key)||!['needed','ready','skip'].includes(String(rs[key])))||
+        Object.keys(ds).some(key=>!allowed.has(key)||typeof ds[key]!=='string'||
+          (ds[key]!==''&&!dateOnly(ds[key] as string))))throw Error('values');
+      setPendingBackup({extras:restored,states:rs as Record<string,ReadinessState>,dates:ds as Record<string,string>});
+      setNotice('Privé-JSON gecontroleerd. Huidige documentenstatus blijft behouden tot je vervangen bevestigt.');
+    }catch{
+      setNotice('Back-up geweigerd: ongeldige versie, status of datum. Huidig overzicht behouden.');
+    }
+  }
+  return(
+    <section className="panel" aria-labelledby="private-document-readiness-heading">
+      <p className="eyebrow">WONINGDOSSIER · ALLEEN JE EIGEN CHECKLIST</p>
+      <h2 id="private-document-readiness-heading">Wat moet je zelf nog regelen?</h2>
+      <p>Een privé-overzicht om te onthouden welke stukken of afspraken je zelf nog moet nagaan.
+        Dit zijn suggesties, geen officiële verplichtingen van WoningNet of verhuurder.
+        Voer geen burgerservicenummer, wachtwoord, identiteitsbewijs of documentinhoud in.</p>
+      <p aria-live="polite"><strong>{ready} van {actionable.length}</strong> toepasselijke regels door jou afgevinkt.
+        {docs.length-actionable.length} gemarkeerd als niet van toepassing.</p>
+      <ul>
+        {docs.map(doc=><li key={doc.id}>
+          <strong>{doc.title}</strong>
+          <label htmlFor={`document-state-${doc.id}`}>Eigen status</label>
+          <select id={`document-state-${doc.id}`} value={states[doc.id]||'needed'} onChange={event=>{
+            setStates(old=>({...old,[doc.id]:event.target.value as ReadinessState}));changed();
+          }}>
+            <option value="needed">Nog na te gaan</option>
+            <option value="ready">Door mij gecontroleerd</option>
+            <option value="skip">Niet van toepassing</option>
+          </select>
+          <label htmlFor={`document-due-${doc.id}`}>Zelf gekozen datum (optioneel)</label>
+          <input id={`document-due-${doc.id}`} type="date" min="2000-01-01" max="2099-12-31"
+            value={dates[doc.id]||''} onChange={event=>{
+              setDates(old=>({...old,[doc.id]:event.target.value}));changed();
+            }} />
+          {doc.id.startsWith('custom-') && <button type="button" onClick={()=>{
+            setExtras(old=>old.filter(x=>x.id!==doc.id));
+            setStates(old=>{const copy={...old};delete copy[doc.id];return copy;});
+            setDates(old=>{const copy={...old};delete copy[doc.id];return copy;});
+            changed();
+          }}>Verwijder eigen regel</button>}
+        </li>)}
+      </ul>
+      <fieldset>
+        <legend>Zelf extra regel toevoegen (maximaal acht)</legend>
+        <label htmlFor="document-extra">Alleen korte omschrijving (max. 60 tekens)</label>
+        <input id="document-extra" type="text" autoComplete="off" maxLength={60}
+          value={title} onChange={event=>setTitle(event.target.value)} />
+        <button type="button" onClick={add} disabled={extras.length>=8}>Voeg regel toe</button>
+      </fieldset>
+      <div>
+        <button type="button" onClick={()=>{
+          const data=JSON.stringify({format:'woonpoints-document-readiness',version:1,extras,states,dates},null,2);
+          exportFile('woonpoints-prive-documentenoverzicht.json',data,'application/json;charset=utf-8');
+          setNotice('Privé-JSON op eigen verzoek aangeboden; een opslaglocatie kan synchroniseren.');
+        }}>Bewaar eigen status als privé-JSON…</button>
+        <label htmlFor="document-backup-upload">Lees eerder bewaard statusbestand in (JSON, max. 8 KiB)</label>
+        <input id="document-backup-upload" type="file" accept=".json,application/json"
+          onChange={event=>{
+            const file=event.currentTarget.files?.[0];
+            event.currentTarget.value='';
+            void readBackup(file);
+          }} />
+        {pendingBackup && <div role="group" aria-label="Bevestig documentenoverzicht herstel">
+          <p>De geldige privé-back-up bevat {pendingBackup.extras.length} eigen regels.
+            Herstellen vervangt al je huidige statussen en datums in dit tabblad.</p>
+          <button type="button" onClick={()=>{
+            setExtras(pendingBackup.extras);setStates(pendingBackup.states);setDates(pendingBackup.dates);
+            setPendingBackup(null);setPendingReport(null);setNotice('Eigen status hersteld, niet extern geverifieerd.');
+          }}>Bevestig vervanging</button>
+          <button type="button" onClick={()=>setPendingBackup(null)}>Annuleren</button>
+        </div>}
+      </div>
+      {pendingReport!==receipt && <button type="button" onClick={()=>{setPendingReport(receipt);setNotice('');}}>
+        Bekijk TXT-overzicht voor privé-export…
+      </button>}
+      {pendingReport===receipt && <div role="group" aria-label="Bevestig documentenoverzicht export">
+        <p>Dit is de exacte tekst voor het lokaal te bewaren bestand.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report}</pre>
+        <button type="button" onClick={()=>{
+          if(pendingReport!==JSON.stringify({extras,states,dates}))return;
+          exportFile('woonpoints-prive-documentenoverzicht.txt',report,'text/plain;charset=utf-8');
+          setPendingReport(null);setNotice('TXT lokaal aangeboden na bevestiging.');
+        }}>Bevestig TXT-download</button>
+        <button type="button" onClick={()=>setPendingReport(null)}>Annuleren</button>
+      </div>}
+      {!pendingClear && <button type="button" onClick={()=>setPendingClear(true)}>Wis alle eigen statussen…</button>}
+      {pendingClear && <div role="group" aria-label="Bevestig wissen documentstatus">
+        <p>Hiermee verwijder je alle eigen statussen, datums en extra regels uit dit tabblad.</p>
+        <button type="button" onClick={()=>{
+          setExtras([]);setStates({});setDates({});setTitle('');changed();
+          setNotice('Eigen checklist teruggezet naar leeg startoverzicht.');
+        }}>Bevestig wissen</button>
+        <button type="button" onClick={()=>setPendingClear(false)}>Annuleren</button>
+      </div>}
+      {notice && <p role="status">{notice}</p>}
+      <p>Alleen titel, status en eigen datum; nooit een bestand, identiteit of woningaccount.
+        Zonder expliciete export verdwijnen de gegevens bij sluiten van dit tabblad.</p>
+    </section>
+  );
+}
