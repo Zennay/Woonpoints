@@ -45,10 +45,27 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
 ];
 const homeCategoryOptions=[
-  {id:'snel',label:'Snelstart'},{id:'alles',label:'Alles'},
+  {id:'snel',label:'Snelstart'},{id:'favorieten',label:'★ Vastgezet'},
+  {id:'alles',label:'Alles'},
   {id:'reacties',label:'Reacties'},{id:'woning',label:'Woningen'},
   {id:'verhuizen',label:'Verhuizen'},{id:'inzichten',label:'Inzichten'}
 ] as const;
+
+const NAV_PINS_STORAGE_KEY='woonpoints:quicknav-pins:v1';
+const MAX_NAV_PINS=8;
+/** Only allow known, bounded anchor IDs; never save typed search queries or personal text. */
+function decodeNavPins(raw:string|null):string[]|null{
+  if(raw===null)return [];
+  if(raw.length>1200)return null;
+  try{
+    const parsed:unknown=JSON.parse(raw);
+    if(!Array.isArray(parsed)||parsed.length>MAX_NAV_PINS||
+      parsed.some(id=>typeof id!=='string'||
+        !homepageDestinations.some(destination=>destination.id===id))||
+      new Set(parsed).size!==parsed.length)return null;
+    return parsed as string[];
+  }catch{return null;}
+}
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -58,7 +75,80 @@ const cards = [
 ];
 
 export default function HomePage() {
-  const [navigationCategory,setNavigationCategory]=useState<'snel'|'alles'|HomeNavCategory>('snel');
+  const [navigationCategory,setNavigationCategory]=useState<
+    'snel'|'favorieten'|'alles'|HomeNavCategory>('snel');
+  const [pinnedNavIds,setPinnedNavIds]=useState<string[]>([]);
+  const [pinMessage,setPinMessage]=useState('');
+  const [pinStorageState,setPinStorageState]=useState<'unknown'|'persistent'|'temporary'>('unknown');
+  useEffect(()=>{
+    function refresh(){
+      try{
+        const value=decodeNavPins(window.localStorage.getItem(NAV_PINS_STORAGE_KEY));
+        if(value===null){
+          setPinStorageState('temporary');
+          setPinMessage('Een bestaande onbekende vastzetvoorkeur blijft bewaard; '+
+            'nieuwe wijzigingen werken voorlopig alleen in dit tabblad.');
+        }else{
+          setPinnedNavIds(value);
+          setPinStorageState('persistent');
+        }
+      }catch{
+        setPinStorageState('temporary');
+        setPinMessage('Deze browser staat voorkeurenopslag niet toe; '+
+          'vastgezette onderdelen blijven alleen in dit tabblad.');
+      }
+    }
+    function onStorage(event:StorageEvent){
+      if(event.storageArea===window.localStorage &&
+        (event.key===NAV_PINS_STORAGE_KEY||event.key===null))refresh();
+    }
+    refresh();
+    window.addEventListener('storage',onStorage);
+    return()=>window.removeEventListener('storage',onStorage);
+  },[]);
+  function toggleNavPin(id:string){
+    if(!homepageDestinations.some(item=>item.id===id))return;
+    const fallback=pinnedNavIds.includes(id)?
+      pinnedNavIds.filter(item=>item!==id):[...pinnedNavIds,id];
+    if(fallback.length>MAX_NAV_PINS){
+      setPinMessage('Je kunt maximaal acht onderdelen vastzetten. Maak eerst ruimte.');
+      return;
+    }
+    try{
+      const raw=window.localStorage.getItem(NAV_PINS_STORAGE_KEY);
+      const current=decodeNavPins(raw);
+      if(current===null)throw Error('Unknown existing preference');
+      const updated=current.includes(id)?current.filter(item=>item!==id):[...current,id];
+      if(updated.length>MAX_NAV_PINS){
+        setPinMessage('Maximaal acht vastgezette onderdelen; maak eerst ruimte.');
+        setPinnedNavIds(current);
+        return;
+      }
+      window.localStorage.setItem(NAV_PINS_STORAGE_KEY,JSON.stringify(updated));
+      if(window.localStorage.getItem(NAV_PINS_STORAGE_KEY)!==JSON.stringify(updated))
+        throw Error('Preference write unverified');
+      setPinnedNavIds(updated);
+      setPinStorageState('persistent');
+      setPinMessage('Je vastgezette onderdeelnavigatie is alleen lokaal opgeslagen.');
+    }catch{
+      setPinnedNavIds(fallback);
+      setPinStorageState('temporary');
+      setPinMessage('Vastzetten werkt alleen tijdelijk in dit tabblad; '+
+        'bestaande onbekende voorkeuren zijn niet overschreven.');
+    }
+  }
+  function clearNavPins(){
+    try{
+      window.localStorage.removeItem(NAV_PINS_STORAGE_KEY);
+      setPinStorageState('persistent');
+      setPinMessage('Alleen je eigen lokaal vastgezette navigatie is gewist.');
+    }catch{
+      setPinStorageState('temporary');
+      setPinMessage('Vastgezette navigatie alleen in dit tabblad gewist; '+
+        'eventueel eerder opgeslagen voorkeuren konden niet worden verwijderd.');
+    }
+    setPinnedNavIds([]);
+  }
   const [contactIntent,setContactIntent]=useState<{
     utility:PrivateUtilityKey; revision:number
   }|null>(null);
@@ -71,9 +161,11 @@ export default function HomePage() {
   const searchTerm=navigationSearch.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
   const navigationResults=homepageDestinations.filter(destination=>{
     if(searchTerm)return destination.title.normalize('NFKC').toLocaleLowerCase('nl-NL').includes(searchTerm);
+    if(navigationCategory==='favorieten')return pinnedNavIds.includes(destination.id);
     return navigationCategory==='alles'||(navigationCategory==='snel'?
-      destination.category==='essentieel':destination.category===navigationCategory);
-  });
+      destination.category==='essentieel'||pinnedNavIds.includes(destination.id):
+      destination.category===navigationCategory);
+  }).sort((a,b)=>Number(pinnedNavIds.includes(b.id))-Number(pinnedNavIds.includes(a.id)));
   return (
     <main className="shell">
       <section className="hero">
@@ -115,9 +207,21 @@ export default function HomePage() {
         </div>
         <p role="status" aria-live="polite">{navigationResults.length} van
           {' '}{homepageDestinations.length} onderdelen zichtbaar{searchTerm?' · alle categorieën doorzocht':''}.</p>
-        {navigationResults.length===0?<p>Geen onderdeel gevonden. Wis je zoektekst of kies Alles.</p>:
+        {navigationResults.length===0?
+          <p>{navigationCategory==='favorieten'&&!searchTerm
+            ?'Nog niets vastgezet. Open Alles en kies ☆ Vastzetten bij je favoriete onderdelen.'
+            :'Geen onderdeel gevonden. Wis je zoektekst of kies Alles.'}</p>:
           <ul className="quick-nav-links">{navigationResults.map(item=><li key={item.id}>
             <a href={'#'+item.id}>{item.title}</a>
+            <button type="button" aria-pressed={pinnedNavIds.includes(item.id)}
+              aria-label={(pinnedNavIds.includes(item.id)?'Verwijder ':'Zet vast: ')+item.title}
+              onClick={()=>toggleNavPin(item.id)}
+              style={{minHeight:40,marginLeft:10,padding:'7px 10px',
+                border:'1px solid #355e42',borderRadius:9,
+                background:pinnedNavIds.includes(item.id)?'#edf2ee':'white',
+                color:'#355e42',cursor:'pointer'}}>
+              {pinnedNavIds.includes(item.id)?'★ Vastgezet':'☆ Vastzetten'}
+            </button>
           </li>)}</ul>}
         {!searchTerm&&navigationCategory!=='alles'&&<button type="button"
           onClick={()=>setNavigationCategory('alles')}
@@ -125,8 +229,16 @@ export default function HomePage() {
             color:'#355e42',background:'white',border:'1px solid #355e42',borderRadius:9}}>
           Toon alle {homepageDestinations.length} onderdelen
         </button>}
-        <p>Alle categorieën en zoekwoorden werken uitsluitend in dit tabblad; er worden geen
-          persoonlijke gegevens naar een server verstuurd.</p>
+        <p><strong>{pinnedNavIds.length} van {MAX_NAV_PINS} favorieten</strong> ingesteld.
+          Vastgezette onderdelen staan bovenaan en verschijnen ook bij Snelstart.</p>
+        {pinnedNavIds.length>0&&<button type="button" className="secondary"
+          onClick={clearNavPins}>Wis mijn vastgezette onderdelen</button>}
+        <p role="status" aria-live="polite">{pinMessage}</p>
+        <p>Vastzetten bewaart uitsluitend vooraf bekende onderdeelcodes op dit apparaat,
+          nooit je zoekwoorden, adressen, notities of accountgegevens. Opslagstatus:
+          {' '}{pinStorageState==='persistent'?'alleen deze browser':
+            pinStorageState==='temporary'?'alleen dit tabblad':'nog onbekend'}.
+          Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
       <PrivateHousingJourney />
