@@ -4049,6 +4049,47 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
         {diaryReacted>4 && <p role="status">Meer dan vier eigen notities zijn als
           gereageerd gemarkeerd. Ze worden niet automatisch tot het maanddoel
           teruggebracht.</p>}
+        <section aria-labelledby="private-month-report-title" style={{border:'1px solid #d0e0d4',borderRadius:12,padding:16,marginTop:18}}>
+          <h3 id="private-month-report-title">Mijn eigen maandrapport</h3>
+          <p>Maak één privéoverzicht van de zelf ingevulde maandteller en reactienotities. Dit is
+            geen officieel WoningNet-rapport, bevat geen adressen of accountgegevens en wordt
+            niet automatisch opgeslagen of gedeeld.</p>
+          {midmonthNudge&&<p role="status"><strong>Persoonlijke maandcheck:</strong> de maand is
+            minimaal halverwege en je eigen voortgang kan aandacht vragen. Dit is geen melding
+            van een woningplatform en controleert geen officiële reactie.</p>}
+          <label htmlFor="monthly-review-include-points" style={{display:'flex',alignItems:'center',gap:10}}>
+            <input id="monthly-review-include-points" type="checkbox" checked={reportIncludePoints}
+              onChange={event=>{setReportIncludePoints(event.target.checked);setReportApproved(false);}}/>
+            Voeg mijn zelf genoteerde puntenhistorie toe (optioneel)
+          </label>
+          <p>Eigen punten zijn standaard uitgesloten. Een handmatig genoteerde puntenstand kan
+            uit een andere maand komen.</p>
+          <button type="button" disabled={!reportReady} onClick={preparePrivateMonthReport}>
+            Maak huidige TXT-voorvertoning
+          </button>
+          {reportPreview&&<div role="group" aria-label="Maandrapport controleren"
+            style={{marginTop:14,border:'1px solid #a4b8a9',padding:12,borderRadius:8}}>
+            {!reportCurrent&&<p role="status">Je eigen gegevens, datum of privacykeuze veranderden.
+              De eerdere toestemming geldt niet meer. Maak eerst een actuele voorvertoning.</p>}
+            <label htmlFor="monthly-review-preview">Lees de exacte exporttekst</label>
+            <textarea id="monthly-review-preview" value={reportPreview.text} readOnly rows={15}
+              style={{display:'block',width:'100%',maxWidth:'100%',minHeight:230,marginTop:8}}/>
+            <label htmlFor="monthly-review-approve" style={{display:'flex',alignItems:'center',gap:10,marginTop:12}}>
+              <input id="monthly-review-approve" type="checkbox" checked={reportApproved}
+                disabled={!reportCurrent} onChange={event=>setReportApproved(event.target.checked)}/>
+              Ik heb de inhoud en eventuele privégegevens zelf nagekeken
+            </label>
+            <button type="button" disabled={!reportCurrent||!reportApproved}
+              onClick={downloadPrivateMonthReport}>Download gecontroleerd maandrapport als TXT</button>
+            <button type="button" onClick={()=>{
+              setReportPreview(null);setReportApproved(false);
+              setReportMessage('Voorvertoning gesloten zonder download.');
+            }}>Sluit voorvertoning</button>
+          </div>}
+          {reportMessage&&<p role="status">{reportMessage}</p>}
+          <p>Een eigen 4/4 is nooit bewijs van vier geldige reacties. Een gekozen
+            bestandsprovider kan de bewust gedownloade TXT buiten deze app synchroniseren.</p>
+        </section>
         <p><a href="#manual-progress-heading">Open mijn maandplanning</a>
           {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a>
           {' · '}<a href="#private-points-heading">Open mijn zoekpuntenhistorie</a></p>
