@@ -667,24 +667,59 @@ export function ManualReactionJournal({
             }} />
         </div>
         {pendingImport && (
-          <div className="journal-confirm" role="group" aria-label="Bevestig import">
-            <p>Je CSV bevat {pendingImport.length} eigen notities.
-              Vervangen verwijdert de huidige {entries.length} notities uit dit tabblad.</p>
-            <button type="button" onClick={() => {
-              setEntries(pendingImport);
-              setRecentlyRemoved(null);
-              setConfirmClearAll(false);
-              setNextId(pendingImport.length + 1);
-              setPendingImport(null);
-              setMonthFilter('all');
-              setMessage('Eigen notities lokaal vervangen; niet geverifieerd door WoningNet.');
-            }}>Vervang huidige notities</button>
-            <button type="button" onClick={() => {
-              setPendingImport(null); setMessage('Import geannuleerd; notities behouden.');
-            }}>Annuleren</button>
+          <div className="journal-confirm" role="group" aria-label="Kies privé-CSV-importwijze">
+            <h3>Bewaar huidige notities of vul ze aan</h3>
+            <p>Gekozen bestand: <strong>{pendingImport.length}</strong> eigen notities.
+              Huidig tabblad: <strong>{entries.length}</strong> notities.</p>
+            {!importStillCurrent && <p role="alert">De bestaande notities zijn veranderd
+              nadat dit bestand werd gekozen. Annuleer en selecteer de CSV opnieuw;
+              de oude importtoestemming is ongeldig.</p>}
+            {importedSameFields > 0 && <p role="status">
+              <strong>{importedSameFields}</strong> bestandsregel{importedSameFields===1?' lijkt':'s lijken'} op
+              bestaande datum/status/positiegegevens. Dit zijn géén bewezen duplicaten:
+              twee verschillende woningen kunnen exact dezelfde eigen velden hebben.
+              Controleer je bron-CSV zelf; er wordt niets stilzwijgend gededupliceerd.</p>}
+            <p><strong>Aanvullen:</strong> behoud alle bestaande notities en voeg de volledige
+              nieuwe CSV toe met eigen unieke tabblad-ID&apos;s.
+              Na aanvullen: <strong>{entries.length+pendingImport.length}</strong> van maximaal 100.
+              Een laatste aanvulling is één keer terug te draaien zolang je niets anders wijzigt.</p>
+            {importWouldExceedLimit && <p role="alert">Aanvullen past niet binnen de
+              grens van 100 notities. Je huidige data wordt niet ingekort.</p>}
+            <button type="button" disabled={!importStillCurrent || importWouldExceedLimit}
+              onClick={() => applyJournalImport('append')}>
+              Voeg CSV-notities toe zonder huidige te wissen
+            </button>
+            <p><strong>Vervangen:</strong> overschrijf alle {entries.length} huidige
+              eigen notities, pas na je afzonderlijke bevestiging hieronder.
+              Maak desgewenst eerst je eigen CSV-back-up.</p>
+            <button type="button" disabled={!importStillCurrent}
+              onClick={() => applyJournalImport('replace')}>
+              Vervang alle huidige notities bewust
+            </button>
+            <button type="button" className="secondary" onClick={() => {
+              setPendingImport(null); setPendingImportSource(null);
+              setMessage('CSV-import geannuleerd; al je huidige notities behouden.');
+            }}>Annuleer zonder wijzigingen</button>
           </div>
         )}
-        {message && <p role="status">{message}</p>}
+        {mergeUndo && <div className="journal-confirm" role="group"
+          aria-label="Laatste CSV-aanvulling terugzetten">
+          <h3>Mijn laatste CSV-aanvulling</h3>
+          <p>Vorige tabbladstatus: {mergeUndo.previous.length} eigen notities.
+            Alle nieuw toegevoegde CSV-rijen kunnen samen teruggedraaid worden
+            zolang je daarna niets in dit dagboek hebt aangepast of geïmporteerd.</p>
+          {!mayUndoMerge && <p role="status">Je dagboek is na aanvullen veranderd.
+            Automatisch terugdraaien is geblokkeerd om nieuwe invoer te beschermen.</p>}
+          <button type="button" disabled={!mayUndoMerge || Boolean(pendingImport) || editingId!==null}
+            onClick={undoLastJournalAppend}>Herstel vorige tabbladnotities</button>
+          <button type="button" className="secondary" onClick={() => {
+            setMergeUndo(null);
+            setMessage('Tijdelijk herstelpunt verwijderd; huidige reactienotities behouden.');
+          }}>Verwerp dit herstelpunt</button>
+          <p>Het herstelpunt is alleen in het geheugen van dit browsertabblad.
+            Sluiten wist het herstelpunt; eigen opgeslagen CSV-bestanden blijven apart bestaan.</p>
+        </div>}
+        {message && <p role="status">{message}</p>
         {recentlyRemoved && <div className="journal-confirm" role="group"
           aria-label="Herstel laatste verwijderde notitie">
           <p>Je verwijderde zojuist eigen notitie #{recentlyRemoved.item.id}
