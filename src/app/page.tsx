@@ -788,6 +788,7 @@ function PrivateMoveAftercare() {
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
   const [includeDetails, setIncludeDetails] = useState(false);
   const [noticeSubject, setNoticeSubject] = useState('Open aandachtspunten na mijn verhuizing');
+  const [noticeMode, setNoticeMode] = useState<'eerste-melding' | 'opvolging'>('eerste-melding');
   const [noticeDraft, setNoticeDraft] = useState('');
   const [noticeSource, setNoticeSource] = useState('');
   const [noticeApproved, setNoticeApproved] = useState(false);
@@ -797,7 +798,17 @@ function PrivateMoveAftercare() {
   const active = items.filter(item => item.status !== 'afgerond');
   const overdue = active.filter(item => item.due && item.due < currentDay);
   const noticeItems = active.filter(item => chosenIssueIds.includes(item.id)).slice(0, 12);
-  const noticeFingerprint = JSON.stringify({ noticeItems, includeDetails, noticeSubject });
+  // Self-entered message dates are advisory and never independently prove sending.
+  const noticeOwnContactDates = noticeItems.map(item => ({
+    id: item.id,
+    lastOwnSentDay: history.filter(log => log.issueId === item.id &&
+      log.kind === 'zelf-verstuurd' && log.day <= currentDay)
+      .map(log => log.day).sort().slice(-1)[0] || null
+  }));
+  const noticeFingerprint = JSON.stringify({
+    noticeItems, includeDetails, noticeSubject, noticeMode,
+    ...(noticeMode === 'opvolging' ? { noticeOwnContactDates } : {})
+  });
   const noticeCurrent = noticeDraft.length > 0 && noticeDraft.length <= 10000 &&
     noticeSource === noticeFingerprint && noticeItems.length > 0;
 
@@ -1172,7 +1183,9 @@ function PrivateMoveAftercare() {
       '',
       'Geachte verhuurder/beheerder,',
       '',
-      'Ik wil de volgende door mij geconstateerde aandachtspunten bespreken en hoor graag wat een passende vervolgstap is.',
+      noticeMode === 'opvolging'
+        ? 'Ik vraag graag naar de actuele stand van onderstaande punten. Mijn genoteerde contactdatums zijn geen onafhankelijk verzendbewijs.'
+        : 'Ik wil de volgende door mij geconstateerde aandachtspunten bespreken en hoor graag wat een passende vervolgstap is.',
       ''
     ];
     noticeItems.forEach((item, i) => {
@@ -1180,11 +1193,18 @@ function PrivateMoveAftercare() {
         `${i + 1}. ${item.room}: ${item.title} (eigen prioriteit: ${item.priority})`,
         ...(includeDetails && item.note.trim() ? ['Mijn toelichting: ' + item.note.replace(/\s+/g, ' ').trim()] : []),
         ...(item.due ? ['Mijn eigen streefdatum: ' + item.due + ' (niet met u afgesproken)'] : []),
+        ...(noticeMode === 'opvolging' ? [
+          'Mijn laatst zelf genoteerde verzenddatum: ' +
+          (noticeOwnContactDates.find(row => row.id === item.id)?.lastOwnSentDay || 'niet vastgelegd') +
+          ' (controleer de originele correspondentie)'
+        ] : []),
         ''
       );
     });
     lines.push(
-      'Kunt u aangeven of en hoe ik deze punten verder moet melden of laten beoordelen?',
+      noticeMode === 'opvolging'
+        ? 'Kunt u aangeven of er een vervolgstap nodig is en wat de huidige status volgens u is?'
+        : 'Kunt u aangeven of en hoe ik deze punten verder moet melden of laten beoordelen?',
       '',
       'Met vriendelijke groet,',
       '[Vul zelf uw naam en contactgegevens in na controle]',
@@ -1504,6 +1524,17 @@ function PrivateMoveAftercare() {
                 </label>
               </li>)}</ul>}
           </fieldset>
+          <label htmlFor="nazorg-notice-mode">Type eigen concept</label>
+          <select id="nazorg-notice-mode" value={noticeMode} onChange={e => {
+            setNoticeMode(e.target.value as 'eerste-melding' | 'opvolging');
+            setNoticeApproved(false);
+          }}>
+            <option value="eerste-melding">Eerste melding of vraag</option>
+            <option value="opvolging">Navraag naar eerder besproken punten</option>
+          </select>
+          {noticeMode === 'opvolging' && <p>Alleen eigen, expliciet genoteerde verzenddatums van geselecteerde punten
+            worden genoemd. Geen privécontacttekst en geen onbewezen ontvangst- of verzendclaim.
+            Controleer originele berichten en de echte ontvanger zelf.</p>}
           <label htmlFor="nazorg-notice-subject">Onderwerp (max. 100 tekens)</label>
           <input id="nazorg-notice-subject" maxLength={100} value={noticeSubject} onChange={e => {
             setNoticeSubject(e.target.value); setNoticeApproved(false);
