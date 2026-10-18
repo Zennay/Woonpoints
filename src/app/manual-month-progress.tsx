@@ -3372,14 +3372,15 @@ function movingCalendarText(text:string):string{
 }
 
 
-type MovingReportSection = 'timeline'|'handover'|'documents'|'quotes'|'expenses'|'split';
+type MovingReportSection = 'timeline'|'handover'|'documents'|'quotes'|'expenses'|'split'|'packing';
 const MOVING_REPORT_SECTIONS:{id:MovingReportSection;label:string;warning:string}[]=[
   {id:'timeline',label:'Verhuisplanning en open acties',warning:'Zelfgekozen datums en taken'},
   {id:'documents',label:'Eigen documentenchecklist',warning:'Eigen documentstatus en taaklabels'},
   {id:'handover',label:'Sleutels en meterstanden',warning:'Privé-opnamen en eigen woninglabels'},
   {id:'quotes',label:'Verhuisoffertes',warning:'Leveranciersnamen en eigen notities'},
   {id:'expenses',label:'Verhuiskostenboek',warning:'Eigen bedragen en betaalmarkeringen'},
-  {id:'split',label:'Persoonlijke kostenverdeling',warning:'Naamlabels en betaalbedragen'}
+  {id:'split',label:'Persoonlijke kostenverdeling',warning:'Naamlabels en betaalbedragen'},
+  {id:'packing',label:'Eigen paklijst per kamer',warning:'Dooslabels, inhoud, aantallen en prioriteiten'}
 ];
 function movingReportLine(value:string):string{
   // User text belongs to a plain-text report, never to generated headings or another line.
@@ -3455,12 +3456,22 @@ function buildPrivateMovingReport(
         ' - reeds betaald volgens eigen invoer: '+(m.paid?expenseAmount(expenseCents(m.paid)??0):'onbekend'))
     ]);
   }
+  if(selected.has('packing')){
+    const rows=archive.packing.items.slice().sort((a,b)=>
+      a.room.localeCompare(b.room,'nl-NL')||a.box.localeCompare(b.box,'nl-NL')||
+      a.label.localeCompare(b.label,'nl-NL'));
+    add('PAKLIJST EN DOZEN',rows.length?rows.map(row=>
+      '['+row.status+'] '+row.room+' - '+row.quantity+' x '+movingReportLine(row.label)+
+      (row.box?' - doos '+movingReportLine(row.box):' - doos onbekend')+
+      (row.priority?' - EERST NODIG':'')):['Nog geen eigen pakregels ingevoerd.']);
+  }
   const relevant=actions.filter(a=>
     (a.origin==='planning'&&selected.has('timeline'))||
     (a.origin==='documents'&&selected.has('documents'))||
     (a.origin==='overdracht'&&selected.has('handover'))||
     (a.origin==='offertes'&&selected.has('quotes'))||
-    (a.origin==='financieel'&&(selected.has('expenses')||selected.has('split')))
+    (a.origin==='financieel'&&(selected.has('expenses')||selected.has('split')))|| 
+    (a.origin==='inpakken'&&selected.has('packing'))
   );
   add('NOG ZELF TE REGELEN',relevant.length?relevant.map(a=>
     (a.due||'zonder eigen datum')+' - '+movingReportLine(a.title)):['Geen open punten in de gekozen onderdelen.']);
