@@ -735,6 +735,10 @@ function PrivateMoveAftercare() {
   const [inspectionVersion, setInspectionVersion] = useState(0);
   const [pendingCompleteImport, setPendingCompleteImport] = useState<CompleteHandover | null>(null);
   const [completeMessage, setCompleteMessage] = useState('');
+  const [includePrivateSummaryNotes, setIncludePrivateSummaryNotes] = useState(false);
+  const [completeSummaryText, setCompleteSummaryText] = useState('');
+  const [completeSummarySource, setCompleteSummarySource] = useState('');
+  const [completeSummaryApproved, setCompleteSummaryApproved] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [history, setHistory] = useState<FollowUp[]>([]);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
@@ -768,6 +772,12 @@ function PrivateMoveAftercare() {
 
   const dueActive = active.filter(item => item.due).sort((a, b) =>
     a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
+  const completeSummaryFingerprint = JSON.stringify({
+    inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history, includePrivateSummaryNotes
+  });
+  const completeSummaryCurrent = completeSummaryText.length > 0 &&
+    completeSummaryText.length <= 70000 &&
+    completeSummarySource === completeSummaryFingerprint;
   const [year, month, day] = currentDay.split('-').map(Number);
   const horizon = new Date(Date.UTC(year, month - 1, day + 30)).toISOString().slice(0, 10);
   const upcoming = dueActive.filter(item => item.due >= currentDay && item.due <= horizon);
@@ -876,6 +886,64 @@ function PrivateMoveAftercare() {
     setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
   }
 
+  function previewCompleteSummary() {
+    const allChecks: InspectionCheck[] = [...INSPECTION_CHECKS, ...inspectionCustomChecks.map(check => ({
+      ...check, tip: 'Eigen toegevoegd controlepunt.'
+    }))];
+    const lines: string[] = [
+      'WOONPOINTS — EIGEN COMPLETE OVERDRACHTSSAMENVATTING',
+      'Niet door een verhuurder of inspecteur geverifieerd. Geen bewijs van officiële melding.',
+      'Eigen overzichtexport op ' + today(), '',
+      'STARTINSPECTIE: ' + allChecks.length + ' controles'
+    ];
+    for (const room of INSPECTION_ALL_ROOMS) {
+      const roomChecks = allChecks.filter(check => check.room === room);
+      if (!roomChecks.length) continue;
+      lines.push('', room.toUpperCase());
+      for (const check of roomChecks) {
+        const state = inspectionGrades[check.id] === 'goed' ? 'Zelf in orde bevonden' :
+          inspectionGrades[check.id] === 'aandacht' ? 'Eigen aandachtspunt' : 'Niet beoordeeld';
+        lines.push('- ' + check.title + ' — ' + state + (check.id.startsWith('custom-') ? ' (eigen controle)' : ''));
+        if (includePrivateSummaryNotes && inspectionGrades[check.id] === 'aandacht' &&
+            inspectionNotes[check.id]?.trim()) {
+          lines.push('  Privétoelichting: ' + inspectionNotes[check.id].trim());
+        }
+      }
+    }
+    lines.push('', 'NAZORG: ' + items.length + ' punten / ' + history.length + ' eigen contactnotities');
+    for (const issue of items) {
+      lines.push('', issue.room + ' — ' + issue.title, 'Status: ' + issue.status +
+        ' · Eigen prioriteit: ' + issue.priority + ' · Eigen streefdatum: ' + (issue.due || 'niet ingesteld'));
+      if (includePrivateSummaryNotes && issue.note.trim()) lines.push('Privénotitie: ' + issue.note.trim());
+      const log = history.filter(event => event.issueId === issue.id);
+      lines.push('Zelf genoteerde contactmomenten: ' + log.length);
+      if (includePrivateSummaryNotes) {
+        for (const event of log) {
+          lines.push('  ' + event.day + ' · ' + event.kind + ' · ' + event.detail.trim());
+        }
+      }
+    }
+    lines.push('', 'Alle beoordelingen en statusupdates zijn uitsluitend eigen invoer.',
+      'De samenvatting is niet automatisch verstuurd of bevestigd.');
+    const output = lines.join('\n') + '\n';
+    if (new TextEncoder().encode(output).length > 70 * 1024) {
+      setCompleteMessage('De samenvatting overschrijdt 70 KiB. Verkort privénotities.');
+      return;
+    }
+    setCompleteSummaryText(output);
+    setCompleteSummarySource(completeSummaryFingerprint);
+    setCompleteSummaryApproved(false);
+    setCompleteMessage('Bekijk de volledige samenvatting hieronder vóór vrijwillig downloaden.');
+  }
+  function exportCompleteSummary() {
+    if (!completeSummaryCurrent || !completeSummaryApproved) {
+      setCompleteMessage('Maak en controleer eerst een actueel voorbeeld.'); return;
+    }
+    download('woonpoints-eigen-volledige-overdracht.txt',
+      completeSummaryText, 'text/plain;charset=utf-8');
+    setCompleteMessage('Zelf gecontroleerde samenvatting gedownload; er is niets automatisch verstuurd.');
+  }
+
   function exportCompleteHandover() {
     const inspection = JSON.parse(inspectionBackupContents(
       inspectionGrades, inspectionNotes, inspectionCustomChecks));
@@ -933,6 +1001,9 @@ function PrivateMoveAftercare() {
     setNoticeDraft('');
     setNoticeSource('');
     setNoticeApproved(false);
+    setCompleteSummaryApproved(false);
+    setCompleteSummaryText('');
+    setCompleteSummarySource('');
     setCompleteMessage('Beide privé-onderdelen bewust hersteld. Geen externe melding verstuurd.');
     setMessage('Volledige inspectie en nazorg handmatig uit back-up hersteld.');
   }
@@ -1301,6 +1372,46 @@ function PrivateMoveAftercare() {
                 !Object.values(inspectionGrades).some(value => value === 'goed' || value === 'aandacht')}>
               Download complete privé-JSON
             </button>
+          </div>
+          <div className="aftercare-confirm">
+            <h3>Eigen leesbare samenvatting</h3>
+            <p>Maak optioneel een TXT voor je eigen dossier. De voorvertoning toont precies wat in
+              het bestand komt. Vrije notities of zelf genoteerde contactteksten zijn standaard
+              verborgen en worden pas opgenomen wanneer je dat hieronder zelf aanvinkt.</p>
+            <label className="aftercare-checkbox" htmlFor="complete-summary-notes">
+              <input id="complete-summary-notes" type="checkbox"
+                checked={includePrivateSummaryNotes}
+                onChange={event => {
+                  setIncludePrivateSummaryNotes(event.target.checked);
+                  setCompleteSummaryApproved(false);
+                }} />
+              Voeg mijn privétoelichtingen en zelf genoteerde contactteksten toe
+            </label>
+            <div className="aftercare-actions">
+              <button type="button" className="secondary"
+                onClick={previewCompleteSummary}>Maak actuele TXT-voorvertoning</button>
+            </div>
+            {completeSummaryText && (
+              <>
+                {!completeSummaryCurrent && <p className="aftercare-warning" role="status">
+                  De inspectie, nazorg of exportkeuze is gewijzigd. Maak eerst opnieuw een voorvertoning.
+                </p>}
+                <label htmlFor="complete-summary-preview">Controleer de exacte inhoud</label>
+                <textarea id="complete-summary-preview" readOnly value={completeSummaryText}
+                  rows={11} style={{minHeight:'210px'}} />
+                <label className="aftercare-checkbox" htmlFor="complete-summary-approve">
+                  <input id="complete-summary-approve" type="checkbox"
+                    disabled={!completeSummaryCurrent}
+                    checked={completeSummaryCurrent && completeSummaryApproved}
+                    onChange={event => setCompleteSummaryApproved(event.target.checked)} />
+                  Ik heb mijn eigen tekst, eventuele persoonsgegevens en gevoelige informatie nagekeken.
+                </label>
+                <div className="aftercare-actions">
+                  <button type="button" disabled={!completeSummaryCurrent || !completeSummaryApproved}
+                    onClick={exportCompleteSummary}>Download gecontroleerde TXT</button>
+                </div>
+              </>
+            )}
           </div>
           <label htmlFor="complete-handover-import">Open complete Woonpoints-back-up (max. 40 KiB)</label>
           <input type="file" id="complete-handover-import" accept=".json,application/json"
