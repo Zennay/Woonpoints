@@ -1933,3 +1933,179 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
     </section>
   );
 }
+
+
+/** User-supplied hypothetical housing costs only; no account, storage or network access. */
+type PrivateCostInputs = { rent: string; extras: string; moving: string; growth: string };
+type PrivateCostOption = { rent: number; extras: number; moving: number; growth: number };
+const DEFAULT_COST_INPUTS: PrivateCostInputs = {rent:'', extras:'0', moving:'0', growth:'2'};
+function readPrivateCostOption(raw: PrivateCostInputs): PrivateCostOption | null {
+  const number = (text: string, cap: number, min = 0): number | null => {
+    const trimmed = text.trim();
+    if (!/^\d{1,5}(?:[.,]\d{1,2})?$/.test(trimmed)) return null;
+    const parsed = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(parsed) && parsed >= min && parsed <= cap ? parsed : null;
+  };
+  const rent = number(raw.rent, 20000, 1);
+  const extras = number(raw.extras, 20000);
+  const moving = number(raw.moving, 50000);
+  const growth = number(raw.growth, 25);
+  if (rent === null || extras === null || moving === null || growth === null) return null;
+  return {rent, extras, moving, growth};
+}
+function projectPrivateHousingCosts(option: PrivateCostOption, years: number) {
+  let cumulative = option.moving;
+  return Array.from({length: years}, (_, i) => {
+    const year = i + 1;
+    const monthlyRent = option.rent * Math.pow(1 + option.growth / 100, i);
+    const yearly = (monthlyRent + option.extras) * 12;
+    cumulative += yearly;
+    return {year, monthlyRent, yearly, cumulative};
+  });
+}
+
+/** Standalone private financial what-if model; does not represent future legal rent increases. */
+export function PrivateLongTermHousingCosts() {
+  const [first, setFirst] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
+  const [second, setSecond] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
+  const [horizon, setHorizon] = useState('5');
+  const [message, setMessage] = useState('');
+  const left = readPrivateCostOption(first);
+  const right = readPrivateCostOption(second);
+  const years = /^[1-9]|10$/.test(horizon) && Number.isInteger(Number(horizon)) &&
+    Number(horizon) >= 1 && Number(horizon) <= 10 ? Number(horizon) : null;
+  const leftRows = left && years ? projectPrivateHousingCosts(left, years) : null;
+  const rightRows = right && years ? projectPrivateHousingCosts(right, years) : null;
+  const format = (amount: number) => new Intl.NumberFormat('nl-NL', {
+    style:'currency', currency:'EUR', maximumFractionDigits:0
+  }).format(amount);
+  const changeFirst = (name: keyof PrivateCostInputs, value: string) => {
+    setFirst(current => ({...current, [name]:value}));
+    setMessage('');
+  };
+  const changeSecond = (name: keyof PrivateCostInputs, value: string) => {
+    setSecond(current => ({...current, [name]:value}));
+    setMessage('');
+  };
+  const rows = leftRows && rightRows
+    ? leftRows.map((a,i) => ({a,b:rightRows[i]})) : [];
+  const last = rows.length ? rows[rows.length - 1] : null;
+  const diff = last ? last.a.cumulative - last.b.cumulative : 0;
+  let firstChangeYear: number | null = null;
+  if (left && right) {
+    let previous = left.moving - right.moving;
+    for (const entry of rows) {
+      const current = entry.a.cumulative - entry.b.cumulative;
+      if (firstChangeYear === null && previous !== 0 && current !== 0 &&
+          Math.sign(previous) !== Math.sign(current)) firstChangeYear = entry.a.year;
+      previous = current;
+    }
+  }
+  function exportProjection() {
+    if (!left || !right || !years || !last) return;
+    const lines = [
+      'jaar;optie_a_maandhuur_eur;optie_b_maandhuur_eur;optie_a_jaarlasten_eur;optie_b_jaarlasten_eur;optie_a_cumulatief_eur;optie_b_cumulatief_eur',
+      ...rows.map(({a,b}) => [a.year,a.monthlyRent,b.monthlyRent,a.yearly,b.yearly,a.cumulative,b.cumulative]
+        .map(value => typeof value === 'number' ? value.toFixed(2) : value).join(';'))
+    ];
+    // Only fixed numeric fields are exported: no spreadsheet formulas or personal labels.
+    const url = URL.createObjectURL(new Blob([lines.join('\r\n')+'\r\n'], {type:'text/csv;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-hypothetische-meerjarenkosten.csv';
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setMessage('CSV aangeboden voor eigen opslag; een cloudmap kan dit bestand synchroniseren.');
+  }
+  const inputFields = [
+    {name:'rent', label:'Maandhuur nu (€)', min:1, max:20000},
+    {name:'extras', label:'Andere vaste maandelijkse woonlasten (€)', min:0, max:20000},
+    {name:'moving', label:'Eenmalige verhuis-/startkosten (€)', min:0, max:50000},
+    {name:'growth', label:'Zelf gekozen jaarlijkse huurstijging (%)', min:0, max:25}
+  ] as const;
+  return (
+    <section className="panel private-budget" aria-labelledby="private-longterm-title">
+      <div>
+        <p className="eyebrow">PRIVÉ SCENARIO · ALLEEN IN JE BROWSER</p>
+        <h2 id="private-longterm-title">Wat kosten twee woningen over meerdere jaren?</h2>
+        <p>Vergelijk je eigen aannames over huur, vaste bijkomende lasten,
+          verhuiskosten en een jaarlijks samengestelde huurstijging.
+          Dit is een losse rekenhulp: neem je eigen bedragen over uit de
+          eerdere vergelijking als je die wilt gebruiken.</p>
+        <p><strong>Geen huurprognose of juridisch advies.</strong> Huurstijgingen zijn
+          hypothetisch; wettelijke plafonds, contractafspraken, inflatie,
+          energieprijzen, toeslagen en inkomensverandering worden niet voorspeld.
+          Niets wordt opgeslagen, verstuurd of gekoppeld aan WoningNet.</p>
+      </div>
+      <div>
+        <div className="private-budget-grid">
+          {([{title:'Woning A',value:first,update:changeFirst},
+             {title:'Woning B',value:second,update:changeSecond}] as const).map(item => (
+            <fieldset key={item.title}>
+              <legend>{item.title}</legend>
+              {inputFields.map(field => (
+                <label key={field.name} style={{display:'block',marginBottom:12}}>
+                  {field.label}
+                  <input aria-label={item.title + ' · ' + field.label}
+                    type="number" inputMode="decimal" step="0.01"
+                    min={field.min} max={field.max}
+                    value={item.value[field.name]}
+                    onChange={e => item.update(field.name,e.target.value)} />
+                </label>
+              ))}
+            </fieldset>
+          ))}
+        </div>
+        <label style={{display:'block',marginTop:14}}>
+          Vergelijkingsduur in volledige jaren (1–10)
+          <input type="number" min="1" max="10" step="1" value={horizon}
+            onChange={e => {setHorizon(e.target.value);setMessage('');}} />
+        </label>
+        {(!left || !right || !years) && <p role="status">Vul voor beide woningen een geldige
+          maandhuur (€1–€20.000), overige maandlasten (€0–€20.000),
+          verhuiskosten (€0–€50.000), huurstijging (0–25%) en duur (1–10 jaar) in.
+          Een komma of punt voor centen is toegestaan.</p>}
+        {last && <div className="private-budget-provenance" aria-live="polite">
+          <h3>Na {years} {years === 1 ? 'jaar' : 'jaar'}</h3>
+          <p>Totale geschatte uitgaven inclusief eenmalige startkosten:
+            <strong> A {format(last.a.cumulative)}</strong> en
+            <strong> B {format(last.b.cumulative)}</strong>.</p>
+          <p>{Math.abs(diff) < 0.005 ? 'Beide scenario’s kosten in deze berekening evenveel.'
+            : (diff < 0 ? 'A' : 'B') + ' is ' + format(Math.abs(diff)) +
+              ' goedkoper over de gekozen periode.'}</p>
+          {firstChangeYear !== null && <p>De volgorde van cumulatieve kosten
+            verandert voor het eerst in jaar {firstChangeYear}. Dit is geen maandexact
+            omslagpunt.</p>}
+          <div className="private-budget-table-wrap">
+            <table>
+              <caption>Jaarlijkse schatting met samengestelde huurstijging, vaste overige woonlasten en verhuiskosten uitsluitend in het startjaar</caption>
+              <thead><tr>
+                <th scope="col">Jaar</th><th scope="col">A maandhuur</th><th scope="col">B maandhuur</th>
+                <th scope="col">A jaarlasten</th><th scope="col">B jaarlasten</th>
+                <th scope="col">A totaal t/m jaar</th><th scope="col">B totaal t/m jaar</th>
+              </tr></thead>
+              <tbody>{rows.map(({a,b}) => <tr key={a.year}>
+                <th scope="row">{a.year}</th><td>{format(a.monthlyRent)}</td>
+                <td>{format(b.monthlyRent)}</td><td>{format(a.yearly)}</td>
+                <td>{format(b.yearly)}</td><td>{format(a.cumulative)}</td>
+                <td>{format(b.cumulative)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <button type="button" onClick={exportProjection}>Bewaar deze cijfers als CSV…</button>
+          <button type="button" onClick={() => {
+            setFirst({...DEFAULT_COST_INPUTS});setSecond({...DEFAULT_COST_INPUTS});
+            setHorizon('5');setMessage('Alle handmatige meerjarenbedragen gewist.');
+          }}>Wis beide scenario’s</button>
+          <p>Deze berekening indexeert alleen de ingevulde huur; andere woonlasten
+            blijven gelijk. Er wordt niet aangenomen dat de eigen huurstijging
+            daadwerkelijk mag of zal plaatsvinden.</p>
+        </div>}
+        {message && <p role="status">{message}</p>}
+      </div>
+    </section>
+  );
+}
