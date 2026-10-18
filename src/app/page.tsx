@@ -286,7 +286,11 @@ function download(name: string, body: string, mime: string) {
 }
 const csvCell = (value: string) => {
   const plain = value.replace(/[\r\n\t]+/g, ' ').trim();
-  const safe = /^[=+@-]/.test(plain) ? "'" + plain : plain;
+  // Check a normalized copy for concealed formula prefixes, but retain the
+  // operator's exact printable text in the resulting literal CSV field.
+  const normalized = plain.normalize('NFKC');
+  const formulaLike = /^[\p{White_Space}\p{Cf}\p{Cc}\p{M}]*[=+@-]/u.test(normalized);
+  const safe = formulaLike ? "'" + plain : plain;
   return '"' + safe.replace(/"/g, '""') + '"';
 };
 
@@ -1066,6 +1070,10 @@ function PrivateMoveAftercare() {
   const [pendingTextExport, setPendingTextExport] = useState<{
     source: string; preview: string; count: number
   } | null>(null);
+  const [includePrivateCsvNotes, setIncludePrivateCsvNotes] = useState(false);
+  const [pendingCsvExport, setPendingCsvExport] = useState<{
+    source: string; preview: string; count: number
+  } | null>(null);
   // A draft is a human-reviewed local export, never a sent or verified notice.
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
   const [includeDetails, setIncludeDetails] = useState(false);
@@ -1196,6 +1204,10 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const csvExportSignature = JSON.stringify({ items, includePrivateCsvNotes });
+  const csvExportCurrent = pendingCsvExport !== null &&
+    pendingCsvExport.source === csvExportSignature &&
+    pendingCsvExport.count === items.length;
   const textExportSignature = JSON.stringify({
     items, shown, filter, issuePriority, issueRoom, issueQuery, includePrivateTxtNotes
   });
@@ -1586,11 +1598,30 @@ function PrivateMoveAftercare() {
     setMessage('Privé-JSON gemaakt. Let zelf op waar je het bestand bewaart.');
   }
   function exportCsv() {
+    if (!items.length) { setPendingCsvExport(null); return; }
     const header = ['ruimte', 'punt', 'prioriteit', 'status', 'eigen_deadline', 'gemaakt_op', 'notitie'];
-    const rows = items.map(item => [item.room, item.title, item.priority, item.status, item.due, item.created, item.note]);
-    download('woonpoints-nazorg.csv', [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n',
-      'text/csv;charset=utf-8');
-    setMessage('Privé-CSV gemaakt. Dit is geen verstuurde gebrekenmelding.');
+    // Preserve seven fixed columns and all dossier rows. Notes require opt-in.
+    const rows = items.map(item => [item.room, item.title, item.priority, item.status,
+      item.due, item.created, includePrivateCsvNotes ? item.note : '']);
+    const preview = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    if (preview.length > 100000) {
+      setPendingCsvExport(null);
+      setMessage('CSV-export is te groot; verkort eerst eigen dossierregels.');
+      return;
+    }
+    setPendingCsvExport({source: csvExportSignature, preview, count: items.length});
+    setMessage('Volledige eigen CSV klaargezet. Controleer elke regel en bevestig apart vóór download.');
+  }
+  function confirmCsvExport() {
+    if (pendingCsvExport === null || !csvExportCurrent) {
+      setPendingCsvExport(null);
+      setMessage('CSV geweigerd: privékeuze of dossier is veranderd; controleer een nieuw voorbeeld.');
+      return;
+    }
+    download('woonpoints-nazorg.csv', pendingCsvExport.preview, 'text/csv;charset=utf-8');
+    setPendingCsvExport(null);
+    setMessage('Exact gecontroleerde privé-CSV van ' + items.length +
+      ' punten gedownload, zonder externe verzending.');
   }
 
   function exportCalendar() {
