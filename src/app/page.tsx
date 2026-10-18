@@ -1051,6 +1051,9 @@ function PrivateMoveAftercare() {
   const [pendingBulk, setPendingBulk] = useState<{
     status: 'open' | 'afgerond'; signature: string; count: number
   } | null>(null);
+  const [bulkUndo, setBulkUndo] = useState<{
+    before: Item[]; appliedSignature: string; changedCount: number
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
@@ -1178,6 +1181,8 @@ function PrivateMoveAftercare() {
   });
   const bulkIsCurrent = pendingBulk !== null && pendingBulk.signature === bulkSignature &&
     pendingBulk.count === bulkVisible.length;
+  const bulkUndoCurrent = bulkUndo !== null &&
+    bulkUndo.appliedSignature === JSON.stringify({ items, history });
 
   function proposeBulkStatus(status: 'open' | 'afgerond') {
     if (bulkVisible.length === 0) { setMessage('Selecteer eerst zichtbare eigen dossierpunten.'); return; }
@@ -1201,11 +1206,29 @@ function PrivateMoveAftercare() {
       return;
     }
     const count = selected.size;
+    setBulkUndo({
+      before: items.map(item => ({ ...item })),
+      appliedSignature: JSON.stringify({ items: next, history }),
+      changedCount: count
+    });
     setItems(next);
     setPendingBulk(null);
     setBulkSelectedIds([]);
     setMessage(count + ' eigen punten als ' + pendingBulk.status +
       ' gemarkeerd. Geen officiële actie of verhuurderbericht uitgevoerd.');
+  }
+
+  function undoLastBulkStatus() {
+    if (bulkUndo === null || !bulkUndoCurrent) {
+      setBulkUndo(null);
+      setMessage('Terugdraaien geweigerd: na de bulkactie zijn eigen gegevens gewijzigd.');
+      return;
+    }
+    setItems(bulkUndo.before.map(item => ({ ...item })));
+    setBulkUndo(null);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setMessage('Vorige eigen statussen uit dit tabblad teruggezet. Er is niets extern veranderd.');
   }
 
   function openIssueFromInbox(id: string) {
