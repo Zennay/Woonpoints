@@ -139,3 +139,47 @@ export function summarizeManualPositionHistory(raw) {
       result[result.length - 1].averagePercentile - result[result.length - 2].averagePercentile
   };
 }
+
+
+/**
+ * Opt-in, private monthly-history portability. A fixed-column CSV contains
+ * *only* validated civil dates and positive integer rank/total values.
+ * Arbitrary quotes, formula cells, column injection, addresses and account
+ * identifiers are never admitted or interpreted as a private history.
+ */
+const PRIVATE_HISTORY_CSV_HEADER = 'Datum;Eindpositie;Totaal';
+const MAX_PRIVATE_CSV_CHARACTERS = 16_384;
+
+export function exportManualPositionHistoryCsv(raw) {
+  if (!summarizeManualPositionHistory(raw)) throw new TypeError(MONTH_INVALID);
+  const lines = raw.replace(/\r\n/g, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+  const data = lines.map(line => {
+    const match = /^(20[0-9]{2}-[0-9]{2}-[0-9]{2}),([1-9][0-9]{0,5})\/([1-9][0-9]{0,5})$/.exec(line);
+    if (!match) throw new TypeError(MONTH_INVALID);
+    return match[1] + ';' + match[2] + ';' + match[3];
+  });
+  const csv = [PRIVATE_HISTORY_CSV_HEADER, ...data].join('\r\n') + '\r\n';
+  if (csv.length > MAX_PRIVATE_CSV_CHARACTERS) throw new RangeError(MONTH_INVALID);
+  return csv;
+}
+
+export function importManualPositionHistoryCsv(csv) {
+  if (typeof csv !== 'string' || csv.length > MAX_PRIVATE_CSV_CHARACTERS) {
+    throw new TypeError(MONTH_INVALID);
+  }
+  const stripped = csv.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const lines = stripped.split('\n').map(s => s.trim());
+  if (lines.at(-1) === '') lines.pop();
+  if (lines[0] !== PRIVATE_HISTORY_CSV_HEADER ||
+      lines.length < 2 || lines.length > 121 || lines.some(s => s === '')) {
+    throw new TypeError(MONTH_INVALID);
+  }
+  const rows = lines.slice(1).map(line => {
+    const match = /^(20[0-9]{2}-[0-9]{2}-[0-9]{2});([1-9][0-9]{0,5});([1-9][0-9]{0,5})$/.exec(line);
+    if (!match) throw new TypeError(MONTH_INVALID);
+    return match[1] + ',' + match[2] + '/' + match[3];
+  });
+  const restored = rows.join('\n');
+  if (!summarizeManualPositionHistory(restored)) throw new TypeError(MONTH_INVALID);
+  return restored;
+}
