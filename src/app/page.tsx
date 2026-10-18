@@ -31,6 +31,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
   {id:'private-meter-handover-heading',title:'Meterstanden',category:'verhuizen'},
+  {id:'private-utility-transfer-heading',title:'Nutsvoorzieningen overzetten',category:'verhuizen'},
   {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
   {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
   {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
@@ -146,6 +147,7 @@ export default function HomePage() {
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
       <PrivateMeterHandover />
+      <PrivateUtilityTransfer />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
@@ -4415,3 +4417,206 @@ function PrivateMeterHandover() {
       accountbewijs, officiële meterregistratie of koppeling aan energieleveranciers.</p>
   </section>;
 }
+
+
+type PrivateUtilityKey = 'electricity' | 'water' | 'internet' | 'insurance' | 'council' | 'parking';
+type PrivateUtilityState = 'todo' | 'requested' | 'confirmed' | 'not-applicable';
+type PrivateUtilityStep = { state: PrivateUtilityState; date: string };
+const PRIVATE_UTILITIES: {
+  id: PrivateUtilityKey; name: string; guidance: string
+}[] = [
+  { id: 'electricity', name: 'Energiecontract en eindafrekening',
+    guidance: 'Controleer zelf oude einddatum, nieuwe ingangsdatum en meterstanden.' },
+  { id: 'water', name: 'Wateraanmelding en afmelding',
+    guidance: 'Controleer zelf de adreswissel bij je waterbedrijf.' },
+  { id: 'internet', name: 'Internet en televisie',
+    guidance: 'Plan een eigen aansluit- of verhuisafspraak zonder persoonsgegevens hier.' },
+  { id: 'insurance', name: 'Inboedel- en woonverzekeringen',
+    guidance: 'Controleer zelf vanaf welke datum de nieuwe woning verzekerd moet zijn.' },
+  { id: 'council', name: 'Inschrijving bij de gemeente',
+    guidance: 'Controleer zelf de geldende termijn en officiële ontvangstbevestiging.' },
+  { id: 'parking', name: 'Parkeer- en bewonersregelingen',
+    guidance: 'Bepaal zelf of nieuwe lokale vergunningen of abonnementen nodig zijn.' }
+];
+const PRIVATE_UTILITY_EMPTY = Object.fromEntries(
+  PRIVATE_UTILITIES.map(item => [item.id, { state: 'todo', date: '' }])
+) as Record<PrivateUtilityKey, PrivateUtilityStep>;
+function privateUtilityTomorrow(day: string): string {
+  const next = new Date(day + 'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+function privateUtilityReport(entries: Record<PrivateUtilityKey, PrivateUtilityStep>): string {
+  const status: Record<PrivateUtilityState, string> = {
+    todo: 'Nog te regelen', requested: 'Zelf aangevraagd (nog niet bevestigd)',
+    confirmed: 'Zelf als bevestigd genoteerd (niet onafhankelijk geverifieerd)',
+    'not-applicable': 'Niet van toepassing'
+  };
+  return [
+    'WOONPOINTS · MIJN PRIVÉVERHUISOVERDRACHT',
+    'Eigen handmatige planning · geen leveranciers- of gemeentestatus geverifieerd.',
+    'Geen bericht verstuurd of contract gewijzigd via Woonpoints.',
+    '', ...PRIVATE_UTILITIES.flatMap(item => [
+      item.name,
+      'Status: ' + status[entries[item.id].state],
+      'Zelf gekozen controledatum: ' + (entries[item.id].date || 'niet ingepland'),
+      ''
+    ])
+  ].join('\r\n') + '\r\n';
+}
+function privateUtilityCalendar(entries: Record<PrivateUtilityKey, PrivateUtilityStep>,
+  today: string): string {
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Woonpoints//Eigen Verhuischecklist//NL',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'
+  ];
+  for (const item of PRIVATE_UTILITIES) {
+    const entry = entries[item.id];
+    if (!handoverValidDay(entry.date) || entry.date < today ||
+        entry.state === 'confirmed' || entry.state === 'not-applicable') continue;
+    const start = entry.date.replaceAll('-', '');
+    const end = privateUtilityTomorrow(entry.date).replaceAll('-', '');
+    const stamp = new Date().toISOString().replaceAll('-', '').replaceAll(':', '')
+      .replace(/\.\d{3}Z$/, 'Z');
+    lines.push('BEGIN:VEVENT', 'UID:woonpoints-utility-' + item.id + '-' + start + '@offline.local',
+      'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start, 'DTEND;VALUE=DATE:' + end,
+      'SUMMARY:Zelf controleren - ' + item.name,
+      'DESCRIPTION:Persoonlijke herinnering. Geen bevestigde afspraak of officiële termijn.',
+      'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * A purely manual, ephemeral checklist. No supplier contact, WoningNet access
+ * or local storage. A calendar file may be shared by an external calendar app
+ * only after an explicit full preview and a separate user consent checkbox.
+ */
+function PrivateUtilityTransfer() {
+  const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
+    PRIVATE_UTILITY_EMPTY);
+  const [preview, setPreview] = useState<{
+    source: string; text: string; kind: 'txt' | 'ics'
+  } | null>(null);
+  const [approved, setApproved] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const source = JSON.stringify(entries);
+  const current = preview !== null && preview.source === source;
+  const now = new Date();
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0')].join('-');
+  const upcoming = PRIVATE_UTILITIES.filter(item => {
+    const entry = entries[item.id];
+    return entry.date !== '' && handoverValidDay(entry.date) &&
+      entry.date >= today && entry.state !== 'confirmed' &&
+      entry.state !== 'not-applicable';
+  });
+  const invalid = PRIVATE_UTILITIES.some(item => entries[item.id].date !== '' &&
+    !handoverValidDay(entries[item.id].date));
+  const settled = PRIVATE_UTILITIES.filter(item =>
+    ['confirmed', 'not-applicable'].includes(entries[item.id].state)).length;
+  function edit(key: PrivateUtilityKey, change: Partial<PrivateUtilityStep>) {
+    setEntries(previous => ({
+      ...previous, [key]: { ...previous[key], ...change }
+    }));
+    setApproved(false); setFeedback('');
+  }
+  function openPreview(kind: 'txt' | 'ics') {
+    if (invalid || (kind === 'ics' && !upcoming.length)) return;
+    setPreview({ source, kind, text: kind === 'txt'
+      ? privateUtilityReport(entries) : privateUtilityCalendar(entries, today) });
+    setApproved(false); setFeedback('');
+  }
+  function download() {
+    if (!current || preview === null || !approved) return;
+    const blob = new Blob([preview.text], { type: preview.kind === 'ics'
+      ? 'text/calendar;charset=utf-8' : 'text/plain;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = preview.kind === 'ics' ?
+      'woonpoints-eigen-overstapherinneringen.ics' : 'woonpoints-eigen-overstapchecklist.txt';
+    document.body.appendChild(link);
+    link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    setApproved(false);
+    setFeedback('Privébestand aangevraagd. Er is niets automatisch naar derden gestuurd.');
+  }
+  function clear() {
+    setEntries(Object.fromEntries(PRIVATE_UTILITIES.map(item =>
+      [item.id, { state: 'todo', date: '' }])) as Record<PrivateUtilityKey, PrivateUtilityStep>);
+    setPreview(null); setApproved(false);
+    setFeedback('Alleen deze tabbladchecklist is gewist.');
+  }
+  return <section className="panel" aria-labelledby="private-utility-transfer-heading"
+    style={{ display: 'block' }}>
+    <p className="eyebrow">PRIVÉ VERHUISADMINISTRATIE</p>
+    <h2 id="private-utility-transfer-heading">Nutsvoorzieningen en contracten overzetten</h2>
+    <p>Gebruik zes handmatige stappen om je verhuizing te organiseren. Je kiest je eigen
+      controledatums en houdt apart bij wat nog openstaat, wat je zelf hebt aangevraagd
+      en wat je zelf als afgerond hebt genoteerd. Een status is nooit officiële bevestiging.</p>
+    <div style={{ display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 310px), 1fr))', gap: 12 }}>
+      {PRIVATE_UTILITIES.map(item => <fieldset key={item.id} style={{
+        border: '1px solid #c4d6c9', borderRadius: 12, padding: 14, minWidth: 0
+      }}>
+        <legend><strong>{item.name}</strong></legend>
+        <p>{item.guidance}</p>
+        <label style={{ display: 'block', fontWeight: 700 }}>
+          Mijn eigen voortgang
+          <select value={entries[item.id].state} onChange={event =>
+            edit(item.id, { state: event.target.value as PrivateUtilityState })}
+            style={{ display: 'block', width: '100%', minHeight: 44, marginTop: 6 }}>
+            <option value="todo">Nog te regelen</option>
+            <option value="requested">Zelf aangevraagd, wacht op bevestiging</option>
+            <option value="confirmed">Zelf als afgerond genoteerd</option>
+            <option value="not-applicable">Niet van toepassing</option>
+          </select>
+        </label>
+        <label style={{ display: 'block', fontWeight: 700, marginTop: 12 }}>
+          Eigen controledatum
+          <input type="date" min="2000-01-01" max="2099-12-31"
+            value={entries[item.id].date}
+            onChange={event => edit(item.id, { date: event.target.value.slice(0, 10) })}
+            style={{ display: 'block', width: '100%', minHeight: 44, marginTop: 6 }} />
+        </label>
+      </fieldset>)}
+    </div>
+    <p role="status" aria-live="polite">
+      {settled} van {PRIVATE_UTILITIES.length} stappen zelf afgehandeld of niet van toepassing.
+      {' '}{upcoming.length} toekomstige controleherinneringen mogelijk.
+    </p>
+    {invalid && <p role="alert">Controleer de ingevoerde datums.</p>}
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <button type="button" disabled={invalid}
+        onClick={() => openPreview('txt')}>Bekijk volledig privé-overzicht (TXT)</button>
+      <button type="button" className="secondary" disabled={invalid || !upcoming.length}
+        onClick={() => openPreview('ics')}>Bekijk mijn agendaherinneringen (ICS)</button>
+      <button type="button" className="secondary" onClick={clear}>Wis mijn checklist</button>
+    </div>
+    {preview !== null && <div style={{ padding: 16, border: '1px solid #91a99a',
+      borderRadius: 12, marginTop: 16 }}>
+      {!current && <p role="alert">Je checklist is gewijzigd. Maak eerst een nieuwe preview.</p>}
+      {current && <>
+        <p><strong>Volledige inhoud van het eigen {preview.kind.toUpperCase()}-bestand:</strong></p>
+        <pre style={{ maxHeight: 320, overflowY: 'auto', whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere' }}>{preview.text}</pre>
+        <label style={{ display: 'flex', gap: 9, alignItems: 'start' }}>
+          <input type="checkbox" checked={approved}
+            onChange={event => setApproved(event.target.checked)} />
+          Ik heb de volledige inhoud gecontroleerd en kies zelf waar ik dit bestand
+          opsla of met wie ik het deel.
+        </label>
+        <button type="button" disabled={!approved} onClick={download}
+          style={{ marginTop: 12 }}>Download precies deze gecontroleerde {preview.kind.toUpperCase()}</button>
+      </>}
+    </div>}
+    <p role="status" aria-live="polite">{feedback}</p>
+    <p>Deze checklist blijft alleen in het tabblad en verdwijnt na verversen of sluiten.
+      Je agenda-app kan een bewust gedownload ICS-bestand synchroniseren; Woonpoints
+      maakt nooit zelf afspraken, verzendt geen berichten en wijzigt geen contracten.
+      Controleer officiële termijnen, voorwaarden en bevestigingen altijd zelf.</p>
+  </section>;
+}
+
