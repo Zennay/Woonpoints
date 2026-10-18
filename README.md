@@ -67,6 +67,16 @@ per maand filterbaar, afzonderlijk verwijderbaar en per ingevulde maand
 samengevat. Er is geen adres- of accountveld en er wordt geen officiële
 WoningNet-reactie geregistreerd, geverifieerd of verstuurd.
 
+Vanuit het dagboek verschijnt na het noteren van een geldige
+eindpositie de knop **Toon genoteerde eindposities in maandgrafiek**.
+Deze biedt uitsluitend de datum/positie/totaal uit de lokale
+dagboekstatus aan de bestaande maandgrafiek aan. Pas na een tweede
+expliciete klik **Gebruik in maandgrafiek** wordt eventueel eerder
+handmatig getypte grafiekinvoer vervangen; **Behoud huidige grafiek**
+laat die data onveranderd. Het dagboek wordt daarbij niet gewijzigd.
+Er ontstaat geen automatische koppeling, serverrequest, opslag of
+gecertificeerd WoningNet-bewijs.
+
 **Bewaar als CSV** maakt op eigen verzoek een klein vast vierkolomsbestand
 zonder dynamische spreadsheetinhoud. Import van een eerder bewaarde CSV
 weigert onbekende kolommen, datums, toestanden, positie/totaal-combinaties
