@@ -3987,3 +3987,152 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
       onJournalSnapshot={updateJournal} reportMonth={activeMonth}/>
   </>;
 }
+
+
+/**
+ * Optional, manual monthly planning hints: a calendar suggestion is never
+ * evidence of a WoningNet reaction, point, invitation or registered account.
+ * Its only persistent output is an explicitly user-requested ICS download.
+ */
+export function PrivateReactionPacing() {
+  const [month, setMonth] = useState('');
+  const [selfCount, setSelfCount] = useState('0');
+  const [alreadyPlanned, setAlreadyPlanned] = useState('0');
+  const [workdaysOnly, setWorkdaysOnly] = useState(true);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    const now = new Date();
+    setMonth(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  }, []);
+  const parsedCount = (value: string) => /^[0-4]$/.test(value) ? Number(value) : null;
+  const counted = parsedCount(selfCount);
+  const planned = parsedCount(alreadyPlanned);
+  const countsOk = counted !== null && planned !== null && counted + planned <= 4;
+  const validMonth = /^(20\d{2})-(0[1-9]|1[0-2])$/.exec(month);
+  const today = new Date();
+  const todayKey = today.getFullYear() + '-' +
+    String(today.getMonth()+1).padStart(2,'0') + '-' +
+    String(today.getDate()).padStart(2,'0');
+  const openDates: string[] = [];
+  if (validMonth && countsOk) {
+    const year = Number(validMonth[1]);
+    const m = Number(validMonth[2]);
+    const last = new Date(year, m, 0).getDate();
+    for (let d = 1; d <= last; d++) {
+      const key = month + '-' + String(d).padStart(2,'0');
+      if (key < todayKey) continue;
+      const weekday = new Date(year, m-1, d, 12).getDay();
+      if (workdaysOnly && (weekday === 0 || weekday === 6)) continue;
+      openDates.push(key);
+    }
+  }
+  const missing = countsOk ? 4 - counted! - planned! : 0;
+  const proposed = missing > 0 && openDates.length
+    ? Array.from({length: Math.min(missing, openDates.length)}, (_, i, all) =>
+        openDates[Math.floor(((i + 1) * openDates.length) / (all.length + 1))])
+    : [];
+  const insufficient = missing > proposed.length;
+  const fmt = (date: string) => {
+    const [y,m,d] = date.split('-').map(Number);
+    return new Intl.DateTimeFormat('nl-NL', {
+      weekday:'long', day:'numeric', month:'long', year:'numeric'
+    }).format(new Date(y,m-1,d,12));
+  };
+  function downloadPlan() {
+    if (!validMonth || !countsOk || missing === 0 || insufficient || proposed.length !== missing) {
+      setMessage('Er zijn onvoldoende geldige toekomstige dagen voor een volledige planning.');
+      return;
+    }
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const lines = ['BEGIN:VCALENDAR','VERSION:2.0','CALSCALE:GREGORIAN',
+      'PRODID:-//Woonpoints//Prive maandreactieplan//NL','METHOD:PUBLISH'];
+    for (const date of proposed) {
+      const [year,m,d] = date.split('-').map(Number);
+      const following = new Date(year,m-1,d+1,12);
+      const end = String(following.getFullYear()) +
+        String(following.getMonth()+1).padStart(2,'0') +
+        String(following.getDate()).padStart(2,'0');
+      const start = date.replace(/-/g,'');
+      lines.push('BEGIN:VEVENT',
+        'UID:woonpoints-eigen-reactie-'+start+'@local.woonpoints.invalid',
+        'DTSTAMP:'+stamp,
+        'DTSTART;VALUE=DATE:'+start,
+        'DTEND;VALUE=DATE:'+end,
+        'SUMMARY:Zelf woonaanbod bekijken (geen automatische reactie)',
+        'DESCRIPTION:Eigen vrijblijvend aandachtspunt. Controleer zelf de actuele woning en eventuele regels. Geen WoningNet-registratie of melding door Woonpoints.',
+        'STATUS:TENTATIVE',
+        'END:VEVENT');
+    }
+    lines.push('END:VCALENDAR');
+    const uri = URL.createObjectURL(new Blob([lines.join('\r\n')+'\r\n'],
+      {type:'text/calendar;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = uri;
+    link.download = 'woonpoints-eigen-maandcheck.ics';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(uri),2000);
+    setMessage('Eigen voorlopige agendadagen aangeboden. Je agenda-app kan dit bestand zelf opslaan of synchroniseren.');
+  }
+  return <section className="panel" aria-labelledby="private-reaction-pacing-heading">
+    <div>
+      <p className="eyebrow">PRIVÉ MAANDPLAN · GEEN WONINGNET-KOPPELING</p>
+      <h2 id="private-reaction-pacing-heading">Wanneer wil je zelf woonaanbod bekijken?</h2>
+      <p>Verdeel jouw nog gewenste aandachtspunten over toekomstige kalenderdagen.
+        Dit helpt uitsluitend herinneren om zélf te kijken. Het maanddoel
+        van vier is hier een persoonlijke richtlijn: een check is <strong>geen
+        geldige reactie, zoekpunt of woningtoewijzing</strong>.</p>
+      <p>Getallen komen alleen van jou. Geen account, adres, gegevensimport,
+        automatisch bericht, browseropslag, serveraanroep of ingeplande achtergrondactie.</p>
+    </div>
+    <div>
+      <label htmlFor="pacing-month">Kalendermaand</label>
+      <input id="pacing-month" type="month" min="2000-01" max="2099-12"
+        value={month} onChange={event=>{setMonth(event.target.value);setMessage('');}}/>
+      <label htmlFor="pacing-count">Zelf al gedaan deze maand (0–4, niet geverifieerd)</label>
+      <input id="pacing-count" type="number" min="0" max="4" step="1"
+        value={selfCount} onChange={event=>{setSelfCount(event.target.value);setMessage('');}}/>
+      <label htmlFor="pacing-planned">Zelf elders al gepland (0–4)</label>
+      <input id="pacing-planned" type="number" min="0" max="4" step="1"
+        value={alreadyPlanned} onChange={event=>{setAlreadyPlanned(event.target.value);setMessage('');}}/>
+      <label style={{display:'flex',gap:8,alignItems:'center'}}>
+        <input type="checkbox" checked={workdaysOnly} onChange={event=>{
+          setWorkdaysOnly(event.target.checked);setMessage('');
+        }}/>
+        Alleen op werkdagen voorstellen
+      </label>
+      {!countsOk && <p role="alert">Gebruik gehele aantallen tussen 0 en 4,
+        samen maximaal vier. Geen bestaande plannen worden gewijzigd.</p>}
+      {!validMonth && <p>Vul eerst een geldige kalendermaand in.</p>}
+      {countsOk && validMonth && <>
+        <p aria-live="polite"><strong>{missing} eigen aandachtspunt{missing===1?'':'en'} over</strong>
+          {' · '}{openDates.length} toekomstige {workdaysOnly?'werkdagen':'dagen'} beschikbaar.</p>
+        {missing===0 && <p>Vier punten zijn al ingevuld of elders gepland.
+          Er worden geen extra dagen voorgesteld.</p>}
+        {insufficient && <p role="alert">Deze maand heeft niet genoeg toekomstige
+          {workdaysOnly?' werkdagen':' dagen'} voor alle open aandachtspunten.
+          Kies desgewenst een andere maand of dagfilter. We schuiven nooit stilzwijgend
+          een actie naar de volgende maand.</p>}
+        {proposed.length>0 && <div>
+          <h3>Vrijblijvende suggesties</h3>
+          <ol>{proposed.map(day=><li key={day}>{fmt(day)}</li>)}</ol>
+          <p>Datums zijn uitsluitend voorgestelde kijkmomenten, geen deadlines
+            van een verhuurder of bevestigde afspraken.</p>
+        </div>}
+        <button type="button" onClick={downloadPlan}
+          disabled={missing===0 || insufficient || proposed.length!==missing}>
+          Bewaar alleen deze suggesties als voorlopige agenda-ICS…
+        </button>
+      </>}
+      <button type="button" className="secondary" onClick={()=>{
+        setSelfCount('0');setAlreadyPlanned('0');setMessage('');
+      }}>Wis mijn aantallen</button>
+      <p aria-live="polite">{message}</p>
+      <p>Een ICS-download gebeurt alleen na jouw klik. Je kalenderprovider kan
+        de gekozen dagen synchroniseren; Woonpoints verstuurt nooit
+        woningreacties of automatische herinneringen.</p>
+    </div>
+  </section>;
+}
