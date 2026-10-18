@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
+import PrivateMeterHandover from './private-meter-handover';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner } from './position-stats';
 import PositionStats from './position-stats';
@@ -30,6 +31,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
   {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
+  {id:'private-meter-handover-heading',title:'Meterstanden',category:'verhuizen'},
   {id:'private-document-readiness-heading',title:'Documenten',category:'verhuizen'},
   {id:'private-moving-expenses-heading',title:'Werkelijke kosten',category:'verhuizen'},
   {id:'private-moving-quotes-heading',title:'Verhuisoffertes',category:'verhuizen'},
@@ -144,6 +146,7 @@ export default function HomePage() {
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
+      <PrivateMeterHandover />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
       <PrivateMovingExpenseLedger />
