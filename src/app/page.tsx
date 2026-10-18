@@ -365,7 +365,7 @@ function PrivateMoveAftercare() {
     noticeItems.forEach((item, i) => {
       lines.push(
         `${i + 1}. ${item.room}: ${item.title} (eigen prioriteit: ${item.priority})`,
-        ...(includeDetails && item.note.trim() ? ['Mijn toelichting: ' + item.note.replace(/\\s+/g, ' ').trim()] : []),
+        ...(includeDetails && item.note.trim() ? ['Mijn toelichting: ' + item.note.replace(/\s+/g, ' ').trim()] : []),
         ...(item.due ? ['Mijn eigen streefdatum: ' + item.due + ' (niet met u afgesproken)'] : []),
         ''
       );
@@ -378,7 +378,7 @@ function PrivateMoveAftercare() {
       '',
       'CONCEPT — niet automatisch verzonden of juridisch getoetst.'
     );
-    const candidate = lines.join('\\n');
+    const candidate = lines.join('\n');
     if (candidate.length > 10000) { setMessage('Te veel inhoud voor één concept; kies minder punten.'); return; }
     setNoticeDraft(candidate);
     setNoticeSource(noticeFingerprint);
