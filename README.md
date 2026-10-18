@@ -1417,3 +1417,38 @@ Een eigen bestandsmap, browserprint, PDF-printer of cloudmap kan
 informatie buiten het browsertabblad bewaren. Deel alleen na
 eigen controle met een bevoegde ontvanger. `BOT_DRY_RUN=true`
 en de WoningNet-toestemmingsgrens blijven ongewijzigd.
+
+
+## Herstel van complete privéback-up: gevolgen vóór vervangen
+
+Bij het openen van een **volledige inspectie+nazorg-JSON** toont Woonpoints
+niet langer alleen de totale omvang. De interface vergelijkt de
+daadwerkelijk gecontroleerde import met de huidige tijdelijke tabbladstatus:
+
+- **Startinspectie:** alle standaard- en eigen controlepunten, inclusief
+  wijzigingen in eigen beoordeling, prioriteit en verborgen toelichting.
+- **Nazorgpunten:** wat wordt toegevoegd, verwijderd of veranderd,
+  inclusief status, zelf gekozen termijn en eventuele notities.
+- **Contactmomenten:** wat erbij komt, vervalt of wijzigt.
+  Ieder contactmoment blijft aan zijn oorspronkelijke nazorgpunt gekoppeld.
+
+Open de drie details om per punt of contactmoment de gevolgen na te lopen.
+De lijst geeft **eigen titel en datum**, maar toont bewust geen
+vrije privénotities of contactinhoud. In alle drie groepen staan het
+aantal toevoegingen, verwijderingen en wijzigingen apart vermeld.
+Ook bij nul verschillen blijft de volledige vervanging een expliciete
+handeling.
+
+**Veiligheidsgrens:** Het ingelezen bestand wordt eerst geheel gevalideerd
+met de bestaande strikte 16/40 KiB-parsers. Er wordt niets vervangen
+tijdens het tonen van de impact. Vóór de knop **Ja, herstel beide
+onderdelen** moet de gebruiker apart bevestigen dat de gevolgen
+begrepen zijn. Als er na het inlezen eigen invoer verandert, vervalt
+de oorspronkelijke importgoedkeuring; de gebruiker moet de actuele
+verschillen opnieuw bekijken en opnieuw toestemming geven.
+
+Een bevestigd herstel vervangt nog steeds beide modules in dit
+browsertabblad samen, met het bestaande eenmalige terugdraaipunt zolang
+de geïmporteerde gegevens niet door de gebruiker zijn gewijzigd.
+Er is geen upload, accountactie, WoningNet-bericht of externe opslag.
+Eerder eigenhandig gedownloade bestanden blijven buiten de app bestaan.
