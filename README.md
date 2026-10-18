@@ -724,7 +724,9 @@ Onder **Maandplan** vind je nu een los, privé hulppaneel voor de zelfgekozen
 maand. Vul je eigen aantal al gedane kijkmomenten (0–4) en elders
 zelf geplande momenten in. De tool stelt de overige dagen gespreid voor,
 rekening houdend met de echte kalenderdagen, reeds verstreken dagen en
-desgewenst uitsluitend werkdagen. Als er onvoldoende dagen over zijn,
+desgewenst uitsluitend werkdagen. Elk voorgesteld kijkmoment is vervolgens
+zelf aan te passen binnen de overgebleven geldige maanddagen; dubbele of
+verstreken datums blokkeren de export totdat ze zijn hersteld. Als er onvoldoende dagen over zijn,
 wordt dat expliciet getoond; acties schuiven niet stilzwijgend naar een
 volgende maand. Bij reeds vier ingevulde/geplande aandachtspunten stelt
 de tool niets extra's voor.
