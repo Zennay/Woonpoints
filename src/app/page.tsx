@@ -734,6 +734,11 @@ function PrivateMoveAftercare() {
   const [inspectionCustomChecks, setInspectionCustomChecks] = useState<PrivateCustomInspectionCheck[]>([]);
   const [inspectionVersion, setInspectionVersion] = useState(0);
   const [pendingCompleteImport, setPendingCompleteImport] = useState<CompleteHandover | null>(null);
+  const [completeUndo, setCompleteUndo] = useState<{
+    previous: CompleteHandover;
+    importedSignature: string;
+  } | null>(null);
+  const [confirmCompleteUndo, setConfirmCompleteUndo] = useState(false);
   const [completeMessage, setCompleteMessage] = useState('');
   const [includePrivateSummaryNotes, setIncludePrivateSummaryNotes] = useState(false);
   const [completeSummaryText, setCompleteSummaryText] = useState('');
@@ -772,6 +777,11 @@ function PrivateMoveAftercare() {
 
   const dueActive = active.filter(item => item.due).sort((a, b) =>
     a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
+  const completeDataSignature = JSON.stringify({
+    inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history
+  });
+  const canUndoComplete = completeUndo !== null &&
+    completeUndo.importedSignature === completeDataSignature;
   const completeSummaryFingerprint = JSON.stringify({
     inspectionGrades, inspectionNotes, inspectionCustomChecks, items, history, includePrivateSummaryNotes
   });
@@ -980,9 +990,9 @@ function PrivateMoveAftercare() {
       setCompleteMessage(error instanceof Error ? error.message : 'Volledig back-upbestand kon niet worden geopend.');
     }
   }
-  function confirmCompleteImport() {
-    if (pendingCompleteImport === null) return;
-    const { inspection, aftercare } = pendingCompleteImport;
+  /** Switch all related React states in one explicit user event. No disk or network writes. */
+  function applyCompleteHandover(data: CompleteHandover) {
+    const { inspection, aftercare } = data;
     setInspectionGrades(inspection.grades);
     setInspectionNotes(inspection.notes);
     setInspectionCustomChecks(inspection.custom);
@@ -1004,8 +1014,48 @@ function PrivateMoveAftercare() {
     setCompleteSummaryApproved(false);
     setCompleteSummaryText('');
     setCompleteSummarySource('');
-    setCompleteMessage('Beide privé-onderdelen bewust hersteld. Geen externe melding verstuurd.');
+  }
+  function confirmCompleteImport() {
+    if (pendingCompleteImport === null) return;
+    // Preserve one previous tab state in RAM only. It can be restored only
+    // while the just-imported data is still byte-for-byte equivalent.
+    const previous: CompleteHandover = {
+      inspection: {
+        grades: {...inspectionGrades},
+        notes: {...inspectionNotes},
+        custom: inspectionCustomChecks.map(row => ({...row})),
+        count: Object.values(inspectionGrades).filter(value =>
+          value === 'goed' || value === 'aandacht').length
+      },
+      aftercare: {
+        items: items.map(item => ({...item})),
+        history: history.map(event => ({...event}))
+      }
+    };
+    const {inspection, aftercare} = pendingCompleteImport;
+    const importedSignature = JSON.stringify({
+      inspectionGrades: inspection.grades,
+      inspectionNotes: inspection.notes,
+      inspectionCustomChecks: inspection.custom,
+      items: aftercare.items,
+      history: aftercare.history
+    });
+    applyCompleteHandover(pendingCompleteImport);
+    setCompleteUndo({previous, importedSignature});
+    setConfirmCompleteUndo(false);
+    setCompleteMessage('Beide onderdelen hersteld. De vorige tabbladstatus kan zolang niets is gewijzigd één keer worden teruggezet.');
     setMessage('Volledige inspectie en nazorg handmatig uit back-up hersteld.');
+  }
+  function undoLastCompleteImport() {
+    if (!canUndoComplete || completeUndo === null || !confirmCompleteUndo) {
+      setConfirmCompleteUndo(false);
+      return;
+    }
+    applyCompleteHandover(completeUndo.previous);
+    setCompleteUndo(null);
+    setConfirmCompleteUndo(false);
+    setCompleteMessage('Vorige tijdelijke tabbladstatus teruggezet. Het geïmporteerde bestand zelf blijft buiten de app bestaan.');
+    setMessage('Vorige privé-inspectie en nazorg uit dit tabblad teruggezet.');
   }
 
   function exportJson() {
@@ -1436,6 +1486,43 @@ function PrivateMoveAftercare() {
                   setCompleteMessage('Complete import geannuleerd; inspectie en nazorg blijven onaangetast.');
                 }}>Annuleer import</button>
               </div>
+            </div>
+          )}
+          {completeUndo !== null && (
+            <div className="aftercare-confirm" role="group" aria-label="Laatste complete import terugdraaien">
+              <h3>Laatste complete import terugdraaien</h3>
+              <p>De tijdelijke inspectie- en nazorgstatus van vóór de laatste import staat nog
+                uitsluitend in het geheugen van dit tabblad. Sluiten wist deze herstelmogelijkheid.
+                Bestaande externe bestanden, berichten en originele back-ups veranderen nooit.</p>
+              {!canUndoComplete ? (
+                <>
+                  <p className="aftercare-warning" role="status">Je hebt na import iets gewijzigd.
+                    Terugdraaien zou nieuwe invoer overschrijven en is daarom geblokkeerd.</p>
+                  <button type="button" className="secondary"
+                    onClick={() => { setCompleteUndo(null); setConfirmCompleteUndo(false); }}>
+                    Vernietig oud herstelpunt
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="secondary"
+                    onClick={() => setConfirmCompleteUndo(true)}>Herstel vorige tabbladstatus…</button>
+                  {confirmCompleteUndo && (
+                    <div className="aftercare-confirm" role="group" aria-label="Terugdraaien bevestigen">
+                      <p>De vorige {completeUndo.previous.inspection.count} inspectiebeoordelingen,
+                        {' '}{completeUndo.previous.inspection.custom.length} eigen controles,
+                        {' '}{completeUndo.previous.aftercare.items.length} nazorgpunten en
+                        {' '}{completeUndo.previous.aftercare.history.length} contactnotities
+                        worden teruggezet. De huidige geïmporteerde gegevens verdwijnen uit dit tabblad.</p>
+                      <div className="aftercare-actions">
+                        <button type="button" onClick={undoLastCompleteImport}>Ja, zet vorige status terug</button>
+                        <button type="button" className="secondary"
+                          onClick={() => setConfirmCompleteUndo(false)}>Behoud huidige import</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
           <p role="status" aria-live="polite">{completeMessage}</p>

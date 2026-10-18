@@ -17,6 +17,14 @@ Naast de complete JSON-back-up kan de bewoner een eigen, leesbare **TXT-voorvert
 
 De app toont de **precieze uiteindelijke inhoud** eerst in een alleen-lezen tekstvak. Er is een aparte checkbox `Ik heb ... nagekeken` nodig vóór de TXT-download. Als inspectie, nazorg of de include-details-keuze verandert, komt de oude voorvertoning niet meer in aanmerking en moet de bewoner opnieuw kijken en goedkeuren. Na een volledige JSON-import wordt de vorige voorvertoning ingetrokken. Er wordt nooit automatisch gekopieerd, geüpload of gemaild; het bestand is een eigen samenvatting, geen juridische of technische verificatie.
 
+## Herstel de vorige tijdelijke status na een complete import
+
+Een fout gekozen bestand hoeft niet meteen te betekenen dat je de bestaande inspectie en nazorg kwijt bent. Bij **Ja, herstel beide onderdelen** bewaart het tabblad nu **één vorige gecombineerde status uitsluitend in RAM**. De gebruiker kan via **Herstel vorige tabbladstatus…** zien hoeveel inspectie-/nazorggegevens terugkeren en daarna afzonderlijk bevestigen.
+
+**Geen onveilig terugdraaien na tussentijdse edits:** de app vergelijkt de actuele volledige inspectie-/nazorgstatus met het exact ontvangen, door beide moduleparsers geaccepteerde importresultaat. Zodra je na de import een beoordeling, titel, notitie, planning, status of contactmoment wijzigt, schakelt terugdraaien uit en kan het oude herstelpunt bewust worden gewist. Daardoor gaat nieuwe invoer niet stilzwijgend verloren. Het eerdere herstelpunt wordt ook vernietigd na één geslaagde terugdraaiing. Bij een nieuwe complete import vervangt het nieuwe herstelpunt het vorige; onbeperkte snapshots en autosave bestaan niet.
+
+De tijdelijke terugzetactie wijzigt **geen bestanden buiten het tabblad**. Bij afsluiten van de pagina verdwijnen het vorige herstelpunt en alle andere tijdelijke gegevens uit RAM. Voor bewaring buiten deze sessie is altijd een eigen, opt-in download nodig. Het terugzetten van de vorige status maakt alle oude conceptgoedkeuringen en tijdelijke import-dialogen opnieuw ongeldig.
+
 ## Bestandscontract
 
 ```json
