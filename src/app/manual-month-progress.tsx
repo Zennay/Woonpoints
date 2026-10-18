@@ -821,9 +821,56 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
   const [pendingArchive,setPendingArchive]=useState<PersonalMonthHistoryRow[]|null>(null);
   const [pendingDelete,setPendingDelete]=useState<string|null>(null);
   const [message,setMessage]=useState('');
+  const [selectedYear,setSelectedYear]=useState(()=>String(new Date().getFullYear()));
   const sorted=[...rows].sort((a,b)=>a.month.localeCompare(b.month));
   const recent=sorted.at(-1),previous=sorted.at(-2);
   const monthNow=localMonthKey(new Date());
+  const currentYear=Number(monthNow.slice(0,4));
+  const year=Number(selectedYear);
+  const yearIsValid=/^20\d{2}$/.test(selectedYear) &&
+    year>=2000 && year<=currentYear;
+  const yearRows=Array.from({length:12},(_,i)=>{
+    const monthKey=selectedYear+'-'+String(i+1).padStart(2,'0');
+    const own=yearIsValid?sorted.find(row=>row.month===monthKey):undefined;
+    const previousKey=i>0?selectedYear+'-'+String(i).padStart(2,'0'):null;
+    const previous=previousKey?sorted.find(row=>row.month===previousKey):undefined;
+    return {month:monthKey,count:own?.count??null,
+      change:own && previous ? own.count-previous.count : null,
+      future:monthKey>monthNow};
+  });
+  const filledYear=yearRows.filter(row=>row.count!==null);
+  const observedSum=filledYear.reduce((sum,row)=>sum+row.count!,0);
+  const exactFour=filledYear.filter(row=>row.count===MANUAL_MONTHLY_GOAL).length;
+  function exportOwnYear() {
+    if(!yearIsValid || !filledYear.length) {
+      setMessage('Kies eerst een jaar met minimaal één eigen maandnotitie.');
+      return;
+    }
+    const lines=[
+      'WOONPOINTS · PERSOONLIJKE JAARREFLECTIE '+selectedYear,
+      'Alleen eigen handmatige invoer. Geen WoningNet-registratie, zoekpunten of rechtsbewijs.',
+      'Ingevuld: '+filledYear.length+' van 12 maanden',
+      'Som van zelf genoteerde standen: '+observedSum,
+      'Maanden met eigen stand 4: '+exactFour+' van '+filledYear.length+' ingevulde maanden',
+      'Gemiddelde binnen ingevulde maanden: '+(observedSum/filledYear.length).toFixed(2),
+      'Ontbrekende maanden tellen NIET als nul en zijn niet geschat.',
+      '',
+      'Maand | Eigen stand | Verschil met direct voorafgaande ingevulde kalendermaand'
+    ];
+    for(const row of yearRows) {
+      lines.push(row.month+' | '+(row.count===null?(row.future?'toekomst / onbekend':'niet ingevuld'):row.count+'/4')+
+        ' | '+(row.change===null?'onbekend':(row.change>0?'+':'')+row.change));
+    }
+    const url=URL.createObjectURL(new Blob([lines.join('\n')+'\n'],{
+      type:'text/plain;charset=utf-8'
+    }));
+    const link=document.createElement('a');
+    link.href=url;link.download='woonpoints-eigen-jaarreflectie-'+selectedYear+'.txt';
+    link.rel='noopener';document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Je eigen jaarreflectie is als privé-TXT aangeboden; de bestandslocatie kan synchroniseren.');
+  }
+
   function offerRow(row:PersonalMonthHistoryRow) {
     if(!privateHistoryValid([row]) || pendingArchive) {
       setMessage('Geen geldig eigen maandvoorstel of nog een openstaand herstelbestand.');
@@ -933,6 +980,44 @@ function PrivateMonthCountHistory({currentMonth,currentCount,locked}:{
       maand ({previous.month}): <strong>
         {recent.count-previous.count>0?'+':''}{recent.count-previous.count}
       </strong>. Ontbrekende maanden zijn niet bijgeschat.</p>}
+    <div className="month-history-table-wrap" aria-labelledby="private-year-insight-heading">
+      <h4 id="private-year-insight-heading">Mijn eigen jaaroverzicht — geen officiële punten</h4>
+      <label htmlFor="private-year-select">Jaar van zelf genoteerde maanden</label>
+      <select id="private-year-select" value={selectedYear}
+        onChange={e=>setSelectedYear(e.target.value)}>
+        {Array.from(new Set([String(currentYear),...sorted.map(row=>row.month.slice(0,4))]))
+          .sort((a,b)=>Number(b)-Number(a)).map(option=>
+            <option key={option} value={option}>{option}</option>)}
+      </select>
+      {yearIsValid && <div aria-live="polite">
+        <p><strong>{filledYear.length} van 12 maanden ingevuld</strong>
+          {' · '}{exactFour} daarvan met de eigen stand 4.
+          {filledYear.length>0?
+            ' Gemiddelde van uitsluitend ingevulde maanden: '+
+              (observedSum/filledYear.length).toLocaleString('nl-NL',{maximumFractionDigits:2})+'.':''}
+        </p>
+        <p>Geen doorlopende reeks of garantie: ontbrekende maanden zijn
+          onbekend, niet nul. Een eigen maandstand van 4 is geen bewijs
+          van vier door WoningNet geldig geregistreerde reacties.</p>
+        <table>
+          <caption>Privé jaar {selectedYear}: uitsluitend lokaal zelf ingevoerde maandtellers</caption>
+          <thead><tr><th scope="col">Maand</th>
+            <th scope="col">Zelf genoteerd</th><th scope="col">Verschil vorige kalendermaand</th>
+          </tr></thead>
+          <tbody>{yearRows.map(row=><tr key={row.month}>
+            <th scope="row">{new Intl.DateTimeFormat('nl-NL',{month:'long'})
+              .format(new Date(Number(row.month.slice(0,4)),Number(row.month.slice(5,7))-1,1))}</th>
+            <td>{row.count===null?(row.future?'Nog niet begonnen':'Niet ingevuld'):row.count+' / 4'}</td>
+            <td>{row.change===null?'Onbekend':(row.change>0?'+':'')+row.change}</td>
+          </tr>)}</tbody>
+        </table>
+        <button type="button" onClick={exportOwnYear} disabled={!filledYear.length}>
+          Bewaar persoonlijke jaarreflectie als TXT…
+        </button>
+        <p>Dit overzicht gebruikt alleen de historische notities in dit
+          tabblad. Jaarreflectie opslaan gebeurt uitsluitend na je eigen klik.</p>
+      </div>}
+    </div>
     {sorted.length>0 && <div className="month-history-table-wrap">
       <table>
         <caption>Eigen maandtellerhistorie, geen officieel bronbewijs</caption>
