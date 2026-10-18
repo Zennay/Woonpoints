@@ -406,3 +406,28 @@ is verplicht voordat **alle huidige** bedragen en de termijn worden
 vervangen. Annuleren of een fout bestand behoudt het huidige scenario.
 Niets wordt automatisch bewaard, naar een server verstuurd of gebruikt
 om rechten, werkelijke prijzen of toekomstig rendement af te leiden.
+
+
+## Eigen zoekpuntengeschiedenis — handmatig en ongeverifieerd
+
+Via **Zoekpunten** in de directe navigatie is er nu een eigen lokaal
+maandoverzicht met maximaal 36 handmatig genoteerde zoekpuntenstanden.
+Je kiest een geldige maand van januari 2000 tot de huidige lokale maand,
+vult 0–10.000 gehele punten in en ziet de verandering ten opzichte van de
+**vorige daadwerkelijk ingevulde** maand. De grafiek laat uitsluitend
+ingevulde maanden zien; er zijn geen voorspelde punten of automatisch
+geïnterpoleerde ontbrekende maanden. Je kunt een maandstand bewerken of
+afzonderlijk na bevestiging verwijderen.
+
+**Privacy en bewijskracht:** geen account-, WoningNet- of MijnDak-koppeling,
+geen officiële puntenregistratie, geen zoekpuntentoekenning en geen
+wijziging aan het automatische reactiegedrag. De invoer blijft alleen in
+het tabgeheugen: sluiten zonder zelf exporteren verliest de notities.
+Via **Bewaar eigen maandstanden als JSON** kun je bewust een klein,
+versiebeperkt bestand naar een zelfgekozen locatie wegschrijven. Import
+accepteert uitsluitend het precieze JSON-formaat, één unieke geldige
+maand per notitie, gehele punten en maximaal 16 KiB; alleen na tweede
+bevestiging worden de huidige notities vervangen. Een gekozen map kan
+buiten de app synchroniseren. Een lege of ongeldige import laat bestaande
+notities ongemoeid. De officiële dashboardkaart blijft **Zoekpunten onbekend**
+tot geautoriseerde read-only brondata beschikbaar zijn.

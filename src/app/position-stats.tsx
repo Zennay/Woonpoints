@@ -2574,3 +2574,247 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled, onPlanFol
     </section>
   );
 }
+
+
+/** Entirely voluntary snapshots: not synced, verified or awarded WoningNet points. */
+type PrivatePointsEntry = {month: string; points: number};
+const PRIVATE_POINTS_MAX = 36;
+const PRIVATE_POINTS_ARCHIVE = 'woonpoints-private-points-history-v1';
+const privateMonthToday = () => {
+  const now = new Date();
+  return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+};
+function privatePointsMonthValid(month: unknown) {
+  return typeof month === 'string' &&
+    /^(?:20\d{2})-(?:0[1-9]|1[0-2])$/.test(month) &&
+    month <= privateMonthToday();
+}
+function privatePointsValid(entries: unknown): entries is PrivatePointsEntry[] {
+  if (!Array.isArray(entries) || entries.length > PRIVATE_POINTS_MAX) return false;
+  const months = new Set<string>();
+  for (const raw of entries) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const entry = raw as Record<string,unknown>;
+    if (Object.keys(entry).sort().join('|') !== 'month|points' ||
+        !privatePointsMonthValid(entry.month) ||
+        typeof entry.points !== 'number' ||
+        !Number.isSafeInteger(entry.points) || entry.points < 0 || entry.points > 10000 ||
+        months.has(entry.month as string)) return false;
+    months.add(entry.month as string);
+  }
+  return true;
+}
+function privatePointsDecodeArchive(raw: string): PrivatePointsEntry[] | null {
+  if (!raw || new TextEncoder().encode(raw).byteLength > 16384) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string,unknown>;
+    if (Object.keys(obj).sort().join('|') !== 'entries|format' ||
+        obj.format !== PRIVATE_POINTS_ARCHIVE ||
+        !privatePointsValid(obj.entries) || !obj.entries.length) return null;
+    return [...obj.entries].sort((a,b) => a.month.localeCompare(b.month));
+  } catch {
+    return null;
+  }
+}
+function downloadPrivatePointsArchive(rows: PrivatePointsEntry[]) {
+  const content = JSON.stringify({format:PRIVATE_POINTS_ARCHIVE,entries:rows},null,2)+'\n';
+  const url = URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'woonpoints-eigen-zoekpunten.json';
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url),2000);
+}
+
+/** Personal historical notes only; cannot register or verify points on a housing portal. */
+export function PrivateSearchPointsHistory() {
+  const [rows,setRows] = useState<PrivatePointsEntry[]>([]);
+  const [month,setMonth] = useState(privateMonthToday);
+  const [points,setPoints] = useState('');
+  const [editingMonth,setEditingMonth] = useState<string|null>(null);
+  const [pendingDelete,setPendingDelete] = useState<string|null>(null);
+  const [pendingImport,setPendingImport] = useState<PrivatePointsEntry[]|null>(null);
+  const [confirmClear,setConfirmClear] = useState(false);
+  const [message,setMessage] = useState('');
+  const sorted = [...rows].sort((a,b) => a.month.localeCompare(b.month));
+  const monthExists = rows.some(row => row.month === month);
+  const parsedPoints = /^\d{1,5}$/.test(points) ? Number(points) : NaN;
+  const canSave = privatePointsMonthValid(month) && Number.isSafeInteger(parsedPoints) &&
+    parsedPoints >= 0 && parsedPoints <= 10000 &&
+    rows.length < PRIVATE_POINTS_MAX + (editingMonth ? 1 : 0) &&
+    (!monthExists || editingMonth === month);
+  const last = sorted.at(-1);
+  const previous = sorted.at(-2);
+  const biggest = Math.max(1,...sorted.map(row=>row.points));
+  const label = (value: string) => {
+    const [year,number] = value.split('-').map(Number);
+    return new Intl.DateTimeFormat('nl-NL',{month:'long',year:'numeric',timeZone:'UTC'})
+      .format(new Date(Date.UTC(year,number-1,1)));
+  };
+  function cancelEdit() {
+    setEditingMonth(null);setMonth(privateMonthToday());setPoints('');
+    setMessage('Wijziging geannuleerd; bestaande notities behouden.');
+  }
+  function saveSnapshot(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSave) {
+      setMessage('Gebruik een geldige, unieke kalendermaand vanaf 2000 tot nu en 0–10.000 hele punten.');
+      return;
+    }
+    // No implicit edits or overwrite of another month.
+    if (editingMonth !== null && editingMonth !== month) {
+      setMessage('Tijdens bewerken blijft de oorspronkelijke maand vaststaan.');
+      return;
+    }
+    const entry = {month,points:parsedPoints};
+    setRows(previousRows => editingMonth
+      ? previousRows.map(item => item.month === editingMonth ? entry : item)
+      : [...previousRows,entry]);
+    setEditingMonth(null);
+    setPoints('');
+    setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
+  }
+  async function selectArchive(file: File|undefined) {
+    setPendingImport(null);
+    if (!file) return;
+    if (file.size < 1 || file.size > 16384) {
+      setMessage('Bestand geweigerd: gebruik eigen Woonpoints-JSON tot maximaal 16 KiB.');
+      return;
+    }
+    try {
+      const imported = privatePointsDecodeArchive(await file.text());
+      if (!imported) throw new Error('invalid');
+      setPendingImport(imported);
+      setMessage('Geldig privébestand. Bevestig apart of de huidige notities mogen worden vervangen.');
+    } catch {
+      setMessage('Bestand geweigerd: verkeerde versie, dubbele maanden of ongeldige punten. Bestaande notities behouden.');
+    }
+  }
+  return <section className="panel private-points" aria-labelledby="private-points-heading">
+    <div>
+      <p className="eyebrow">PRIVÉ ZOEKPUNTEN · ALLEEN EIGEN WAARNEMINGEN</p>
+      <h2 id="private-points-heading">Hoe verandert je zelf genoteerde zoekpuntenstand?</h2>
+      <p>Leg alleen handmatig afgelezen maandstanden vast en zie het verschil
+        tussen opeenvolgende <em>ingevulde</em> maanden. Maximaal {PRIVATE_POINTS_MAX} maanden.
+        Lege tussenmaanden worden nooit bijgeschat.</p>
+      <p><strong>Geen koppeling of officiële zoekpuntentoekenning.</strong> Je typt alle
+        waarden zelf over. Woonpoints controleert geen WoningNet/MijnDak,
+        puntenregels, geldigheid of persoonlijke woningkansen. Dit is geen
+        voorspelling, geen bewijs van een reactie en geen automatisch accountoverzicht.</p>
+      <p>Er worden geen persoonsgegevens, adressen of loginvelden gevraagd.
+        De notities blijven in het geheugen van dit tabblad; sluiten zonder
+        eigen export verliest de invoer.</p>
+    </div>
+    <div>
+      <form className="private-points-form" onSubmit={saveSnapshot}>
+        <fieldset>
+          <legend>{editingMonth ? 'Bewerk een bestaande maandstand' : 'Noteer een maandstand'}</legend>
+          <label htmlFor="points-month">Eigen kalendermaand (niet in de toekomst)</label>
+          <input id="points-month" type="month" value={month}
+            min="2000-01" max={privateMonthToday()}
+            disabled={editingMonth !== null}
+            onChange={event=>{setMonth(event.target.value);setMessage('');}} />
+          <label htmlFor="points-number">Zelf gelezen zoekpunten (0–10.000, hele punten)</label>
+          <input id="points-number" type="number" min="0" max="10000" step="1"
+            inputMode="numeric" value={points}
+            onChange={event=>{setPoints(event.target.value);setMessage('');}} />
+          <div className="private-points-actions">
+            <button type="submit" disabled={!canSave}>{editingMonth ? 'Bewaar deze maandstand' : 'Voeg eigen maandstand toe'}</button>
+            {editingMonth && <button type="button" className="secondary" onClick={cancelEdit}>Annuleer bewerken</button>}
+          </div>
+          {monthExists && !editingMonth && <p role="status">Deze maand bestaat al. Gebruik
+            ‘Bewerk’ bij die maand om de eigen notitie aan te passen.</p>}
+          {rows.length >= PRIVATE_POINTS_MAX && !editingMonth &&
+            <p role="status">Maximum van {PRIVATE_POINTS_MAX} maanden bereikt. Bewerk of verwijder een notitie.</p>}
+        </fieldset>
+      </form>
+      {last ? <div className="private-points-overview" aria-live="polite">
+        <p><strong>Laatste eigen notitie:</strong> {last.points} punten ({label(last.month)}).
+          {' '}Niet geverifieerd.</p>
+        <p>{previous ? <>Verschil sinds de vorige <strong>ingevulde</strong> maand
+          {' '}({label(previous.month)}): <strong>{last.points-previous.points > 0 ? '+' : ''}
+          {last.points-previous.points}</strong> punten.</> :
+          'Er is nog geen eerdere ingevulde maand om mee te vergelijken.'}</p>
+        {sorted.length > 1 && <div className="private-points-chart" role="img"
+          aria-label={'Handmatig genoteerde zoekpunten per ingevulde maand: '+sorted.map(row=>row.month+' '+row.points).join(', ')}>
+          {sorted.map(row=><div className="private-points-column" key={row.month}>
+            <span>{row.points}</span>
+            <div className="private-points-rail"><span
+              style={{height:(row.points === 0 ? 0 : Math.max(2,100*row.points/biggest))+'%'}} /></div>
+            <small>{row.month}</small>
+          </div>)}
+        </div>}
+        <div className="private-points-table-wrap">
+          <table>
+            <caption>Eigen maandstanden met verschillen sinds de vorige ingevulde maand</caption>
+            <thead><tr><th scope="col">Maand</th><th scope="col">Punten</th>
+              <th scope="col">Verschil</th><th scope="col">Bewerken</th><th scope="col">Verwijderen</th></tr></thead>
+            <tbody>{sorted.map((row,index)=><tr key={row.month}>
+              <th scope="row">{label(row.month)}</th>
+              <td>{row.points}</td>
+              <td>{index === 0 ? '—' : ((row.points-sorted[index-1].points > 0 ? '+' : '')+
+                (row.points-sorted[index-1].points))}</td>
+              <td><button type="button" onClick={()=>{
+                setMonth(row.month);setPoints(String(row.points));setEditingMonth(row.month);
+                setPendingDelete(null);setPendingImport(null);setMessage('Bewerk alleen deze eigen maandstand.');
+              }}>Bewerk</button></td>
+              <td><button type="button" className="secondary" onClick={()=>{
+                setPendingDelete(row.month);setMessage('Kies bevestiging om deze eigen notitie te wissen.');
+              }}>Verwijder…</button></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div> : <p>Er is nog geen eigen maandstand genoteerd.</p>}
+      {pendingDelete && <div className="private-points-confirm" role="group" aria-label="Bevestig verwijdering">
+        <p>Verwijder uitsluitend je eigen notitie van {pendingDelete}?</p>
+        <button type="button" onClick={()=>{
+          setRows(current=>current.filter(row=>row.month!==pendingDelete));
+          if(editingMonth===pendingDelete){setEditingMonth(null);setPoints('');setMonth(privateMonthToday());}
+          setPendingDelete(null);setMessage('Gekozen maandnotitie lokaal verwijderd.');
+        }}>Ja, verwijder maand</button>
+        <button type="button" className="secondary" onClick={()=>setPendingDelete(null)}>Annuleer</button>
+      </div>}
+      <div className="private-points-actions">
+        <button type="button" disabled={!rows.length} onClick={()=>{
+          downloadPrivatePointsArchive(sorted);
+          setMessage('Privé-JSON aangeboden om zelf op te slaan; de gekozen map kan synchroniseren.');
+        }}>Bewaar eigen maandstanden als JSON…</button>
+        <button type="button" className="secondary" disabled={!rows.length}
+          onClick={()=>setConfirmClear(true)}>Wis alle maandstanden…</button>
+      </div>
+      {confirmClear && <div className="private-points-confirm" role="group" aria-label="Bevestig alle notities wissen">
+        <p>Alle {rows.length} eigen maandstanden uit dit tabblad verwijderen?</p>
+        <button type="button" onClick={()=>{
+          setRows([]);setConfirmClear(false);setPendingDelete(null);setPendingImport(null);
+          setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+          setMessage('Eigen maandstanden gewist. Eerder opgeslagen bestanden blijven bestaan.');
+        }}>Ja, wis alles</button>
+        <button type="button" className="secondary" onClick={()=>setConfirmClear(false)}>Behoud huidige punten</button>
+      </div>}
+      <label htmlFor="points-import">Lees eerder bewaarde eigen JSON (max. 16 KiB)</label>
+      <input type="file" id="points-import" accept=".json,application/json" onChange={event=>{
+        const file=event.currentTarget.files?.[0];event.currentTarget.value='';
+        void selectArchive(file);
+      }} />
+      {pendingImport && <div className="private-points-confirm" role="group" aria-label="Bevestig privé-JSON-restore">
+        <p>Dit bestand bevat {pendingImport.length} geldige eigen maandstanden.
+          Bevestigen vervangt alle {rows.length} huidige notities, niet je
+          accountgegevens of andere Woonpoints-onderdelen.</p>
+        <button type="button" onClick={()=>{
+          setRows(pendingImport);setPendingImport(null);setPendingDelete(null);
+          setConfirmClear(false);setEditingMonth(null);setPoints('');setMonth(privateMonthToday());
+          setMessage('Eigen puntenhistorie na bevestiging lokaal hersteld. Geen officiële bronverificatie.');
+        }}>Vervang huidige maandstanden</button>
+        <button type="button" className="secondary" onClick={()=>{
+          setPendingImport(null);setMessage('Import geannuleerd: de huidige maandstanden zijn behouden.');
+        }}>Behoud huidige punten</button>
+      </div>}
+      {message && <p role="status" aria-live="polite">{message}</p>}
+    </div>
+  </section>;
+}
