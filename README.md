@@ -1452,3 +1452,42 @@ browsertabblad samen, met het bestaande eenmalige terugdraaipunt zolang
 de geïmporteerde gegevens niet door de gebruiker zijn gewijzigd.
 Er is geen upload, accountactie, WoningNet-bericht of externe opslag.
 Eerder eigenhandig gedownloade bestanden blijven buiten de app bestaan.
+
+
+## Mijn woonreis — handmatige gids door bestaande onderdelen
+
+Op de homepage staat **Van woning zoeken tot nazorg**, een vijfdelige
+routekaart met twintig links naar bestaande Woonpoints-hulpmiddelen:
+
+1. Zoeken: maanddoel, reactieplanning, dagboek en positiegeschiedenis.
+2. Kiezen: woningen, woonkosten, reistijd en bezichtiging.
+3. Voorbereiden: planner, gecombineerde verhuiswerkmap, kosten en documenten.
+4. Verhuizen: paklijst, verhuishulp, verhuisdag en sleutelrapport.
+5. Nazorg: meterstanden, nutsvoorzieningen, nazorgweekplan en gebreken.
+
+Kies een fase, filter op open stappen en vink uitsluitend **zelf**
+gedane stappen af. Voortgang en de eerstvolgende open actie staan
+bovenaan. Dit is geen bevestiging van een officiële woningreactie,
+toewijzing, overheidsprocedure of contract.
+
+**Privacy en herstel:** Afvinkstatus blijft alleen in de React-geheugenstatus
+van het huidige browsertabblad. De routekaart leest geen gegevens uit
+de andere hulpmiddelen, verzendt niets, maakt geen cookies of
+localStorage aan en koppelt niet met WoningNet. Kies *Bekijk privéback-up*
+om de volledige gecontroleerde JSON-inhoud in te zien en download hem
+pas na een tweede expliciete klik. Het bestand bevat alleen
+`kind`, `version` en maximaal twintig bekende afgevinkte stap-ID's.
+
+Bij import accepteert de interface uitsluitend een JSON-bestand tot
+4 KiB met exact het bekende schema, zonder onbekende of dubbele stap-ID's.
+De gebruiker ziet eerst hoeveel stappen zullen wijzigen en bevestigt
+daarna apart het vervangen van uitsluitend deze routekaart. Eénmalig
+terugdraaien is mogelijk zolang de gebruiker nog geen nieuwe stap heeft
+gewijzigd. Wissen vereist eveneens aparte bevestiging. De gekozen
+bestandslocatie kan buiten Woonpoints synchroniseren. Sluiten van het
+tabblad zonder eigen export verliest de handmatige routekaartstatus.
+
+**Fase en beperkingen:** privé-gebruikershulp bovenop reeds bestaande
+handmatige onderdelen, geen accountimport, nieuwe externe dienst,
+databasewijziging, backendactie of nieuwe worker-capability. De
+bestaande `BOT_DRY_RUN=true`-grens blijft ongewijzigd.
