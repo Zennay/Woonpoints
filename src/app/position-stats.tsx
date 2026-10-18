@@ -3918,6 +3918,84 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
   const diaryTotal=sameMonth?journal?.total??0:0;
   const monthCount=month?.month===activeMonth?month?.count??null:null;
   const discrepancy=monthCount!==null && diaryTotal>0 && diaryReacted!==monthCount;
+  const [reportIncludePoints,setReportIncludePoints]=useState(false);
+  const [reportPreview,setReportPreview]=useState<{signature:string;text:string}|null>(null);
+  const [reportApproved,setReportApproved]=useState(false);
+  const [reportMessage,setReportMessage]=useState('');
+  const localNow=new Date();
+  const todayKey=[localNow.getFullYear(),String(localNow.getMonth()+1).padStart(2,'0'),
+    String(localNow.getDate()).padStart(2,'0')].join('-');
+  const currentCalendarMonth=localMonthKey(localNow);
+  const reportSignature=JSON.stringify({
+    activeMonth,todayKey,month:month?.month===activeMonth?month:null,
+    journal:sameMonth?journal:null,includePoints:reportIncludePoints,
+    points:reportIncludePoints?pointsSnapshot:null
+  });
+  const reportCurrent=reportPreview!==null&&reportPreview.signature===reportSignature;
+  const reportReady=monthCount!==null||(sameMonth&&journal!==null)||
+    (reportIncludePoints&&pointsSnapshot?.last!=null);
+  const midmonthNudge=currentCalendarMonth===activeMonth&&localNow.getDate()>=15&&
+    (monthCount===null||monthCount<MANUAL_MONTHLY_GOAL||
+      (sameMonth&&journal!==null&&diaryReacted<MANUAL_MONTHLY_GOAL));
+  function preparePrivateMonthReport(){
+    if(!reportReady){setReportMessage('Vul eerst handmatige gegevens in om een eigen maandrapport te maken.');return;}
+    const lines=[
+      'WOONPOINTS — PERSOONLIJK MAANDRAPPORT '+activeMonth,
+      'Zelf samengesteld op '+todayKey+' · geen officiële woningportaalgegevens',
+      '',
+      'EIGEN MAANDTELLER',
+      monthCount===null?'Geen eigen maandteller voor deze maand beschikbaar.':
+        monthCount+' / '+MANUAL_MONTHLY_GOAL+' door jou genoteerd, niet officieel geregistreerd.',
+      month?.month===activeMonth?'Opslagstatus eigen teller: '+month.storage+'.':
+        'Opslagstatus van de eigen teller onbekend.',
+      '',
+      'EIGEN REACTIEDAGBOEK',
+      sameMonth&&journal!==null?
+        'Notities t/m vandaag: '+diaryTotal+' · zelf als gereageerd: '+diaryReacted+
+        ' · overige statussen: '+(diaryTotal-diaryReacted)+'.':
+        'Actueel dagboekoverzicht ontbreekt.',
+      discrepancy?'Eigen teller en dagboek verschillen; controleer allebei handmatig.':
+        'Een overeenkomst tussen eigen tellingen is geen bronverificatie.',
+      '',
+      'ZELF GENOTEERDE ZOEKPUNTEN',
+      !reportIncludePoints?'Bewust niet opgenomen voor privacy.':
+        pointsSnapshot?.last?'Laatste eigen maand '+pointsSnapshot.last.month+': '+
+          pointsSnapshot.last.points+' zelf genoteerde punten.':
+          'Geen eigen puntenstand beschikbaar.',
+      ...(reportIncludePoints&&pointsSnapshot?.previous&&pointsSnapshot?.last?[
+        'Eerdere eigen maand '+pointsSnapshot.previous.month+': '+pointsSnapshot.previous.points+
+        ' punten. Verschil: '+(pointsSnapshot.last.points-pointsSnapshot.previous.points)+'.'
+      ]:[]),
+      '',
+      'PERSOONLIJKE ACTIES (NIET AUTOMATISCH)',
+      monthCount!==null&&monthCount>=MANUAL_MONTHLY_GOAL?
+        'Controleer bij de echte aanbieder of jouw maanddoel officieel geldig is.':
+        'Controleer zelf je echte account en of je nog passende woningen wilt bekijken.',
+      ...(discrepancy?['Herstel eventuele verschillen tussen je twee eigen bronnen.']:[]),
+      ...(midmonthNudge?['De maand is halverwege; controleer je eigen planning en deadlines.']:[]),
+      'Controleer eventuele eigen punten en reactiegegevens altijd bij de originele aanbieder.',
+      '',
+      'Geen officiële verificatie, accountkoppeling, automatische reactie of',
+      'garantie op zoekpunten, selectie, toewijzing of een geldig maanddoel.',
+      'Dit overzicht wordt uitsluitend na eigen toestemming als lokaal TXT-bestand aangeboden.'
+    ];
+    const text=lines.join('\n')+'\n';
+    if(text.length>7000){setReportMessage('Rapport te groot; niet aangeboden.');return;}
+    setReportPreview({signature:reportSignature,text});
+    setReportApproved(false);
+    setReportMessage('Voorvertoning gemaakt. Lees de exacte tekst en keur bewust goed.');
+  }
+  function downloadPrivateMonthReport(){
+    if(!reportCurrent||!reportApproved||!reportPreview)return;
+    const url=URL.createObjectURL(new Blob([reportPreview.text],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-prive-maandrapport-'+activeMonth+'.txt';
+    link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setReportMessage('Eigen rapport aangeboden. Je gekozen bestandsprovider kan dit elders synchroniseren.');
+  }
   return <>
     <section className="panel private-month-pulse" aria-labelledby="private-month-pulse-heading">
       <div>
