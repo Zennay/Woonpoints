@@ -3290,6 +3290,76 @@ export function PrivateMovingChecklist() {
     setPendingImport(null);
     setMessage('Eigen taak toegevoegd. Alleen in dit browsertabblad.');
   }
+
+  // At most five calendar entries, one per unfinished phase. This is an
+  // explicit export into the user's chosen calendar, never a scheduled worker.
+  function exportMovingCalendar() {
+    if (!privateMoveDateValid(movingDate)) {
+      setMessage('Kies eerst een echte verhuisdatum voordat je een privéagenda maakt.');
+      return;
+    }
+    const remainingTasks=items.filter(item=>!item.done);
+    if (!remainingTasks.length) {
+      setMessage('Alle taken zijn afgevinkt. Er zijn geen open verhuisfases om aan te bieden.');
+      return;
+    }
+    const escapeIcs=(value:string)=>value.replace(/\\/g,'\\\\')
+      .replace(/\r\n|\n|\r/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+    const fold=(value:string)=>{
+      // RFC 5545 limits physical lines to 75 octets, not 75 JS characters.
+      // Leave one byte for the continuation-space on folded lines.
+      const encoder=new TextEncoder();
+      const folded:string[]=[];
+      let line='',bytes=0;
+      for (const cp of value) {
+        const size=encoder.encode(cp).byteLength;
+        if (bytes+size>73) {
+          folded.push(line);
+          line=' '+cp;
+          bytes=1+size;
+        } else {
+          line+=cp;
+          bytes+=size;
+        }
+      }
+      folded.push(line);
+      return folded.join('\r\n');
+    };
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const calendar=[
+      'BEGIN:VCALENDAR','VERSION:2.0','CALSCALE:GREGORIAN',
+      'PRODID:-//Woonpoints//Eigen verhuisfases//NL','METHOD:PUBLISH'
+    ];
+    PRIVATE_MOVE_OFFSETS.forEach(offset=>{
+      const tasks=remainingTasks.filter(task=>task.offset===offset);
+      if (!tasks.length) return;
+      // Floating (local) 09:00 time: importing calendar chooses its own
+      // time zone. Never compute by adding UTC hours through a DST boundary.
+      const day=privateMoveDue(movingDate,offset).replace(/-/g,'');
+      const uid='woonpoints-private-moving-'+movingDate.replace(/-/g,'')+
+        '-'+(offset<0?'m':'p')+Math.abs(offset)+'@local.woonpoints.invalid';
+      const summary='Eigen verhuisplanning: '+tasks.length+' open stappen';
+      const description='Eigen richtmoment zonder officiële afspraak of WoningNet-actie.\n'+
+        tasks.map((task,i)=>(i+1)+'. '+task.label).join('\n');
+      calendar.push('BEGIN:VEVENT','UID:'+uid,'DTSTAMP:'+stamp,
+        'DTSTART:'+day+'T090000','DTEND:'+day+'T093000',
+        'SUMMARY:'+escapeIcs(summary),'DESCRIPTION:'+escapeIcs(description),
+        'STATUS:TENTATIVE','END:VEVENT');
+    });
+    calendar.push('END:VCALENDAR');
+    const content=calendar.map(fold).join('\r\n')+'\r\n';
+    const url=URL.createObjectURL(new Blob([content],{type:'text/calendar;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-eigen-verhuisfases.ics';
+    link.rel='noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen open verhuisfases als agenda-ICS aangeboden. Alleen jouw agenda-app bepaalt of deze afspraken worden ingevoerd of gesynchroniseerd.');
+  }
+
   function exportArchive() {
     const content=JSON.stringify({format:PRIVATE_MOVE_FORMAT,movingDate,items},null,2);
     const url=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
@@ -3388,6 +3458,10 @@ export function PrivateMovingChecklist() {
       </form>
       <div className="month-history-actions">
         <button type="button" onClick={exportArchive}>Bewaar eigen checklist als privé-JSON…</button>
+        <button type="button" onClick={exportMovingCalendar}
+          disabled={!privateMoveDateValid(movingDate) || remaining===0}>
+          Bewaar open fases als agenda-ICS…
+        </button>
         <button type="button" className="secondary" onClick={()=>setConfirmReset(true)}>
           Begin opnieuw…</button>
       </div>
@@ -3420,6 +3494,10 @@ export function PrivateMovingChecklist() {
         }}>Behoud mijn huidige checklist</button>
       </div>}
       {message && <p role="status">{message}</p>}
+      <p>De optionele agenda-ICS bevat maximaal vijf eigen groepsafspraken
+        (09:00–09:30 lokale agendatijd), met de open eigen taken als
+        beschrijving. De kalender-app kan deze gegevens online synchroniseren.
+        Controleer de afspraakdatums zelf; het zijn geen officiële termijnen.</p>
       <p>Bewaren of herstellen werkt alleen na jouw expliciete keuze.
         Een eigen bestand kan buiten deze app worden gesynchroniseerd.
         Niets doet een woningreactie, inschrijving, betaling of contracthandeling.</p>
