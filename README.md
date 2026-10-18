@@ -1,5 +1,24 @@
 # Woonpoints
 
+
+## Nieuw: veelgebruikte onderdelen vastzetten
+
+De startnavigatie heeft **★ Vastgezet** naast de bestaande Snelstart- en
+themafilters. Open **Alles**, zoek een onderdeel en kies **☆ Vastzetten**;
+maximaal acht onderdelen worden bovenaan getoond en zijn ook direct via
+Snelstart terug te vinden. Met **★ Vastgezet** filter je de pagina naar
+alleen jouw keuzes. Je kunt een individuele keuze weer weghalen of alle
+keuzes expliciet wissen.
+
+Een favoriet onthoudt alleen een bestaande schermanker-code, nooit je
+eigen zoektekst, adres, notities, wachtwoorden of WoningNet-gegevens.
+Na jouw bewuste vastzetactie bewaart Woonpoints de codes uitsluitend in
+de huidige browseropslag. Als opslag geweigerd is of een onbekende
+bestaande voorkeur niet veilig te interpreteren is, blijft de nieuwe
+voorkeur alleen in dit tabblad; onbekende opgeslagen data wordt niet
+stilzwijgend overschreven. Geen netwerkverzoek, synchronisatie of
+automatische accountactie.
+
 Woonpoints is a private-first dashboard and local assistant for tracking WoningNet reactions, search points, preferences and position history.
 
 ## Current status
