@@ -2024,13 +2024,19 @@ function projectPrivateHousingCosts(option: PrivateCostOption, years: number, ex
 }
 
 type LongTermPrivateBackup = {
-  format: 'woonpoints-longterm-private-v1' | 'woonpoints-longterm-private-v2';
+  format: 'woonpoints-longterm-private-v1' | 'woonpoints-longterm-private-v2' | 'woonpoints-longterm-private-v3';
   years: string;
   first: PrivateCostInputs;
   second: PrivateCostInputs;
   rentStress: string;
   extrasStress: string;
+  monthlyBudget: string;
 };
+function readPrivateMonthlyBudget(value: string) {
+  if (!/^\d{1,5}(?:[.,]\d{1,2})?$/.test(value)) return null;
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 50000 ? parsed : null;
+}
 function readPrivateStressRate(value: string) {
   if (!/^(?:0|[1-9]|1[0-9]|20)(?:[.,]\d{1,2})?$/.test(value)) return null;
   const parsed = Number(value.replace(',', '.'));
@@ -2045,16 +2051,21 @@ function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null
     const root = parsed as Record<string, unknown>;
     const old = root.format === 'woonpoints-longterm-private-v1';
     const newer = root.format === 'woonpoints-longterm-private-v2';
-    if ((!old && !newer) ||
+    const newest = root.format === 'woonpoints-longterm-private-v3';
+    if ((!old && !newer && !newest) ||
         Object.keys(root).sort().join('|') !== (old
           ? 'first|format|second|years'
-          : 'extrasStress|first|format|rentStress|second|years') ||
+          : newer ? 'extrasStress|first|format|rentStress|second|years'
+          : 'extrasStress|first|format|monthlyBudget|rentStress|second|years') ||
         typeof root.years !== 'string' || !/^(?:[1-9]|10)$/.test(root.years)) return null;
     const rentStress = old ? '3' : root.rentStress;
     const extrasStress = old ? '4' : root.extrasStress;
+    const monthlyBudget = newest ? root.monthlyBudget : '';
     if (typeof rentStress !== 'string' || typeof extrasStress !== 'string' ||
         readPrivateStressRate(rentStress) === null ||
-        readPrivateStressRate(extrasStress) === null) return null;
+        readPrivateStressRate(extrasStress) === null ||
+        typeof monthlyBudget !== 'string' ||
+        (monthlyBudget !== '' && readPrivateMonthlyBudget(monthlyBudget) === null)) return null;
     function parseScenario(raw: unknown): PrivateCostInputs | null {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       const obj = raw as Record<string, unknown>;
@@ -2070,8 +2081,9 @@ function decodeLongTermPrivateBackup(text: string): LongTermPrivateBackup | null
     }
     const first = parseScenario(root.first), second = parseScenario(root.second);
     return first && second ? {format:old
-      ? 'woonpoints-longterm-private-v1' : 'woonpoints-longterm-private-v2',
-      years:root.years,first,second,rentStress,extrasStress} : null;
+      ? 'woonpoints-longterm-private-v1' : newer
+        ? 'woonpoints-longterm-private-v2' : 'woonpoints-longterm-private-v3',
+      years:root.years,first,second,rentStress,extrasStress,monthlyBudget} : null;
   } catch {
     return null;
   }
@@ -2087,6 +2099,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   const [horizon, setHorizon] = useState('5');
   const [rentStress, setRentStress] = useState('3');
   const [extrasStress, setExtrasStress] = useState('4');
+  const [monthlyBudget, setMonthlyBudget] = useState('');
   const [message, setMessage] = useState('');
   const [pendingRestore, setPendingRestore] = useState<LongTermPrivateBackup | null>(null);
   const left = readPrivateCostOption(first);
@@ -2112,6 +2125,18 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     ? leftRows.map((a,i) => ({a,b:rightRows[i]})) : [];
   const last = rows.length ? rows[rows.length - 1] : null;
   const diff = last ? last.a.cumulative - last.b.cumulative : 0;
+  const budgetLimit = monthlyBudget === '' ? null : readPrivateMonthlyBudget(monthlyBudget);
+  const budgetRows = budgetLimit !== null && left && right && years
+    ? rows.map(({a,b})=>{
+      const aCost = a.monthlyRent + left.extras;
+      const bCost = b.monthlyRent + right.extras;
+      return {year:a.year, aCost, bCost,
+        aGap:Math.max(0,aCost-budgetLimit),bGap:Math.max(0,bCost-budgetLimit)};
+    }) : [];
+  const firstYearOverBudgetA = budgetRows.find(row=>row.aGap > 0)?.year ?? null;
+  const firstYearOverBudgetB = budgetRows.find(row=>row.bGap > 0)?.year ?? null;
+  const budgetExcessA = budgetRows.reduce((sum,row)=>sum+row.aGap*12,0);
+  const budgetExcessB = budgetRows.reduce((sum,row)=>sum+row.bGap*12,0);
   const rentBump = readPrivateStressRate(rentStress);
   const extrasBump = readPrivateStressRate(extrasStress);
   const stressReady = Boolean(left && right && years && rentBump !== null && extrasBump !== null);
@@ -2143,6 +2168,20 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
       previous = current;
     }
   }
+  function exportBudgetCsv() {
+    if (!budgetRows.length || budgetLimit === null) return;
+    const csv = ['jaar;maximaal_maandbudget_eur;woning_a_maandlasten_eur;woning_b_maandlasten_eur;woning_a_boven_budget_eur_per_maand;woning_b_boven_budget_eur_per_maand',
+      ...budgetRows.map(row=>[
+        row.year,budgetLimit.toFixed(2),row.aCost.toFixed(2),
+        row.bCost.toFixed(2),row.aGap.toFixed(2),row.bGap.toFixed(2)
+      ].join(';'))].join('\r\n')+'\r\n';
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const anchor=document.createElement('a');
+    anchor.href=url;anchor.download='woonpoints-eigen-maandbudgetgrens.csv';anchor.rel='noopener';
+    document.body.appendChild(anchor);anchor.click();anchor.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen numerieke budgetvergelijking aangeboden. Dit is geen betaalbaarheidstoets.');
+  }
   function exportStressCsv() {
     if (!stressVariants.length || !years) return;
     const csv = [
@@ -2164,12 +2203,13 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   }
   function saveCompleteBackup() {
     if (!left || !right || !years ||
+        (monthlyBudget !== '' && budgetLimit === null) ||
         readPrivateStressRate(rentStress) === null ||
         readPrivateStressRate(extrasStress) === null) return;
     const json = JSON.stringify({
-      format:'woonpoints-longterm-private-v2', years:horizon,
+      format:'woonpoints-longterm-private-v3', years:horizon,
       first:{...first}, second:{...second},
-      rentStress,extrasStress
+      rentStress,extrasStress,monthlyBudget
     },null,2) + '\n';
     const url = URL.createObjectURL(new Blob([json], {type:'application/json;charset=utf-8'}));
     const anchor = document.createElement('a');
@@ -2294,6 +2334,61 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           maandhuur (€1–€20.000), overige maandlasten (€0–€20.000),
           verhuiskosten (€0–€50.000), huurstijging (0–25%) en duur (1–10 jaar) in.
           Een komma of punt voor centen is toegestaan.</p>}
+        <div className="private-budget-provenance" aria-labelledby="private-budget-ceiling-title">
+          <h3 id="private-budget-ceiling-title">Past dit binnen jouw eigen maandbudget?</h3>
+          <p>Vul eventueel jouw maximale woonuitgaven per maand in. Bekijk per
+            jaar of de <strong>basisraming</strong> (huur + overige vaste
+            woonlasten) van A of B dit bedrag overschrijdt.
+            De eenmalige verhuiskosten tellen niet mee in deze maandbudgetgrens.
+            Er wordt geen inkomen of recht op huurtoeslag gecontroleerd.</p>
+          <label htmlFor="private-housing-budget-ceiling">Zelf gekozen maximaal
+            maandbedrag (€1–€50.000, laat leeg om niets te berekenen)
+            <input id="private-housing-budget-ceiling" type="number"
+              inputMode="decimal" min="1" max="50000" step=".01"
+              value={monthlyBudget} onChange={event=>{
+                setMonthlyBudget(event.target.value);
+                setPendingRestore(null);
+                setMessage('');
+              }} />
+          </label>
+          {monthlyBudget !== '' && budgetLimit === null &&
+            <p role="status">Vul een geldig maandbedrag in tussen €1 en €50.000,
+              met maximaal twee decimalen.</p>}
+          {budgetRows.length > 0 ? <>
+            <p><strong>Woning A:</strong> {firstYearOverBudgetA === null ?
+              'Geen overschrijding in de gekozen jaren' :
+              'Vanaf jaar '+firstYearOverBudgetA+' boven jouw maandgrens'}.
+              {' '}Opgetelde theoretische overschrijding: {format(budgetExcessA)}.</p>
+            <p><strong>Woning B:</strong> {firstYearOverBudgetB === null ?
+              'Geen overschrijding in de gekozen jaren' :
+              'Vanaf jaar '+firstYearOverBudgetB+' boven jouw maandgrens'}.
+              {' '}Opgetelde theoretische overschrijding: {format(budgetExcessB)}.</p>
+            <div className="private-budget-table-wrap">
+              <table>
+                <caption>Eigen maandbudget ten opzichte van vaste woonlasten in
+                  elk basisramingsjaar, zonder inkomenstoets</caption>
+                <thead><tr><th scope="col">Jaar</th>
+                  <th scope="col">A maandlasten</th><th scope="col">B maandlasten</th>
+                  <th scope="col">A boven grens p/m</th>
+                  <th scope="col">B boven grens p/m</th></tr></thead>
+                <tbody>{budgetRows.map(row=><tr key={row.year}>
+                  <th scope="row">{row.year}</th>
+                  <td>{format(row.aCost)}</td><td>{format(row.bCost)}</td>
+                  <td>{format(row.aGap)}</td><td>{format(row.bGap)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <button type="button" onClick={exportBudgetCsv}>
+              Bewaar deze eigen maandbudgetgrenzen als numerieke CSV…
+            </button>
+          </> : monthlyBudget === '' ? <p>Optioneel: kies een eigen
+            budgetgrens om jaarlijkse overschrijdingen zichtbaar te maken.</p> :
+            <p>Voor de vergelijking zijn beide geldige woningen, een periode
+              en een geldig maximaal maandbudget nodig.</p>}
+          <p>Een overschrijding is een <strong>eigen rekenkundige signalering</strong>,
+            geen officiële afwijzing. Werkelijke energietarieven, reiskosten,
+            toeslagen, inkomsten en contractwijzigingen kunnen afwijken.</p>
+        </div>
         <div className="private-budget-provenance" aria-labelledby="private-stress-title">
           <h3 id="private-stress-title">Hoe gevoelig is jouw vergelijking voor kostenstijgingen?</h3>
           <p>Vergelijk dezelfde twee woningen in drie uitdrukkelijk hypothetische
@@ -2349,7 +2444,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
             verwachting</strong>. Wettelijke huurverhogingen, contracten,
             toeslagen, inkomensverandering of energieprijzen zijn niet bekend.
             Alle handmatige scenario- en stressvelden worden in de nieuwe
-            privé-JSON v2 opgeslagen; oude versie-1-back-ups blijven leesbaar
+            privé-JSON v3 opgeslagen; oude versie-1- en versie-2-back-ups blijven leesbaar
             met 3 en 4 procent als expliciet herkenbare standaardstresswaarden.</p>
         </div>
         <div className="private-budget-provenance">
@@ -2360,7 +2455,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
             buiten Woonpoints synchroniseren. Er is geen automatische opslag.</p>
           <button type="button" onClick={saveCompleteBackup}
             disabled={!left || !right || !years ||
-              rentBump === null || extrasBump === null}>
+              rentBump === null || extrasBump === null ||
+              (monthlyBudget !== '' && budgetLimit === null)}>
             Bewaar volledige meerjarenvergelijking als JSON…
           </button>
           <label htmlFor="longterm-private-import">Open eerdere Woonpoints-JSON
@@ -2374,7 +2470,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           {pendingRestore && <div className="month-csv-confirm" role="group"
             aria-label="Bevestig volledige privé-meerjarenrestore">
             <p>Vervang alle bestaande A/B-bedragen, stijgingspercentages,
-              beide stressinstellingen en de gekozen vergelijkingsduur door dit
+              beide stressinstellingen, de eigen maandbudgetgrens en de
+              gekozen vergelijkingsduur door dit
               privébestand? De
               gegevens zijn niet officieel gecontroleerd.</p>
             <div className="month-history-actions">
@@ -2384,6 +2481,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
                 setHorizon(pendingRestore.years);
                 setRentStress(pendingRestore.rentStress);
                 setExtrasStress(pendingRestore.extrasStress);
+                setMonthlyBudget(pendingRestore.monthlyBudget);
                 setPendingRestore(null);
                 setMessage('Eigen meerjarenvergelijking bewust hersteld. Controleer alle aannames zelf.');
               }}>Ja, vervang mijn volledige vergelijking</button>
@@ -2425,6 +2523,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
           <button type="button" onClick={() => {
             setFirst({...DEFAULT_COST_INPUTS});setSecond({...DEFAULT_COST_INPUTS});
             setHorizon('5');setRentStress('3');setExtrasStress('4');
+            setMonthlyBudget('');
             setPendingRestore(null);
             setMessage('Alle handmatige meerjarenbedragen gewist.');
           }}>Wis beide scenario’s</button>
