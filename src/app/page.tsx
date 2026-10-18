@@ -1065,6 +1065,11 @@ function PrivateMoveAftercare() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
+  const [incomingSource, setIncomingSource] = useState('');
+  const [incomingRiskApproved, setIncomingRiskApproved] = useState(false);
+  const [aftercareImportUndo, setAftercareImportUndo] = useState<{
+    previous: AftercareBackup; importedSignature: string
+  } | null>(null);
   const [message, setMessage] = useState('');
   const [pendingJsonExport, setPendingJsonExport] = useState<{
     source: string; contents: string; itemsCount: number; historyCount: number; bytes: number
@@ -1213,6 +1218,30 @@ function PrivateMoveAftercare() {
     pendingJsonExport.source === jsonExportSignature &&
     pendingJsonExport.itemsCount === items.length &&
     pendingJsonExport.historyCount === history.length;
+  const aftercareImportSignature = JSON.stringify({ items, history });
+  const incomingCurrent = incoming !== null && incomingSource === aftercareImportSignature;
+  const aftercareUndoCurrent = aftercareImportUndo !== null &&
+    aftercareImportUndo.importedSignature === aftercareImportSignature;
+  const incomingImpact = incoming === null ? null : (() => {
+    const itemsRows = (data: AftercareBackup): PrivateImportRows => data.items.map(row => ({
+      id: row.id, label: row.room + ' — ' + row.title,
+      snapshot: JSON.stringify([row.title, row.room, row.status, row.priority,
+        row.due, row.note, row.created])
+    }));
+    const historyRows = (data: AftercareBackup): PrivateImportRows => {
+      const labels = new Map(data.items.map(row => [row.id, row.room + ' — ' + row.title]));
+      return data.history.map(row => ({
+        id: row.id,
+        label: row.day + ' · ' + (labels.get(row.issueId) || 'Eigen nazorgpunt') + ' (' + row.kind + ')',
+        snapshot: JSON.stringify([row.issueId, row.kind, row.day, row.detail])
+      }));
+    };
+    const previous = { items, history };
+    return {
+      points: summarizePrivateImportChange(itemsRows(previous), itemsRows(incoming)),
+      contacts: summarizePrivateImportChange(historyRows(previous), historyRows(incoming))
+    };
+  })();
   const csvExportSignature = JSON.stringify({ items, includePrivateCsvNotes });
   const csvExportCurrent = pendingCsvExport !== null &&
     pendingCsvExport.source === csvExportSignature &&
@@ -1801,6 +1830,8 @@ function PrivateMoveAftercare() {
     const file = event.target.files?.[0];
     event.target.value = '';
     setIncoming(null);
+    setIncomingSource('');
+    setIncomingRiskApproved(false);
     if (!file) return;
     if (file.size > MAX_BYTES) { setMessage('Import geweigerd: maximaal 16 KiB.'); return; }
     try {
@@ -1811,10 +1842,67 @@ function PrivateMoveAftercare() {
         throw Error('Dit bestand kan niet opnieuw als eigen 16 KiB-JSON-back-up worden bewaard. Huidige gegevens behouden.');
       }
       setIncoming(value);
-      setMessage(`Gecontroleerd bestand: ${value.items.length} punten, ${value.history.length} contactmomenten. Bevestig vervanging apart.`);
+      setIncomingSource(JSON.stringify({ items, history }));
+      setIncomingRiskApproved(false);
+      setMessage(`Gecontroleerd bestand: ${value.items.length} punten, ${value.history.length} contactmomenten. Bekijk eerst alle verschillen en bevestig opnieuw.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Import kon niet worden gelezen.');
     }
+  }
+
+  function confirmAftercareImport() {
+    if (incoming === null || !incomingCurrent || !incomingRiskApproved) {
+      setIncomingRiskApproved(false);
+      setMessage('Import geweigerd: controleer eerst de actuele wijzigingen en bevestig de vervanging opnieuw.');
+      return;
+    }
+    const previous: AftercareBackup = {
+      items: items.map(item => ({ ...item })),
+      history: history.map(event => ({ ...event }))
+    };
+    const importedSignature = JSON.stringify({ items: incoming.items, history: incoming.history });
+    setAftercareImportUndo({ previous, importedSignature });
+    setItems(incoming.items);
+    setHistory(incoming.history);
+    setHistoryTarget(null);
+    setHistoryDeletePending(null);
+    setIncoming(null);
+    setIncomingSource('');
+    setIncomingRiskApproved(false);
+    setDraft(EMPTY);
+    setEditing(null);
+    setClearPending(false);
+    setPendingDelete(null);
+    setIssueSearch('');
+    setIssuePriority('alle');
+    setIssueRoom('alle');
+    setFilter('alles');
+    setMessage('Import bevestigd. Alle punten zichtbaar; de vorige lokale status is eenmaal veilig herstelbaar zolang niets verandert.');
+  }
+  function undoAftercareImport() {
+    if (!aftercareImportUndo || !aftercareUndoCurrent) {
+      setAftercareImportUndo(null);
+      setMessage('Vorige import kan niet worden teruggedraaid: eigen gegevens zijn gewijzigd.');
+      return;
+    }
+    setItems(aftercareImportUndo.previous.items);
+    setHistory(aftercareImportUndo.previous.history);
+    setIncoming(null);
+    setIncomingRiskApproved(false);
+    setIncomingSource('');
+    setPendingDelete(null);
+    setHistoryDeletePending(null);
+    setHistoryTarget(null);
+    setEditing(null);
+    setDraft(EMPTY);
+    setBulkSelectedIds([]);
+    setPendingBulk(null);
+    setAftercareImportUndo(null);
+    setFilter('alles');
+    setIssueSearch('');
+    setIssuePriority('alle');
+    setIssueRoom('alle');
+    setMessage('Vorige eigen nazorgstatus hersteld uit dit tabblad. Externe bestanden blijven onaangetast.');
   }
 
   return (
