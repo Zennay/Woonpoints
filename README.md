@@ -790,7 +790,11 @@ Dit is een **tijdelijke, lokale visuele vergelijking**. De browser maakt
 alleen private tijdelijke object-URL's voor geselecteerde bestanden;
 bij verwijderen, wissen en verlaten van het paneel worden deze vrijgegeven.
 Er worden geen afbeeldingen geüpload, automatisch opgeslagen, gedownload,
-vertaald, geanalyseerd of opgenomen in andere Woonpoints-notities.
+vertaald of geanalyseerd. Alleen de eigen A/B-tekstobservaties kunnen via
+**Toon privé-TXT-voorbeeld…** en een aparte expliciete bevestiging als
+tekstbestand worden opgeslagen. De export bevat nooit beeldbytes,
+bestandsnamen of tijdelijke afbeeldingslinks. De tekst is op eigen invoer
+gebaseerd en kan persoonsgegevens bevatten als je die zelf noteert.
 De bestaande originele fotobestanden op je apparaat worden niet verwijderd.
 Sluiten/verversen van het browsertabblad verliest de invoer.
 
