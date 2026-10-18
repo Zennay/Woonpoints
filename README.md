@@ -476,3 +476,22 @@ bestaand v1-bestand kan nog steeds worden hersteld, met vooraf verklaarde
 standaardstress van 3/4% wanneer die velden ontbreken. Bij import blijven
 huidige aannames intact tot de gebruiker de volledige vervanging apart
 bevestigt. Geen automatische opslag, externe accounts of WoningNet-acties.
+
+
+### Eigen maandmomenten gelijkmatig voorstellen
+
+Als je in de **Maanddoel**-sectie nog eigen reacties wilt plannen, kun je
+nu met **Stel gelijkmatig verspreide datums voor** een tijdelijke verdeling
+over de resterende kalenderdagen laten maken. Dit verandert nog niets.
+De app toont eerst alle voorgestelde datums en vraagt afzonderlijk
+**Ja, vul deze datums in** of **Behoud mijn huidige datums**. Alleen bij
+bevestiging worden de tijdelijke datumvelden overschreven; het eigen
+reactie-aantal, de bewaarde maandnotitie en kalenderbestanden veranderen
+niet. Na controle is apart **Bewaar ... als agenda-ICS** nodig.
+
+Bij te weinig resterende dagen voor unieke datums wordt geen voorstel
+gedaan. De berekening gebruikt lokale kalenderdagen in plaats van
+24-uursblokken, zodat klokverzet geen dubbele of ontbrekende datum
+oplevert. Voorstellen vervallen bij maandwisseling of als de gebruiker
+de datums zelf wijzigt. Dit zijn geen officiële reactiedeadlines,
+geen automatische accountreacties en geen browserherinneringen.
