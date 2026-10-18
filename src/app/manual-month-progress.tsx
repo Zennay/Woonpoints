@@ -3558,6 +3558,101 @@ function buildPrivateMovingReport(
   return lines.join('\n')+'\n';
 }
 
+
+type MoveDayPhase='voorbereiding'|'vertrek'|'aankomst';
+type MoveDayStep={id:string;phase:MoveDayPhase;status:'open'|'eigen-klaar'|'onbekend';title:string;detail:string;href:string};
+const MOVE_DAY_PHASES:{id:MoveDayPhase;name:string}[]=[
+  {id:'voorbereiding',name:'1. Voorbereiding'},
+  {id:'vertrek',name:'2. Vertrek'},
+  {id:'aankomst',name:'3. Aankomst'}
+];
+function buildMoveDaySteps(a:MovingWorkspaceArchiveV5):MoveDayStep[]{
+  const result:MoveDayStep[]=[];
+  const add=(phase:MoveDayPhase,id:string,status:MoveDayStep['status'],title:string,detail:string,href:string)=>{
+    result.push({phase,id,status,title,detail,href});
+  };
+  add('voorbereiding','date',a.timeline.moveDate?'eigen-klaar':'onbekend',
+    a.timeline.moveDate?'Eigen verhuisdatum genoteerd':'Verhuisdatum nog onbekend',
+    a.timeline.moveDate||'Kies zelf een verwachte datum.', '#private-moving-day-heading');
+  const docs=[...READINESS_DEFAULTS,...a.documents.extras]
+    .filter(x=>a.documents.states[x.id]!=='skip');
+  const pendingDocs=docs.filter(x=>a.documents.states[x.id]!=='ready').length;
+  add('voorbereiding','docs',pendingDocs?'open':'eigen-klaar',
+    pendingDocs?pendingDocs+' eigen documentpunten open':'Eigen documentchecklist afgevinkt',
+    docs.length+' zelf geregistreerde toepasselijke punten; niet officieel geverifieerd.',
+    '#private-document-readiness-heading');
+  const helpers=a.helpers.helpers;
+  const helperOpen=helpers.filter(h=>h.state==='Nog vragen').length;
+  const helperWithoutTime=helpers.filter(h=>h.state!=='Afgerond'&&
+    (!h.date||!h.start||!h.end)).length;
+  add('voorbereiding','helpers',!helpers.length?'onbekend':
+    helperOpen||helperWithoutTime?'open':'eigen-klaar',
+    !helpers.length?'Geen verhuishulp genoteerd':
+      helperOpen||helperWithoutTime?'Hulpplanning vraagt nog aandacht':'Geen open hulpbevestigingen/tijdvakken',
+    helpers.length+' afspraken, '+helperOpen+' nog te vragen, '+
+      helperWithoutTime+' zonder volledig tijdvak.', '#private-moving-helpers-heading');
+  const packing=a.packing.items;
+  const toPack=packing.filter(x=>x.status==='Nog inpakken').length;
+  const noBox=packing.filter(x=>x.status!=='Uitgepakt'&&!x.box).length;
+  const unpacked=packing.filter(x=>x.status==='Uitgepakt').length;
+  add('vertrek','pack',!packing.length?'onbekend':toPack?'open':'eigen-klaar',
+    !packing.length?'Geen eigen paklijst beschikbaar':
+      toPack?toPack+' pakregels nog niet ingepakt':'Geen open inpakregels',
+    packing.length+' eigen pakregels; '+unpacked+' als uitgepakt gemarkeerd.',
+    '#private-packing-heading');
+  add('vertrek','codes',!packing.length?'onbekend':noBox?'open':'eigen-klaar',
+    !packing.length?'Dooslabels onbekend':
+      noBox?noBox+' open pakregels zonder dooscode':'Eigen open pakregels hebben dooscode',
+    'Zonder dooscode ontbreekt een regel in het transportoverzicht.',
+    '#private-packing-heading');
+  const groups=packingBoxGroups(packing);
+  const notLoaded=groups.filter(group=>!a.packing.transport.some(row=>
+    row.room===group.room&&row.box===group.box)).length;
+  const notDelivered=groups.filter(group=>!a.packing.transport.some(row=>
+    row.room===group.room&&row.box===group.box&&row.stage==='afgeleverd')).length;
+  add('vertrek','load',!packing.length?'onbekend':notLoaded?'open':'eigen-klaar',
+    !packing.length?'Geen eigen transportregistratie':
+      notLoaded?notLoaded+' dozen nog niet als geladen gemarkeerd':
+      'Actuele dozen hebben een eigen laad-/aflevermarkering',
+    groups.length+' gelabelde, niet uitgepakte dozen; geen vervoerdersbewijs.',
+    '#private-transport-heading');
+  add('aankomst','delivery',!packing.length?'onbekend':notDelivered?'open':'eigen-klaar',
+    !packing.length?'Aflevering nog onbekend':
+      notDelivered?notDelivered+' dozen nog niet als afgeleverd gemarkeerd':
+      'Geen actuele gelabelde dozen zonder aflevermarkering',
+    'Zelf ingevulde transportstatus. Uitgepakte regels tellen hier niet mee.',
+    '#private-transport-heading');
+  const urgent=packing.filter(x=>x.priority&&x.status!=='Uitgepakt').length;
+  add('aankomst','urgent',!packing.length?'onbekend':urgent?'open':'eigen-klaar',
+    !packing.length?'Prioriteitsartikelen nog onbekend':
+      urgent?urgent+' prioriteitsregels nog niet uitgepakt':'Geen eigen open prioriteitsregels',
+    'Deze prioriteiten heb je zelf gemarkeerd.','#private-packing-heading');
+  add('aankomst','unpack',!packing.length?'onbekend':
+    unpacked<packing.length?'open':'eigen-klaar',
+    !packing.length?'Uitpakken nog onbekend':
+      unpacked<packing.length?(packing.length-unpacked)+' regels nog niet uitgepakt':
+      'Alle eigen pakregels als uitgepakt genoteerd',
+    unpacked+' van '+packing.length+' eigen pakregels.','#private-packing-heading');
+  return result;
+}
+function moveDayPrivacyReport(lines:MoveDayStep[]):string{
+  const result=['WOONPOINTS - EIGEN VERHUISDAGOVERZICHT',
+    'Alleen zelf ingevoerde statusindicaties, geen officieel bewijs.',
+    'Geen namen, adressen, persoonlijke notities, bedragen of doosinhoud.',''];
+  for(const phase of MOVE_DAY_PHASES){
+    result.push(phase.name.toUpperCase());
+    for(const line of lines.filter(x=>x.phase===phase.id)){
+      result.push('['+(line.status==='open'?'ACTIE':
+        line.status==='eigen-klaar'?'EIGEN VOORTGANG':'ONBEKEND')+'] '+line.title,
+        '  '+line.detail);
+    }
+    result.push('');
+  }
+  result.push('Zelf controleren bij betrokken organisaties en personen.',
+    'Zelfbewaar of deel deze persoonlijke momentopname uitsluitend bewust.');
+  return result.join('\n')+'\n';
+}
+
 export function PrivateMovingWorkspace() {
   const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
   const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
@@ -3574,6 +3669,7 @@ export function PrivateMovingWorkspace() {
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
   const [reportSections,setReportSections]=useState<MovingReportSection[]>(['timeline','documents']);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
+  const [pendingMoveDay,setPendingMoveDay]=useState<string|null>(null);
   useEffect(()=>{
     let timer:number|undefined;
     function refresh(){
@@ -3642,6 +3738,9 @@ export function PrivateMovingWorkspace() {
     packing:packing!,helpers:helpers!
   }:null;
   const signature=archive?privateMovingWorkspaceSignature(archive):'';
+  const moveDaySteps=archive?buildMoveDaySteps(archive):[];
+  const moveDayReport=moveDayPrivacyReport(moveDaySteps);
+  const moveDaySignature=JSON.stringify({signature,moveDayReport});
   const quoteCount=quotes?.quotes.length??0;
   const expenseCount=expenses?.lines.length??0;
   const planned=expenses?.lines.reduce((total,item)=>total+item.plannedCents,0)??0;
@@ -3740,6 +3839,17 @@ export function PrivateMovingWorkspace() {
   const reportSignature=JSON.stringify({signature,reportSections,today,calendarSignature});
   const report=archive&&reportSections.length?
     buildPrivateMovingReport(archive,reportSections,actions,today):null;
+  function downloadMoveDay(){
+    if(!archive||pendingMoveDay!==moveDaySignature||!moveDaySteps.length){
+      setPendingMoveDay(null);
+      setNotice('Je privégegevens zijn gewijzigd. Bekijk de nieuwste verhuisdagstatus opnieuw.');
+      return;
+    }
+    exportFile('woonpoints-prive-verhuisdagoverzicht.txt',moveDayReport,
+      'text/plain;charset=utf-8');
+    setPendingMoveDay(null);
+    setNotice('Privé-verhuisdagoverzicht lokaal aangeboden zonder naam- of inhoudsgegevens.');
+  }
   function downloadPrivateReport(){
     if(!complete||!report||pendingReport!==reportSignature){
       setPendingReport(null);
