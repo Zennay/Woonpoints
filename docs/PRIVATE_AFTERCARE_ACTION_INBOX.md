@@ -98,3 +98,16 @@ Er komt geen automatische opslag, kopie, verzonden bericht, WoningNet-handeling 
 **Wis alle tabbladpunten** noemt nu vóór de bestaande afzonderlijke menselijke bevestiging het volledige aantal eigen nazorgpunten én alle gekoppelde zelf genoteerde contactmomenten dat tegelijk verdwijnt. Bevestigen wist die twee tijdelijke datasets, trekt oude export- en conceptgoedkeuringen in en bewaart precies één vorige volledige privéstatus in het nog geopende tabbladgeheugen.
 
 Met **Herstel mijn vorige volledige tabbladstatus** kunnen de oude punten/contactmomenten samen één keer worden teruggezet, maar alleen zolang de actuele gegevens exact overeenkomen met de direct na het wissen lege status. Zodra iemand nieuwe punten of contactmomenten toevoegt of weer wijzigt, wordt het oude herstelpunt geblokkeerd om nieuwe invoer te beschermen. Een nieuw bevestigd volledig wissen vervangt het vorige herstelpunt; bewust vernietigen kan ook. Het gaat alleen om tabbladstatus, niet om een bestand, cloud-back-up, verhuurdermelding of WoningNet-actie. Tabblad sluiten wist ook het tijdelijke herstelpunt.
+
+## Veilig privé-dossiers samenvoegen zonder vervanging (18 oktober)
+
+Wanneer je een zelf bewaarde, gevalideerde versie-1/2-nazorg-JSON importeert, kun je nu bewust kiezen tussen **Bestaande gegevens vervangen** en **Alleen nieuwe gegevens veilig samenvoegen**. Vervangen behoudt alle bestaande herstel- en verschilcontroles. Samenvoegen voegt uitsluitend eigen nazorgpunten en contactmomenten toe waarvan het stabiele ID nog niet in het huidige tabblad bestaat.
+
+- Het voorbeeld toont afzonderlijk hoeveel punten/contactmomenten toegevoegd worden, hoeveel volledig identieke records al aanwezig zijn en hoeveel bestaande ID's conflicteren. Vrije privénotities verschijnen nooit in de samenvatting.
+- **Zelfde ID, andere velden** (ook een status, gekoppeld punt of een verborgen contactnotitie) blokkeert de gehele samenvoeging. Er worden geen bestaande regels overschreven, geen ID's stilzwijgend hernoemd en geen twee gelijknamige punten automatisch tot één gemaakt.
+- Een geheel identiek bestand is een veilige no-op: er is niets nieuws toe te voegen en daarom geen reden voor een importmutatie.
+- De samengevoegde dataset wordt opnieuw door de originele, strikt ongewijzigde v2-JSON-ontvanger gecontroleerd, inclusief valide verwijzingen, maximaal 80 punten, maximaal 160 contactmomenten, maximaal 8 momenten per punt en 16 KiB voor het complete, opnieuw te exporteren privébestand.
+- Na het lezen van het actuele voorbeeld is een **apart menselijk akkoord** nodig. Bij wijziging van de brondata of de importkeuze vervalt die toestemming. Bevestigde samenvoeging trekt oude export- en berichttoestemmingen in; de volledige vorige tabbladstatus kan éénmaal veilig worden hersteld, uitsluitend zolang het zojuist geïmporteerde dossier ongewijzigd is.
+- Er wordt niets gesynchroniseerd, door een verhuurder gevalideerd, verstuurd of uit WoningNet opgehaald. Het bronbestand op het eigen apparaat blijft intact.
+
+Een conflict vraagt dus een **bewuste menselijke keuze**: corrigeer de afzonderlijke eigen bronbestanden, behoud het dossier zoals het is, of gebruik apart en expliciet de bestaande vervangactie (met eigen verliesoverzicht). Samenvoegen mag dit conflict niet automatisch oplossen.
