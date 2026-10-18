@@ -366,6 +366,7 @@ export function ManualReactionJournal({
     try {
       summarizeManualReactionJournal(candidate);
       setEntries(candidate);setEditingId(null);
+      setMonthFilter('all'); // Reveal the corrected row if its date moved outside the old filter.
       setMessage('Je eigen datum, status en eindpositie zijn bijgewerkt. Dit verandert geen officiële woningreactie.');
     } catch {
       setMessage('Datum of eindpositie is ongeldig; de oorspronkelijke notitie is behouden.');
