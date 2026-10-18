@@ -2936,10 +2936,32 @@ function PrivateMoveAftercare() {
           </div>}
           <div className="aftercare-actions"><button className="secondary" disabled={!items.length} onClick={() => setClearPending(true)}>Wis alle tabbladpunten…</button></div>
           {clearPending && <div className="aftercare-confirm">
-            <p>Alle huidige aandachtspunten definitief uit dit tabblad verwijderen? Een eerder gedownloade back-up blijft bestaan.</p>
+            <p>Je verwijdert {items.length} eigen punten en {history.length} zelf genoteerde
+              contactmomenten uit dit tabblad. Eerder opgeslagen bestanden blijven bestaan.
+              Je kunt dit uitsluitend in dit nog geopende tabblad één keer veilig
+              terugzetten, totdat nieuwe invoer of een wijziging plaatsvindt.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setRemovalUndo(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
+              <button type="button" onClick={confirmClearAllAftercare}>
+                Ja, wis alle eigen punten en contactnotities
+              </button>
               <button className="secondary" onClick={() => setClearPending(false)}>Behoud punten</button>
+            </div>
+          </div>}
+          {clearUndo !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Laatste volledig gewiste nazorgdossier herstellen">
+            <h3>Laatste volledig gewiste tabbladgegevens herstellen</h3>
+            {clearUndoCurrent ? <p>Alle {clearUndo.previous.items.length} vorige eigen punten
+              en {clearUndo.previous.history.length} contactmomenten zijn tijdelijk
+              herstelbaar. Sluit je dit tabblad, dan vervalt die mogelijkheid.</p> :
+              <p className="aftercare-warning" role="status">
+                Na het wissen zijn eigen gegevens gewijzigd. Het vorige herstelpunt
+                mag geen nieuwe invoer overschrijven en is daarom geblokkeerd.
+              </p>}
+            <div className="aftercare-actions">
+              <button type="button" className="secondary" disabled={!clearUndoCurrent}
+                onClick={undoClearAllAftercare}>Herstel mijn vorige volledige tabbladstatus</button>
+              <button type="button" className="secondary"
+                onClick={() => setClearUndo(null)}>Vernietig tijdelijk herstelpunt</button>
             </div>
           </div>}
           <p role="status" aria-live="polite">{message}</p>
