@@ -2341,8 +2341,9 @@ export function PrivateMovingExpenseLedger(){
       const raw=(event as CustomEvent<unknown>).detail;
       if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
       const data=raw as Record<string,unknown>;
-      if(data.format!=='woonpoints-moving-budget-offer'||data.version!==1||
-        !Array.isArray(data.offer)||data.offer.length!==5)return;
+      const count=data.format==='woonpoints-moving-budget-offer'?5:
+        data.format==='woonpoints-moving-quote-offer'?1:0;
+      if(data.version!==1||!Array.isArray(data.offer)||data.offer.length!==count||!count)return;
       const valid=data.offer.every(item=>{
         if(!item||typeof item!=='object'||Array.isArray(item))return false;
         const line=item as Record<string,unknown>;
@@ -2358,7 +2359,7 @@ export function PrivateMovingExpenseLedger(){
         return {id:'move-exp-'+Date.now()+'-'+index,label:line.label,category:line.category,
           plannedCents:line.plannedCents,actualCents:null,paid:false};
       });
-      setPendingBudget(dataLines);setNotice('Bekijk de vijf begrotingsposten en bevestig apart voordat je ze toevoegt.');
+      setPendingBudget(dataLines);setNotice('Bekijk de aangeboden ramingsposten en bevestig apart voordat je ze toevoegt.');
     }
     window.addEventListener('woonpoints:moving-budget-offer',onBudget);
     return()=>window.removeEventListener('woonpoints:moving-budget-offer',onBudget);
@@ -2452,8 +2453,8 @@ export function PrivateMovingExpenseLedger(){
         bedragen blijven <strong>onbekend</strong>: ze worden nooit als € 0 uitgelegd.
         Dit is geen gekoppelde bankrekening, factuuradministratie of financieel advies.</p>
       {pendingBudget&&<div role="group" aria-label="Bevestig begrotingsposten toevoegen">
-        <h3>Concept uit jouw verhuisbudget</h3>
-        <p>Dit zijn vijf <strong>zelf geraamde bedragen</strong> uit je eigen verhuisvolume-module.
+        <h3>Concept uit jouw eigen verhuiskostenraming</h3>
+        <p>Dit zijn <strong>zelf geraamde bedragen</strong> uit je eigen verhuisbudget of een gekozen privé-offerte.
           Er is nog niets toegevoegd. Werkelijke bedragen blijven onbekend en niets wordt betaald gemarkeerd.
           Als je dit twee keer toevoegt kunnen dubbele posten ontstaan.</p>
         <ul>{pendingBudget.map(item=><li key={item.id}>
@@ -2466,7 +2467,7 @@ export function PrivateMovingExpenseLedger(){
           setLines(old=>[...old,...pendingBudget.map((item,index)=>({
             ...item,id:existingIds.has(item.id)?'move-exp-'+suffix+'-'+(index+old.length):item.id
           }))]);
-          setPendingBudget(null);setNotice('De vijf eigen ramingsposten zijn toegevoegd; vul werkelijke bedragen later zelf in.');
+          setPendingBudget(null);setNotice('Eigen ramingsposten zijn toegevoegd; vul werkelijke bedragen later zelf in.');
         }}>Bevestig toevoegen ({pendingBudget.length} posten)</button>
         <button type="button" onClick={()=>{
           setPendingBudget(null);setNotice('Begrotingsvoorstel geannuleerd.');
@@ -2613,14 +2614,14 @@ function validatePrivateQuote(row:unknown):row is MovingQuote{
   return Object.keys(q).length===8 &&
     typeof q.id==='string'&&/^private-quote-[0-9]+-[0-9]+$/.test(q.id)&&
     typeof q.name==='string'&&q.name.length>0&&q.name.length<=60&&q.name.trim()===q.name&&
-    !/[\\u0000-\\u001f\\u007f]/.test(q.name)&&
+    !/[\u0000-\u001f\u007f]/.test(q.name)&&
     QUOTE_SERVICES.includes(q.service as MovingQuoteService)&&
     typeof q.quoteDate==='string'&&(q.quoteDate===''||dateOnly(q.quoteDate)!==null)&&
     (['baseCents','travelCents','materialCents'] as const).every(k=>
       typeof q[k]==='number'&&Number.isSafeInteger(q[k])&&(q[k] as number)>=0&&(q[k] as number)<=9999999
     )&&
     (q.baseCents as number)+(q.travelCents as number)+(q.materialCents as number)<=9999999&&
-    typeof q.notes==='string'&&q.notes.length<=400&&!/[\\u0000-\\u001f\\u007f]/.test(q.notes);
+    typeof q.notes==='string'&&q.notes.length<=400&&!/[\u0000-\u001f\u007f]/.test(q.notes);
 }
 
 /** Private manual quote estimates only: not verified vendors, bookings or financial advice. */
@@ -2647,20 +2648,20 @@ export function PrivateMovingQuoteComparison(){
       `Basis ${expenseAmount(q.baseCents)} | Reis ${expenseAmount(q.travelCents)} | `+
       `Materiaal ${expenseAmount(q.materialCents)} | Geraamd totaal ${expenseAmount(quoteTotal(q))}`+
       (q.id===selected?' | Eigen voorkeur':'')+
-      (q.notes?` | Notities: ${q.notes.replace(/\\r?\\n/g,' ')}`:'')
+      (q.notes?` | Notities: ${q.notes.replace(/\r?\n/g,' ')}`:'')
     ),
     best?`Laagste van de ingevulde ramingen: ${best.name} · ${expenseAmount(quoteTotal(best))}`:
       'Nog geen eigen ramingen',
     selectedQuote?`Gekozen voorkeur: ${selectedQuote.name} · ${expenseAmount(quoteTotal(selectedQuote))}`:
       'Nog geen eigen voorkeur gekozen',
     'Controleer voorwaarden, verzekeringen, annuleringskosten en definitieve prijzen zelf.'
-  ].join('\\n')+'\\n';
+  ].join('\n')+'\n';
   function invalidate(){
     setPendingDelete(null);setPendingRestore(null);setPendingReport(null);
     setPendingOffer(null);setClearConfirm(false);setNotice('');
   }
   function saveQuote(){
-    const name=form.name.trim().replace(/[\\u0000-\\u001f\\u007f]/g,' ');
+    const name=form.name.trim().replace(/[\u0000-\u001f\u007f]/g,' ');
     const base=expenseCents(form.base),travel=expenseCents(form.travel),materials=expenseCents(form.materials);
     if(!name||name.length>60||base===null||travel===null||materials===null||
       base+travel+materials>9999999||form.notes.length>400||
@@ -2674,7 +2675,7 @@ export function PrivateMovingQuoteComparison(){
     }
     const item:MovingQuote={
       id:editing??`private-quote-${Date.now()}-${quotes.length}`,name,service:form.service,
-      quoteDate:form.quoteDate,baseCents:base,travelCents:travel,materialCents:materials,notes:form.notes
+      quoteDate:form.quoteDate,baseCents:base,travelCents:travel,materialCents:materials,notes:form.notes.replace(/[\u0000-\u001f\u007f]/g,' ')
     };
     setQuotes(old=>editing?old.map(q=>q.id===editing?item:q):[...old,item]);
     setForm(quoteBlank());setEditing(null);invalidate();
