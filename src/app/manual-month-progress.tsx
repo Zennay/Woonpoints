@@ -1681,9 +1681,9 @@ export function PrivateMovingDayTimeline() {
         if (typeof data.id !== 'string' || !/^extra-[0-9]+-[0-9]+$/.test(data.id) ||
             typeof data.title !== 'string' || data.title !== data.title.trim() ||
             !data.title.trim() || data.title.length > 60 || /[\\u0000-\\u001f\\u007f]/.test(data.title) ||
-            !Number.isInteger(data.offset) || (data.offset as number) < -120 || (data.offset as number) > 60)
+            typeof data.offset !== 'number' || !Number.isInteger(data.offset) || data.offset < -120 || data.offset > 60)
           throw new Error('task');
-        return { id: data.id, title: data.title, offset: data.offset as number, group: 'Eigen taak' };
+        return { id: data.id, title: data.title, offset: data.offset as number, group: 'Eigen taak' as const };
       });
       if (!Array.isArray(value.completed) || value.completed.length > 15 ||
           !value.completed.every(item => typeof item === 'string')) throw new Error('checked');
