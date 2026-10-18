@@ -495,3 +495,29 @@ gedaan. De berekening gebruikt lokale kalenderdagen in plaats van
 oplevert. Voorstellen vervallen bij maandwisseling of als de gebruiker
 de datums zelf wijzigt. Dit zijn geen officiële reactiedeadlines,
 geen automatische accountreacties en geen browserherinneringen.
+
+
+### Persoonlijke budgetgrens per maand — 1 tot 10 jaar
+
+In de bestaande **Meerjarenkosten**-vergelijking kun je nu optioneel één
+eigen maximale maandelijkse woonuitgave kiezen (€1–€50.000). De app toont
+voor ieder jaar de **basisraming** van beide woningen (huur plus andere
+vaste maandlasten), hoeveel die raming in die maand boven het zelf gekozen
+bedrag ligt, en welk eerste jaar je maandgrens wordt overschreden. Een
+theoretisch cumulatief bedrag boven die grens over alle gekozen jaren
+helpt verschillen zichtbaar maken; eenmalige verhuis- en startkosten
+horen niet bij de maandbudgetgrens, maar blijven wel in de bestaande
+totale-kostenvergelijking zichtbaar.
+
+Je kunt de numerieke jaartabel bewust als CSV bewaren, zonder
+persoonsgegevens of formules. Het eigen maximale maandbedrag wordt
+bovendien meegenomen in de volledige **privé-JSON v3**. Oude v1-
+en v2-bestanden blijven leesbaar: voor ontbrekende budgetvelden
+wordt **geen limiet** ingevuld. Ongeldige bestanden worden geweigerd
+en herstellen vereist apart akkoord voor het vervangen van alle
+huidige aannames.
+
+Dit is een rekenkundige gevoeligheidsindicator, **geen** juridische
+of financiële betaalbaarheidstoets. Geen inkomen, toeslag, wettelijke
+huurverhoging, daadwerkelijke energiekosten of WoningNet-rechten worden
+gecontroleerd; er gaat geen data naar een server.
