@@ -441,9 +441,10 @@ export type PrivateJournalCountOffer = {
 
 /** Transfers only a voluntary aggregate; never source records or account data. */
 export function ManualReactionJournal({
-  onTransfer, onMonthCountOffer, onJournalSnapshot, reportMonth
+  onTransfer, onTransferCancel, onMonthCountOffer, onJournalSnapshot, reportMonth
 }: {
   onTransfer?: (data: string, count: number) => void;
+  onTransferCancel?: () => void;
   onMonthCountOffer?: (offer: PrivateJournalCountOffer | null) => void;
   onJournalSnapshot?: (summary: PrivateJournalSnapshot) => void;
   reportMonth?: string;
@@ -503,7 +504,8 @@ export function ManualReactionJournal({
     // A pending cross-panel proposal cannot survive a modification, restore
     // request or deletion in its original source journal.
     onMonthCountOffer?.(null);
-  }, [entries,pendingImport,onMonthCountOffer]);
+    onTransferCancel?.(); // Previously offered positions are stale after journal edits/import.
+  }, [entries,pendingImport,onMonthCountOffer,onTransferCancel]);
   useEffect(() => {
     if (!onJournalSnapshot) return;
     const now=new Date();
@@ -1011,9 +1013,11 @@ export function ManualPositionsWorkspace({
   reportMonth?: string;
 } = {}) {
   const [offer, setOffer] = useState<{ data: string; count: number } | null>(null);
+  const cancelStaleOffer=useCallback(()=>setOffer(null),[]);
   return (
     <>
       <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })}
+        onTransferCancel={cancelStaleOffer}
         onMonthCountOffer={onMonthCountOffer}
         onJournalSnapshot={onJournalSnapshot} reportMonth={reportMonth} />
       <ManualPositionHistory journalOffer={offer} onJournalDecision={() => setOffer(null)} />
