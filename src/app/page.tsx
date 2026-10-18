@@ -569,6 +569,7 @@ function PrivateArrivalInspection({
   const [resetConfirm, setResetConfirm] = useState(false);
   const [printIncludeNotes, setPrintIncludeNotes] = useState(false);
   const [printPreview, setPrintPreview] = useState<{signature:string;includeNotes:boolean}|null>(null);
+  const [inspectionView, setInspectionView] = useState<'all'|'pending'|'flagged'>('all');
   const allChecks: InspectionCheck[] = [...INSPECTION_CHECKS, ...customChecks.map(check => ({
     ...check, tip: 'Zelf toegevoegd controlepunt; dit is geen geverifieerde inspectie-eis.'
   }))];
@@ -730,11 +731,33 @@ function PrivateArrivalInspection({
             </button>
           </div>
         </form>
+        <div role="group" aria-label="Filter eigen inspectiepunten" className="aftercare-actions">
+          <button type="button" className={inspectionView === 'all' ? '' : 'secondary'}
+            aria-pressed={inspectionView === 'all'} onClick={() => setInspectionView('all')}>
+            Alle {allChecks.length} controles
+          </button>
+          <button type="button" className={inspectionView === 'pending' ? '' : 'secondary'}
+            aria-pressed={inspectionView === 'pending'} onClick={() => setInspectionView('pending')}>
+            Nog niet gecontroleerd ({allChecks.length - checked.length})
+          </button>
+          <button type="button" className={inspectionView === 'flagged' ? '' : 'secondary'}
+            aria-pressed={inspectionView === 'flagged'} onClick={() => setInspectionView('flagged')}>
+            Mijn aandachtspunten ({flagged.length})
+          </button>
+        </div>
+        {inspectionView === 'pending' && checked.length === allChecks.length &&
+          <p role="status">Alle inspectiepunten zijn door jou beoordeeld. Dat betekent niet dat alles in orde is.</p>}
+        {inspectionView === 'flagged' && flagged.length === 0 &&
+          <p role="status">Je hebt nog geen eigen aandachtspunten gemarkeerd.</p>}
         {INSPECTION_ALL_ROOMS.map(room => {
-          const rows = allChecks.filter(item => item.room === room);
+          const rows = allChecks.filter(item => item.room === room &&
+            (inspectionView === 'all' ||
+              (inspectionView === 'pending' && grades[item.id] === undefined) ||
+              (inspectionView === 'flagged' && grades[item.id] === 'aandacht')));
+          if (!rows.length) return null;
           const completed = rows.filter(item => grades[item.id]).length;
           return (
-            <details key={room} className="aftercare-inspection-room">
+            <details key={room} className="aftercare-inspection-room" open={inspectionView !== 'all' ? true : undefined}>
               <summary><strong>{room}</strong> · {completed} van {rows.length} zelf beoordeeld</summary>
               {rows.map(row => (
                 <fieldset key={row.id} className="aftercare-inspection-check">
