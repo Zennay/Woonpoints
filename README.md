@@ -1227,3 +1227,33 @@ laad-/aflevermarkeringen ontstaat versie-5 JSON.
 Controleer zelf afspraken, woningrechten en betalingen bij de
 betrokken organisaties/personen. De bestaande `BOT_DRY_RUN=true`-
 en autorisatievoorwaarden blijven onaangeraakt.
+
+
+## Privé-verhuisdag: één vertrek- en aankomstoverzicht
+
+De gecombineerde eigen verhuiswerkmap v5 toont nu een **driefasenbord**
+uit de actuele acht browser-only modules. Voor **voorbereiding** gebruikt
+het de eigen verhuisdatum, documentenchecklist en vrijwillig ingevulde
+helpers; voor **vertrek** de inpakstatus, ontbrekende dooslabels en
+handmatig geladen dozen; en voor **aankomst** de eigen afleverstatus,
+prioriteitsartikelen en reeds uitgepakte regels.
+
+Elke regel onderscheidt expliciet **zelf nog na te kijken**,
+**onbekende gegevens** en **eigen voortgang**. Bij twijfel worden lege
+paklijsten/afspraken niet als daadwerkelijk afgerond gepresenteerd.
+De gebruiker kan vanuit ieder punt rechtstreeks naar het betreffende
+bestaande formulier springen om de bronstatus te veranderen.
+Het bord verandert die bronstatus niet zelf.
+
+**Bekijk mijn privé-verhuisdagoverzicht als TXT…** laat het volledige
+bestand eerst zien en vraagt daarna een aparte bevestiging.
+De samenvatting bevat uitsluitend geaggregeerde zelfgerapporteerde
+statussen: geen helpersnamen, bedragen, straatadressen, privé-notities,
+doosinhoud, betaalgegevens of WoningNet-provenance. Er wordt niets
+opgeslagen of gedeeld zonder expliciete gebruikeractie. Een gekozen
+lokale opslagmap kan buiten de app synchroniseren.
+
+Dit bord is geen vertrektoestemming, leveranciers-/vervoerdersbewijs,
+actuele inventarisverificatie of garantie dat alle officiële verhuisacties
+zijn verricht. De acht-module JSON-back-up v5 en versiecompatibiliteit
+blijven ongewijzigd; geen nieuwe account- of productieactie.
