@@ -1328,3 +1328,47 @@ Alle gegevens blijven in tabbladgeheugen tot een expliciete eigen
 bestandsdownload. Een lokale/cloudmap die je zelf kiest kan buiten
 de applicatie synchroniseren. Geen afvinkstatus geldt als officieel
 bewijs van registratie, toestemming of afgesloten contract.
+
+
+## Eigen startinspectie afdrukken — offline HTML en PDF
+
+De bestaande begeleide startinspectie heeft nu een afdrukbare overdrachtsweergave.
+Alle 22 standaardcontroles en maximaal 12 zelf toegevoegde punten worden per ruimte
+gegroepeerd met het **eigen oordeel**, de eigen prioriteit en een expliciete
+**niet gecontroleerd**-status. Een gedeeltelijke inspectie wordt dus nooit
+stilzwijgend een complete keuring. Het A4-document is zelfstandig te openen
+zonder Woonpoints-account, serververbinding of externe stylesheet.
+
+1. Beoordeel minimaal één controlepunt in **Begeleide startinspectie**.
+2. Kies desgewenst expliciet **Neem mijn privétoelichtingen op** (standaard uit).
+3. Kies **Bekijk mijn afdrukvoorbeeld…**; controleer de telling en open desgewenst
+   de volledige regels en optionele privénotities.
+4. Download het HTML-document pas na afzonderlijke bevestiging. Open het bestand
+   zelf in een browser en gebruik **Afdrukken → Bewaar als PDF** als je een PDF wilt.
+
+Verandert de eigen inspectie of de privacykeuze na de voorbeeldweergave,
+dan moet het voorbeeld opnieuw worden geopend voordat downloaden mogelijk is.
+De export ontsmet alle handmatig ingevoerde titels en toelichtingen voor HTML,
+heeft een restrictieve Content Security Policy, bevat geen scripts of externe
+assets en weigert documenten groter dan 80 KiB.
+
+Deze afdruk is **geen officiële keuring of bewijs van melding**, en er wordt
+niets verstuurd naar een verhuurder, WoningNet of andere dienst. Door zelf
+een bestand op te slaan, af te drukken of als PDF te bewaren kan privé-inhoud
+buiten het huidige browsertabblad terechtkomen; een zelfgekozen opslagmap kan
+met een clouddienst synchroniseren. De bestaande JSON-back-up, gecombineerde
+overdracht en nazorgmodule blijven ongewijzigd. `BOT_DRY_RUN=true` blijft gelden.
+
+### Inspectie in één klik filteren
+
+Boven de ruimtechecklists staan drie knoppen: **Alle controles**,
+**Nog niet gecontroleerd** en **Mijn aandachtspunten**. Elk toont het
+aantal punten in die categorie. In de twee gerichte weergaven worden de
+relevante ruimtes direct opengeklapt en lege ruimtes niet getoond. Zo
+kun je niet-gecontroleerde controles afronden of je eigen gebreken snel
+nalopen zonder door alle zes ruimtes te zoeken.
+
+Dit zijn uitsluitend zichtfilters: ze veranderen nooit een beoordeling,
+wissen geen toelichting en beperken ook niet de afzonderlijke volledige
+JSON-, TXT- of HTML-export. Een leeg aandachtspuntenfilter is **geen**
+officiële bevestiging dat de woning goedgekeurd is.
