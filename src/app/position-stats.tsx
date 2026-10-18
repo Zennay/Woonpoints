@@ -6147,6 +6147,8 @@ export function PrivateAddressChangePlanner(){
   const [pendingClear,setPendingClear]=useState(false);
   const [pendingExport,setPendingExport]=useState<'json'|'txt'|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [pendingUrgent,setPendingUrgent]=useState<string|null>(null);
+  const [urgencyView,setUrgencyView]=useState<'alles'|'verlopen'|'week'|'later'|'zonder-datum'|'gemeld'>('alles');
   const [pendingRestore,setPendingRestore]=useState<MoveAddressArchive|null>(null);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
@@ -6188,11 +6190,40 @@ export function PrivateAddressChangePlanner(){
   const outstanding=items.filter(x=>x.status==='Nog regelen');
   const overdue=outstanding.filter(x=>x.date&&x.date<today);
   const upcoming=outstanding.filter(x=>x.date&&x.date>=today);
+  // Calendar-day math in UTC avoids incorrectly treating DST days as 24-hour intervals.
+  const [year,month,day]=today.split('-').map(Number);
+  const weekEnd=new Date(Date.UTC(year,month-1,day+6)).toISOString().slice(0,10);
+  const withinWeek=outstanding.filter(x=>x.date&&x.date>=today&&x.date<=weekEnd);
+  const later=outstanding.filter(x=>x.date&&x.date>weekEnd);
+  const withoutDate=outstanding.filter(x=>!x.date);
+  const reported=items.filter(x=>x.status!=='Nog regelen');
+  const urgentActions=[...overdue,...withinWeek].sort((a,b)=>
+    a.date.localeCompare(b.date)||a.label.localeCompare(b.label,'nl-NL'));
+  const inboxBuckets=[
+    {id:'verlopen',label:'Datum voorbij',entries:overdue},
+    {id:'week',label:'Komende zeven kalenderdagen',entries:withinWeek},
+    {id:'later',label:'Later gepland',entries:later},
+    {id:'zonder-datum',label:'Nog zonder controledatum',entries:withoutDate},
+    {id:'gemeld',label:'Zelf als gemeld genoteerd',entries:reported}
+  ] as const;
+  const inboxEntries=inboxBuckets.filter(bucket=>
+    urgencyView==='alles'||bucket.id===urgencyView);
+  const urgentFingerprint=JSON.stringify({today,weekEnd,urgentActions});
+  const urgentText=[
+    'WOONPOINTS — EIGEN ADRESWIJZIGINGEN · KOMENDE WEEK',
+    'Controle vandaag: '+today+' · Zeven kalenderdagen tot en met '+weekEnd,
+    'Eigen actielijst; geen officieel register, melding, bevestiging of automatisch alarm.',
+    'Open taken met een verlopen of komende datum: '+urgentActions.length,
+    ...urgentActions.map(entry=>entry.date+' · '+entry.label+
+      (entry.date<today?' · EIGEN DATUM VOORBIJ':'')),
+    '',
+    'Controleer zelf de echte vereisten en termijn bij iedere organisatie.'
+  ].join('\n')+'\n';
   const visible=items.filter(x=>filter==='Alles'||x.status===filter);
   const report=moveAddressReport(items);
   const calendarSignature=JSON.stringify(upcoming);
   function resetPending(){
-    setPendingExport(null);setPendingCalendar(null);setPendingRestore(null);
+    setPendingExport(null);setPendingCalendar(null);setPendingUrgent(null);setPendingRestore(null);
     setPendingDelete(null);setPendingClear(false);setNotice('');
   }
   function addCustom(){
@@ -6241,6 +6272,17 @@ export function PrivateAddressChangePlanner(){
     setPendingExport(null);
     setNotice('Privé-bestand lokaal aangeboden; controleer eventuele synchronisatie.');
   }
+  function exportUrgent(){
+    if(pendingUrgent!==urgentFingerprint||!urgentActions.length){
+      setPendingUrgent(null);
+      setNotice('De eigen weekacties of datum zijn gewijzigd. Bekijk de huidige lijst opnieuw.');
+      return;
+    }
+    moveAddressDownload('woonpoints-eigen-adres-weekplan.txt',
+      urgentText,'text/plain;charset=utf-8');
+    setPendingUrgent(null);
+    setNotice('Eigen weekacties als TXT aangeboden; geen externe notificatie verstuurd.');
+  }
   function exportCalendar(){
     if(pendingCalendar!==calendarSignature||!upcoming.length){
       setPendingCalendar(null);setNotice('De open data zijn gewijzigd. Bekijk ze opnieuw.');return;
@@ -6271,6 +6313,55 @@ export function PrivateAddressChangePlanner(){
         {item.date} · {item.label} · nog regelen
       </li>)}</ul>
     </div>}
+    <section aria-labelledby="private-address-inbox-title"
+      style={{margin:'16px 0',padding:14,border:'1px solid #9ab5a0',borderRadius:8}}>
+      <h3 id="private-address-inbox-title">Mijn open adreswijzigingen-inbox</h3>
+      <p>Je zelfgekozen controledatums in volgorde van aandacht.
+        Dit zijn geen officiële termijnen. Datums worden lokaal op kalenderdag ingedeeld.</p>
+      <p><strong>{overdue.length}</strong> datum voorbij · <strong>{withinWeek.length}</strong> komende
+        zeven dagen · <strong>{later.length}</strong> later · <strong>{withoutDate.length}</strong> zonder datum.
+        {' '}{reported.length} zelf als gemeld genoteerd.</p>
+      <div role="group" aria-label="Filter mijn adreswijzigingen op urgentie"
+        style={{display:'flex',gap:8,flexWrap:'wrap',margin:'12px 0'}}>
+        {([
+          ['alles','Alle groepen'],['verlopen','Datum voorbij'],['week','Deze week'],
+          ['later','Later'],['zonder-datum','Zonder datum'],['gemeld','Zelf gemeld']
+        ] as const).map(([id,label])=><button type="button" key={id}
+          aria-pressed={urgencyView===id} onClick={()=>setUrgencyView(id)}
+          style={{minHeight:44,padding:'8px 10px',borderRadius:8,
+            border:'1px solid #355e42',background:urgencyView===id?'#355e42':'white',
+            color:urgencyView===id?'white':'#355e42'}}>
+          {label}
+        </button>)}
+      </div>
+      {inboxEntries.map(bucket=><div key={bucket.id}>
+        <h4>{bucket.label} · {bucket.entries.length}</h4>
+        {bucket.entries.length===0?<p>Geen eigen taken in deze groep.</p>:
+          <ul>{[...bucket.entries].sort((a,b)=>
+            (a.date||'9999-12-31').localeCompare(b.date||'9999-12-31')||
+            a.label.localeCompare(b.label,'nl-NL')).map(item=><li key={item.id}>
+            {item.date||'Geen datum'} · <a href={'#private-address-item-'+item.id}>{item.label}</a>
+            {' '}· {item.status}
+          </li>)}</ul>}
+      </div>)}
+      <p>Open je eigen taak via de link en pas daar datum en status aan.</p>
+      <button type="button" disabled={urgentActions.length===0}
+        onClick={()=>{setPendingUrgent(urgentFingerprint);setPendingExport(null);
+          setPendingCalendar(null);setNotice('');}}>
+        Bekijk privé-weekplan voor {urgentActions.length} datumtaken…
+      </button>
+      {pendingUrgent===urgentFingerprint&&urgentActions.length>0&&<div>
+        <p>Controleer de exacte privé-TXT voordat je bewust een bestand opslaat.
+          Er worden geen notities of klantnummers meegenomen.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:240,overflow:'auto'}}>
+          {urgentText}
+        </pre>
+        <button type="button" onClick={exportUrgent}>Download gecontroleerd eigen weekplan</button>
+        <button type="button" onClick={()=>setPendingUrgent(null)}>Annuleren</button>
+      </div>}
+      {pendingUrgent!==null&&pendingUrgent!==urgentFingerprint&&<p role="status">
+        Je eigen datums zijn veranderd. De eerdere downloadtoestemming is vervallen.</p>}
+    </section>
     <label htmlFor="private-address-filter">Toon eigen status</label>
     <select id="private-address-filter" value={filter}
       onChange={event=>setFilter(event.target.value as MoveAddressState|'Alles')}>
@@ -6278,7 +6369,7 @@ export function PrivateAddressChangePlanner(){
       {MOVE_ADDRESS_STATES.map(value=><option key={value}>{value}</option>)}
     </select>
     <p>{visible.length} van {items.length} meldpunten zichtbaar.</p>
-    <ol>{visible.map(item=><li key={item.id}>
+    <ol>{visible.map(item=><li key={item.id} id={'private-address-item-'+item.id}>
       <strong>{item.label}</strong>
       <label htmlFor={'private-address-status-'+item.id}>Eigen meldstatus</label>
       <select id={'private-address-status-'+item.id} value={item.status}
