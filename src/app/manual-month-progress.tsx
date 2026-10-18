@@ -3333,6 +3333,31 @@ function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorks
  * No account, vendor, backend or localStorage. Restore only after one explicit
  * confirmation that replaces all three independent browser-only modules.
  */
+
+type PrivateMovingAction = {
+  id:string;
+  title:string;
+  due:string;
+  origin:'planning'|'documents'|'overdracht'|'financieel'|'offertes';
+  href:string;
+};
+function movingLocalDate(now:Date):string{
+  return String(now.getFullYear())+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+
+    String(now.getDate()).padStart(2,'0');
+}
+function movingActionPriority(action:PrivateMovingAction,today:string|null):number {
+  if(!today||!action.due)return 3;
+  if(action.due<today)return 0;
+  if(action.due===today)return 1;
+  const day=dateOnly(action.due),current=dateOnly(today);
+  if(!day||!current)return 3;
+  return (day.getTime()-current.getTime())/86400000<=7?2:3;
+}
+function movingCalendarText(text:string):string{
+  return text.replace(/\\/g,'\\\\').replace(/[\r\n]/g,' ')
+    .replace(/,/g,'\\,').replace(/;/g,'\\;');
+}
+
 export function PrivateMovingWorkspace() {
   const [quotes,setQuotes]=useState<MovingWorkspaceArchive['quotes']|null>(null);
   const [expenses,setExpenses]=useState<MovingWorkspaceArchive['expenses']|null>(null);
@@ -3343,6 +3368,25 @@ export function PrivateMovingWorkspace() {
   const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|null>(null);
   const [pendingExport,setPendingExport]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
+  const [today,setToday]=useState<string|null>(null);
+  const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  useEffect(()=>{
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    function refresh(){
+      const now=new Date();
+      setToday(movingLocalDate(now));
+      if(timer!==undefined)window.clearTimeout(timer);
+      timer=window.setTimeout(refresh,msUntilNextLocalMidnight(now)+100);
+    }
+    refresh();
+    window.addEventListener('focus',refresh);
+    document.addEventListener('visibilitychange',refresh);
+    return()=>{
+      if(timer!==undefined)window.clearTimeout(timer);
+      window.removeEventListener('focus',refresh);
+      document.removeEventListener('visibilitychange',refresh);
+    };
+  },[]);
   useEffect(()=>{
     function capture(event:Event){
       const raw=(event as CustomEvent<unknown>).detail;
@@ -3404,6 +3448,83 @@ export function PrivateMovingWorkspace() {
   const documentItems=documents?[...READINESS_DEFAULTS,...documents.extras]:[];
   const relevantDocumentItems=documentItems.filter(doc=>documents?.states[doc.id]!=='skip');
   const readyDocumentItems=relevantDocumentItems.filter(doc=>documents?.states[doc.id]==='ready');
+  const actions:PrivateMovingAction[]=[];
+  if(timeline){
+    if(!timeline.moveDate){
+      actions.push({id:'moving-date',title:'Kies zelf een verwachte verhuisdatum',
+        due:'',origin:'planning',href:'#private-moving-day-heading'});
+    }else{
+      for(const task of [...DEFAULT_TASKS,...timeline.extras]){
+        if(timeline.completed.includes(task.id))continue;
+        actions.push({id:'task-'+task.id,title:task.title,
+          due:dayAtOffset(timeline.moveDate,task.offset),
+          origin:'planning',href:'#private-moving-day-heading'});
+      }
+    }
+  }
+  if(documents){
+    for(const doc of documentItems){
+      const status=documents.states[doc.id]||'needed';
+      if(status==='ready'||status==='skip')continue;
+      actions.push({id:'doc-'+doc.id,title:doc.title,
+        due:documents.dates[doc.id]||'',origin:'documents',
+        href:'#private-document-readiness-heading'});
+    }
+  }
+  if(handover&&timeline?.moveDate){
+    if(!handover.entries.in)actions.push({id:'handover-in',
+      title:'Controleer je eigen sleutelontvangst en meterstanden',
+      due:timeline.moveDate,origin:'overdracht',href:'#private-handover-heading'});
+    if(!handover.entries.out)actions.push({id:'handover-out',
+      title:'Controleer je eigen sleuteloverdracht en meterstanden',
+      due:timeline.moveDate,origin:'overdracht',href:'#private-handover-heading'});
+  }
+  if(quotes&&quotes.quotes.length>0&&!quotes.selected)
+    actions.push({id:'quote-choice',title:'Kies eventueel een eigen voorkeursraming',
+      due:'',origin:'offertes',href:'#private-moving-quotes-heading'});
+  if(expenses&&expenseCount===0)
+    actions.push({id:'expense-start',title:'Maak een eigen raming van je verhuiskosten',
+      due:'',origin:'financieel',href:'#private-moving-expenses-heading'});
+  else if(expenses&&known<expenseCount)
+    actions.push({id:'expense-missing',title:String(expenseCount-known)+
+      ' eigen kostenposten hebben nog geen werkelijk bedrag',
+      due:'',origin:'financieel',href:'#private-moving-expenses-heading'});
+  if(potentialMismatch)
+    actions.push({id:'split-difference',title:'Controleer het verschil tussen begroting en verdeeltotaal',
+      due:'',origin:'financieel',href:'#private-cost-split-heading'});
+  actions.sort((a,b)=>movingActionPriority(a,today)-movingActionPriority(b,today)||
+    (a.due||'9999').localeCompare(b.due||'9999')||
+    a.title.localeCompare(b.title,'nl-NL'));
+  const dueActions=actions.filter(item=>dateOnly(item.due)!==null);
+  const overdueCount=actions.filter(item=>movingActionPriority(item,today)===0).length;
+  const dueTodayCount=actions.filter(item=>movingActionPriority(item,today)===1).length;
+  const dueWeekCount=actions.filter(item=>movingActionPriority(item,today)===2).length;
+  const calendarSignature=JSON.stringify(dueActions);
+  function saveCombinedCalendar(){
+    if(!pendingCalendar||pendingCalendar!==calendarSignature||!dueActions.length){
+      setPendingCalendar(null);setNotice('Acties zijn gewijzigd. Bekijk je agenda-export opnieuw.');
+      return;
+    }
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const events=dueActions.map(item=>[
+      'BEGIN:VEVENT',
+      'UID:woonpoints-workspace-'+item.id.replace(/[^a-z0-9-]/gi,'')+'-'+
+        item.due.replace(/-/g,'')+'@local',
+      'DTSTAMP:'+stamp,
+      'DTSTART;VALUE=DATE:'+item.due.replace(/-/g,''),
+      'DTEND;VALUE=DATE:'+dayAtOffset(item.due,1).replace(/-/g,''),
+      'SUMMARY:'+movingCalendarText(item.title),
+      'DESCRIPTION:Eigen Woonpoints-planning. Datum en noodzaak zelf controleren.',
+      'END:VEVENT'
+    ].join('\r\n'));
+    const ics=['BEGIN:VCALENDAR','VERSION:2.0',
+      'PRODID:-//Woonpoints//Prive Verhuisacties//NL','CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',...events,'END:VCALENDAR',''].join('\r\n');
+    exportFile('woonpoints-prive-verhuisactiepunten.ics',ics,'text/calendar;charset=utf-8');
+    setPendingCalendar(null);
+    setNotice('Eigen agenda-ICS aangeboden. Controleer je zelfgekozen datums na import.');
+  }
+
   function exportWorkspace(){
     if(!archive||pendingExport!==signature){
       setPendingExport(null);
@@ -3481,6 +3602,42 @@ export function PrivateMovingWorkspace() {
         <a href="#private-handover-heading">Sleuteloverdracht</a>{' · '}
         <a href="#private-document-readiness-heading">Documenten</a>
       </div>
+
+      <section aria-labelledby="private-moving-actions-heading">
+        <h3 id="private-moving-actions-heading">Wat wil je nog zelf regelen?</h3>
+        <p>Eigen actieoverzicht, geen officiële toewijzing of deadline.
+          {today?' Vandaag in je lokale tijd: '+today+'.':''}
+          <strong> {overdueCount} voorbij, {dueTodayCount} vandaag en {dueWeekCount}
+          binnen zeven dagen</strong> op basis van je zelfgekozen datums.</p>
+        {!complete&&<p>Het privé-overzicht verzamelt de huidige formulierstanden.</p>}
+        {complete&&!actions.length&&<p>Geen open punten op basis van deze eigen invoer.
+          Dit betekent niet dat alle officiële verplichtingen zijn gecontroleerd.</p>}
+        <ol>{actions.slice(0,10).map(action=><li key={action.id}>
+          <strong>{action.title}</strong>{action.due?' · '+action.due:' · geen eigen datum'}
+          {movingActionPriority(action,today)===0?' · zelf gekozen datum voorbij':
+            movingActionPriority(action,today)===1?' · zelf gekozen datum vandaag':
+            movingActionPriority(action,today)===2?' · binnen zeven dagen':''}
+          {' · '}<a href={action.href}>Open onderdeel</a>
+        </li>)}</ol>
+        {actions.length>10&&<p>Er staan nog {actions.length-10} andere eigen punten open.
+          Open de betreffende planning of documentenlijst voor alle details.</p>}
+        <p>Alleen nog open, zelf gedateerde planning- en documentenpunten worden
+          samen als dagvullende agendapunten aangeboden. Geen notificaties of automatische synchronisatie.</p>
+        <button type="button" disabled={!complete||!dueActions.length} onClick={()=>{
+          setPendingCalendar(calendarSignature);setNotice('');
+        }}>Bekijk gezamenlijke agenda-export ({dueActions.length} eigen datums)…</button>
+        {pendingCalendar===calendarSignature&&dueActions.length>0&&
+          <div role="group" aria-label="Bevestig gezamenlijke privé-agenda-export">
+            <p>Je exporteert {dueActions.length} zelf gedateerde, nog open acties.
+              Datums, persoonlijke taaknamen en documentomschrijvingen kunnen in je agenda terechtkomen.
+              Controleer ook eventueel al verstreken datums.</p>
+            <ul>{dueActions.map(action=><li key={action.id}>
+              {action.due} · {action.title}
+            </li>)}</ul>
+            <button type="button" onClick={saveCombinedCalendar}>Bevestig gezamenlijke .ics-download</button>
+            <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
+          </div>}
+      </section>
       <h3>Je eigen volledige werkmap bewaren</h3>
       <p>Deze gecombineerde privé-JSON bevat ook alle zelf ingevoerde namen, notities,
         betaalbedragen, offertes, verhuisdata, sleutel- en meterstanden en documentenstatus.
