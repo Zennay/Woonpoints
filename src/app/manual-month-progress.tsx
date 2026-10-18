@@ -3729,6 +3729,12 @@ export function PrivateMovingWorkspace() {
   const [notice,setNotice]=useState('');
   const [today,setToday]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [calendarPreview,setCalendarPreview]=useState<string|null>(null);
+  const [calendarOrigins,setCalendarOrigins]=useState<Array<'planning'|'documents'|'overdracht'|'adres'>>(['planning','documents']);
+  const [calendarWhen,setCalendarWhen]=useState<'upcoming'|'all'>('upcoming');
+  const [calendarPrivacy,setCalendarPrivacy]=useState<'generic'|'titles'>('generic');
+  const [actionScope,setActionScope]=useState<'all'|'urgent'|'dated'|'undated'>('all');
+  const [showAllActions,setShowAllActions]=useState(false);
   const [reportSections,setReportSections]=useState<MovingReportSection[]>(['timeline','documents']);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [pendingMoveDay,setPendingMoveDay]=useState<string|null>(null);
@@ -3905,11 +3911,26 @@ export function PrivateMovingWorkspace() {
   actions.sort((a,b)=>movingActionPriority(a,today)-movingActionPriority(b,today)||
     (a.due||'9999').localeCompare(b.due||'9999')||
     a.title.localeCompare(b.title,'nl-NL'));
-  const dueActions=actions.filter(item=>dateOnly(item.due)!==null);
+  const calendarChoices=[
+    {id:'planning',name:'Verhuisplanning',privacy:'Zelfgekozen taaknamen'},
+    {id:'documents',name:'Documenten',privacy:'Eigen documentomschrijvingen'},
+    {id:'overdracht',name:'Sleuteloverdracht',privacy:'Overdrachtsacties'},
+    {id:'adres',name:'Adreswijzigingen',privacy:'Eigen meldpuntnamen'}
+  ] as const;
+  const dueActions=actions.filter(item=>dateOnly(item.due)!==null&&
+    (calendarOrigins as string[]).includes(item.origin)&&
+    (calendarWhen==='all'||(today!==null&&item.due>=today)));
+  const filteredActions=actions.filter(item=>actionScope==='all'||
+    (actionScope==='undated'&&!item.due)||
+    (actionScope==='dated'&&!!item.due)||
+    (actionScope==='urgent'&&movingActionPriority(item,today)<=2));
+  const visibleActions=showAllActions?filteredActions:filteredActions.slice(0,10);
   const overdueCount=actions.filter(item=>movingActionPriority(item,today)===0).length;
   const dueTodayCount=actions.filter(item=>movingActionPriority(item,today)===1).length;
   const dueWeekCount=actions.filter(item=>movingActionPriority(item,today)===2).length;
-  const calendarSignature=JSON.stringify(dueActions);
+  const calendarSignature=JSON.stringify({
+    signature,today,calendarOrigins,calendarWhen,calendarPrivacy,dueActions
+  });
   const reportSignature=JSON.stringify({signature,reportSections,today,calendarSignature});
   const report=archive&&reportSections.length?
     buildPrivateMovingReport(archive,reportSections,actions,today):null;
@@ -3934,29 +3955,48 @@ export function PrivateMovingWorkspace() {
     setPendingReport(null);
     setNotice('Privé-verhuisdossier lokaal aangeboden. Deel of bewaar het alleen bewust.');
   }
-  function saveCombinedCalendar(){
-    if(!pendingCalendar||pendingCalendar!==calendarSignature||!dueActions.length){
-      setPendingCalendar(null);setNotice('Acties zijn gewijzigd. Bekijk je agenda-export opnieuw.');
+  function prepareCombinedCalendar(){
+    if(!complete||!dueActions.length){
+      setPendingCalendar(null);setCalendarPreview(null);
+      setNotice('Geen eigen, gedateerde acties binnen je geselecteerde agenda-instellingen.');
       return;
     }
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
-    const events=dueActions.map(item=>[
-      'BEGIN:VEVENT',
-      'UID:woonpoints-workspace-'+item.id.replace(/[^a-z0-9-]/gi,'')+'-'+
-        item.due.replace(/-/g,'')+'@local',
-      'DTSTAMP:'+stamp,
-      'DTSTART;VALUE=DATE:'+item.due.replace(/-/g,''),
-      'DTEND;VALUE=DATE:'+dayAtOffset(item.due,1).replace(/-/g,''),
-      'SUMMARY:'+movingCalendarText(item.title),
-      'DESCRIPTION:Eigen Woonpoints-planning. Datum en noodzaak zelf controleren.',
-      'END:VEVENT'
-    ].join('\r\n'));
-    const ics=['BEGIN:VCALENDAR','VERSION:2.0',
+    const lines=['BEGIN:VCALENDAR','VERSION:2.0',
       'PRODID:-//Woonpoints//Prive Verhuisacties//NL','CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',...events,'END:VCALENDAR',''].join('\r\n');
-    exportFile('woonpoints-prive-verhuisactiepunten.ics',ics,'text/calendar;charset=utf-8');
-    setPendingCalendar(null);
-    setNotice('Eigen agenda-ICS aangeboden. Controleer je zelfgekozen datums na import.');
+      'METHOD:PUBLISH'];
+    for(const [index,item] of dueActions.entries()){
+      const genericName={
+        planning:'Eigen verhuisplanning',documents:'Eigen documentcontrole',
+        overdracht:'Eigen sleuteloverdracht',adres:'Eigen adrescontrole'
+      }[item.origin as 'planning'|'documents'|'overdracht'|'adres']||'Eigen verhuisactie';
+      const title=calendarPrivacy==='titles'?item.title:genericName;
+      // Use position-based identifiers instead of raw user task IDs: even the
+      // generic privacy mode must not expose custom IDs in calendar metadata.
+      lines.push('BEGIN:VEVENT',
+        'UID:woonpoints-private-'+String(index+1)+'-'+item.due.replace(/-/g,'')+'@local',
+        'DTSTAMP:'+stamp,
+        'DTSTART;VALUE=DATE:'+item.due.replace(/-/g,''),
+        'DTEND;VALUE=DATE:'+dayAtOffset(item.due,1).replace(/-/g,''),
+        'SUMMARY:'+movingCalendarText(title),
+        'DESCRIPTION:Eigen, niet geverifieerde Woonpoints-actie. Controleer datum en noodzaak zelf.',
+        'END:VEVENT');
+    }
+    lines.push('END:VCALENDAR','');
+    setCalendarPreview(lines.join('\r\n'));
+    setPendingCalendar(calendarSignature);setNotice('');
+  }
+  function saveCombinedCalendar(){
+    if(!complete||!pendingCalendar||pendingCalendar!==calendarSignature||
+      !calendarPreview||!dueActions.length){
+      setPendingCalendar(null);setCalendarPreview(null);
+      setNotice('Brongegevens, dag of agendakeuze gewijzigd. Bekijk de exacte export opnieuw.');
+      return;
+    }
+    exportFile('woonpoints-prive-verhuisactiepunten.ics',calendarPreview,
+      'text/calendar;charset=utf-8');
+    setPendingCalendar(null);setCalendarPreview(null);
+    setNotice('Eigen gecontroleerde agenda-ICS aangeboden. Geen extern account of notificatie gebruikt.');
   }
 
   function exportWorkspace(){
@@ -4111,31 +4151,106 @@ export function PrivateMovingWorkspace() {
         {!complete&&<p>Het privé-overzicht verzamelt de huidige formulierstanden.</p>}
         {complete&&!actions.length&&<p>Geen open punten op basis van deze eigen invoer.
           Dit betekent niet dat alle officiële verplichtingen zijn gecontroleerd.</p>}
-        <ol>{actions.slice(0,10).map(action=><li key={action.id}>
+        <div role="group" aria-label="Filter persoonlijke verhuisacties"
+          style={{display:'flex',flexWrap:'wrap',gap:8,margin:'12px 0'}}>
+          {([
+            ['all','Alles'],['urgent','Verlopen, vandaag en komende week'],
+            ['dated','Met datum'],['undated','Zonder datum']
+          ] as const).map(([id,label])=><button key={id} type="button"
+            aria-pressed={actionScope===id}
+            onClick={()=>{setActionScope(id);setShowAllActions(false);}}
+            style={{minHeight:44,padding:'8px 12px',
+              border:'1px solid #355e42',borderRadius:8,
+              background:actionScope===id?'#355e42':'white',
+              color:actionScope===id?'white':'#355e42'}}>{label}</button>)}
+        </div>
+        <p role="status">{filteredActions.length} van {actions.length} eigen acties in deze selectie.</p>
+        <ol>{visibleActions.map(action=><li key={action.id}>
           <strong>{action.title}</strong>{action.due?' · '+action.due:' · geen eigen datum'}
           {movingActionPriority(action,today)===0?' · zelf gekozen datum voorbij':
             movingActionPriority(action,today)===1?' · zelf gekozen datum vandaag':
             movingActionPriority(action,today)===2?' · binnen zeven dagen':''}
           {' · '}<a href={action.href}>Open onderdeel</a>
         </li>)}</ol>
-        {actions.length>10&&<p>Er staan nog {actions.length-10} andere eigen punten open.
-          Open de betreffende planning of documentenlijst voor alle details.</p>}
-        <p>Alleen nog open, zelf gedateerde planning- en documentenpunten worden
-          samen als dagvullende agendapunten aangeboden. Geen notificaties of automatische synchronisatie.</p>
-        <button type="button" disabled={!complete||!dueActions.length} onClick={()=>{
-          setPendingCalendar(calendarSignature);setNotice('');
-        }}>Bekijk gezamenlijke agenda-export ({dueActions.length} eigen datums)…</button>
-        {pendingCalendar===calendarSignature&&dueActions.length>0&&
-          <div role="group" aria-label="Bevestig gezamenlijke privé-agenda-export">
-            <p>Je exporteert {dueActions.length} zelf gedateerde, nog open acties.
-              Datums, persoonlijke taaknamen en documentomschrijvingen kunnen in je agenda terechtkomen.
-              Controleer ook eventueel al verstreken datums.</p>
-            <ul>{dueActions.map(action=><li key={action.id}>
-              {action.due} · {action.title}
-            </li>)}</ul>
-            <button type="button" onClick={saveCombinedCalendar}>Bevestig gezamenlijke .ics-download</button>
-            <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
-          </div>}
+        {filteredActions.length>10&&<button type="button"
+          onClick={()=>setShowAllActions(!showAllActions)}
+          style={{minHeight:44,margin:'8px 0'}}>
+          {showAllActions?'Toon alleen de eerste tien':'Toon alle '+filteredActions.length+' eigen acties'}
+        </button>}
+        <section aria-labelledby="private-workspace-calendar-heading">
+          <h4 id="private-workspace-calendar-heading">Mijn veilige privé-agenda samenstellen</h4>
+          <p>Kies bewust welke soorten eigen acties meegaan in een lokaal ICS-bestand.
+            Alleen je nog open zelfgedateerde acties worden meegenomen. Standaard zijn
+            officiële adressen, vrije taaknamen en identiteiten niet opgenomen:
+            de agenda toont dan neutrale actietitels per categorie. Geen verzonden notificaties,
+            accountverbindingen of officiële termijnen.</p>
+          <fieldset>
+            <legend>Kies welke privé-onderdelen je in je agenda wilt</legend>
+            {calendarChoices.map(choice=><label key={choice.id} style={{display:'block',margin:'8px 0'}}>
+              <input type="checkbox" checked={calendarOrigins.includes(choice.id)}
+                onChange={event=>{
+                  setCalendarOrigins(current=>event.target.checked?
+                    [...current,choice.id]:current.filter(id=>id!==choice.id));
+                  setPendingCalendar(null);setCalendarPreview(null);
+                }}/>
+              {choice.name} <small>({choice.privacy})</small>
+            </label>)}
+          </fieldset>
+          <fieldset>
+            <legend>Welke eigen controledatums?</legend>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-range"
+                checked={calendarWhen==='upcoming'} onChange={()=>{
+                  setCalendarWhen('upcoming');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Vandaag en later (standaard)
+            </label>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-range"
+                checked={calendarWhen==='all'} onChange={()=>{
+                  setCalendarWhen('all');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Ook verstreken eigen datums
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Privacy van agendatitels</legend>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-privacy"
+                checked={calendarPrivacy==='generic'} onChange={()=>{
+                  setCalendarPrivacy('generic');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Neutrale titels, zonder zelf ingevoerde taaknamen (standaard)
+            </label>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-privacy"
+                checked={calendarPrivacy==='titles'} onChange={()=>{
+                  setCalendarPrivacy('titles');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Mijn eigen taaknamen in de agenda (kan privé-informatie bevatten)
+            </label>
+          </fieldset>
+          <p role="status">{dueActions.length} open, zelfgedateerde acties in deze selectie.
+            {' '}Alles blijft in het huidige tabblad totdat jij bewust exporteert.</p>
+          <button type="button" disabled={!complete||!dueActions.length}
+            onClick={prepareCombinedCalendar} style={{minHeight:44}}>
+            Bekijk exacte agenda-inhoud ({dueActions.length} acties)…
+          </button>
+          {pendingCalendar===calendarSignature&&calendarPreview&&dueActions.length>0&&
+            <div role="group" aria-label="Bevestig gecontroleerde privé-agenda">
+              <p>Controleer hieronder de exacte kalenderbron, inclusief datums,
+                titels en technische event-identificaties. De gekozen opslaglocatie
+                kan agenda-inhoud synchroniseren. Dit bestand wordt niet verstuurd.</p>
+              <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+                maxHeight:'25rem',overflowY:'auto'}}>{calendarPreview}</pre>
+              <button type="button" onClick={saveCombinedCalendar}>
+                Bevestig download van deze exacte ICS
+              </button>
+              <button type="button" onClick={()=>{
+                setPendingCalendar(null);setCalendarPreview(null);
+              }}>Annuleren</button>
+            </div>}
+          {pendingCalendar!==null&&pendingCalendar!==calendarSignature&&<p role="status">
+            Je gegevens of de kalenderdag zijn gewijzigd. De eerdere goedkeuring
+            is vervallen; bekijk de nieuwe agenda voordat je downloadt.
+          </p>}
+        </section>
       </section>
       <section aria-labelledby="private-moving-report-heading">
         <h3 id="private-moving-report-heading">Maak een leesbaar verhuisdossier</h3>
