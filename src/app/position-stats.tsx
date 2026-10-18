@@ -322,6 +322,11 @@ export function ManualReactionJournal({
   const [monthFilter, setMonthFilter] = useState('all');
   const [message, setMessage] = useState('');
   const [pendingImport, setPendingImport] = useState<JournalItem[] | null>(null);
+  const [pendingImportSource, setPendingImportSource] = useState<string | null>(null);
+  const [mergeUndo, setMergeUndo] = useState<{
+    previous: JournalItem[]; mergedSignature: string; previousNextId: number
+  } | null>(null);
+  const importSequence = useRef(0);
   const [recentlyRemoved,setRecentlyRemoved] = useState<{item:JournalItem;index:number}|null>(null);
   const [confirmClearAll,setConfirmClearAll] = useState(false);
   const [editingId,setEditingId] = useState<number|null>(null);
@@ -335,6 +340,19 @@ export function ManualReactionJournal({
     .filter(row => monthFilter === 'all' || row.date.slice(0, 7) === monthFilter)
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const rowCount = journal.total;
+  const currentJournalSignature = JSON.stringify(entries);
+  const importStillCurrent = pendingImport !== null &&
+    pendingImportSource === currentJournalSignature;
+  const importWouldExceedLimit = Boolean(pendingImport && entries.length + pendingImport.length > 100);
+  // The CSV has no record identity. These are warnings only: distinct housing reactions
+  // can legitimately have the same date, status and final position.
+  const recordKey = (row: JournalItem) =>
+    JSON.stringify([row.date,row.status,row.rank,row.total]);
+  const importedSameFields = pendingImport?.filter(row =>
+    entries.some(existing => recordKey(existing) === recordKey(row))).length ?? 0;
+  const mayUndoMerge = mergeUndo !== null &&
+    mergeUndo.mergedSignature === currentJournalSignature;
+
   const currentJournalMonth = reportMonth ?? localMonthKey(new Date());
   const todayJournalDate = (() => {
     const now = new Date();
@@ -521,7 +539,10 @@ export function ManualReactionJournal({
   }
 
   async function prepareImport(file?: File) {
+    const sequence=++importSequence.current;
+    const source=JSON.stringify(entries);
     setPendingImport(null);
+    setPendingImportSource(null);
     setEditingId(null);
     setConfirmClearAll(false);
     if (!file) return;
@@ -531,13 +552,64 @@ export function ManualReactionJournal({
     }
     try {
       const restored = importManualReactionJournalCsv(await file.text());
+      if(sequence!==importSequence.current)return; // A later file selection wins.
       setPendingImport(restored.map((row, index) => ({
         ...row, id: index + 1, status: row.status as JournalStatus
       })));
-      setMessage('Import gecontroleerd. Bevestig apart of je huidige notities wilt vervangen.');
+      setPendingImportSource(source);
+      setMessage('Geldig eigen CSV-bestand gelezen. Kies bewust vervangen of aanvullen.');
     } catch {
+      if(sequence!==importSequence.current)return;
       setMessage('Import geweigerd: onbekend of beschadigd CSV-bestand; invoer onveranderd.');
     }
+  }
+  function applyJournalImport(mode: 'replace' | 'append') {
+    if (!pendingImport || !importStillCurrent || editingId !== null) {
+      setMessage('Je dagboek veranderde sinds de CSV-selectie. Selecteer opnieuw of annuleer; niets aangepast.');
+      return;
+    }
+    if (mode === 'append' && importWouldExceedLimit) {
+      setMessage('Aanvullen geweigerd: meer dan 100 notities. Bewaar je huidige CSV en kies zelf welke notities je behoudt.');
+      return;
+    }
+    const startId=Math.max(nextId,1,...entries.map(row=>row.id+1));
+    const candidate: JournalItem[]=mode==='append'
+      ? [...entries,...pendingImport.map((row,index)=>({...row,id:startId+index}))]
+      : pendingImport.map((row,index)=>({...row,id:index+1}));
+    try {
+      summarizeManualReactionJournal(candidate);
+      // Preserve a single, RAM-only snapshot solely for undoing one fresh append.
+      setMergeUndo(mode==='append'?{
+        previous:entries.map(row=>({...row})),
+        mergedSignature:JSON.stringify(candidate),
+        previousNextId:nextId
+      }:null);
+      setEntries(candidate);
+      setNextId(mode==='append'?startId+pendingImport.length:candidate.length+1);
+      setPendingImport(null);
+      setPendingImportSource(null);
+      setRecentlyRemoved(null);
+      setConfirmClearAll(false);
+      setMonthFilter('all');
+      setMessage(mode==='append'
+        ? 'Eigen CSV-notities toegevoegd zonder eerdere notities te vervangen. Eén terugzetactie is tijdelijk beschikbaar.'
+        : 'Eigen CSV-notities hebben de oude tabbladgegevens na jouw bevestiging vervangen.');
+    } catch {
+      setMessage('Combineren niet mogelijk binnen de 100-notitiesgrens of geldige gegevens. Niets veranderd.');
+    }
+  }
+  function undoLastJournalAppend() {
+    if (!mergeUndo || !mayUndoMerge || pendingImport || editingId !== null) {
+      setMessage('Terugzetten is niet veilig na wijzigingen of tijdens een import. De huidige notities blijven staan.');
+      return;
+    }
+    setEntries(mergeUndo.previous.map(row=>({...row})));
+    setNextId(mergeUndo.previousNextId);
+    setMergeUndo(null);
+    setRecentlyRemoved(null);
+    setConfirmClearAll(false);
+    setMonthFilter('all');
+    setMessage('De laatst aangevulde CSV-notities zijn teruggedraaid. Je eerdere tabbladnotities zijn hersteld.');
   }
 
   return (
@@ -595,23 +667,58 @@ export function ManualReactionJournal({
             }} />
         </div>
         {pendingImport && (
-          <div className="journal-confirm" role="group" aria-label="Bevestig import">
-            <p>Je CSV bevat {pendingImport.length} eigen notities.
-              Vervangen verwijdert de huidige {entries.length} notities uit dit tabblad.</p>
-            <button type="button" onClick={() => {
-              setEntries(pendingImport);
-              setRecentlyRemoved(null);
-              setConfirmClearAll(false);
-              setNextId(pendingImport.length + 1);
-              setPendingImport(null);
-              setMonthFilter('all');
-              setMessage('Eigen notities lokaal vervangen; niet geverifieerd door WoningNet.');
-            }}>Vervang huidige notities</button>
-            <button type="button" onClick={() => {
-              setPendingImport(null); setMessage('Import geannuleerd; notities behouden.');
-            }}>Annuleren</button>
+          <div className="journal-confirm" role="group" aria-label="Kies privé-CSV-importwijze">
+            <h3>Bewaar huidige notities of vul ze aan</h3>
+            <p>Gekozen bestand: <strong>{pendingImport.length}</strong> eigen notities.
+              Huidig tabblad: <strong>{entries.length}</strong> notities.</p>
+            {!importStillCurrent && <p role="alert">De bestaande notities zijn veranderd
+              nadat dit bestand werd gekozen. Annuleer en selecteer de CSV opnieuw;
+              de oude importtoestemming is ongeldig.</p>}
+            {importedSameFields > 0 && <p role="status">
+              <strong>{importedSameFields}</strong> bestandsregel{importedSameFields===1?' lijkt':'s lijken'} op
+              bestaande datum/status/positiegegevens. Dit zijn géén bewezen duplicaten:
+              twee verschillende woningen kunnen exact dezelfde eigen velden hebben.
+              Controleer je bron-CSV zelf; er wordt niets stilzwijgend gededupliceerd.</p>}
+            <p><strong>Aanvullen:</strong> behoud alle bestaande notities en voeg de volledige
+              nieuwe CSV toe met eigen unieke tabblad-ID&apos;s.
+              Na aanvullen: <strong>{entries.length+pendingImport.length}</strong> van maximaal 100.
+              Een laatste aanvulling is één keer terug te draaien zolang je niets anders wijzigt.</p>
+            {importWouldExceedLimit && <p role="alert">Aanvullen past niet binnen de
+              grens van 100 notities. Je huidige data wordt niet ingekort.</p>}
+            <button type="button" disabled={!importStillCurrent || importWouldExceedLimit}
+              onClick={() => applyJournalImport('append')}>
+              Voeg CSV-notities toe zonder huidige te wissen
+            </button>
+            <p><strong>Vervangen:</strong> overschrijf alle {entries.length} huidige
+              eigen notities, pas na je afzonderlijke bevestiging hieronder.
+              Maak desgewenst eerst je eigen CSV-back-up.</p>
+            <button type="button" disabled={!importStillCurrent}
+              onClick={() => applyJournalImport('replace')}>
+              Vervang alle huidige notities bewust
+            </button>
+            <button type="button" className="secondary" onClick={() => {
+              setPendingImport(null); setPendingImportSource(null);
+              setMessage('CSV-import geannuleerd; al je huidige notities behouden.');
+            }}>Annuleer zonder wijzigingen</button>
           </div>
         )}
+        {mergeUndo && <div className="journal-confirm" role="group"
+          aria-label="Laatste CSV-aanvulling terugzetten">
+          <h3>Mijn laatste CSV-aanvulling</h3>
+          <p>Vorige tabbladstatus: {mergeUndo.previous.length} eigen notities.
+            Alle nieuw toegevoegde CSV-rijen kunnen samen teruggedraaid worden
+            zolang je daarna niets in dit dagboek hebt aangepast of geïmporteerd.</p>
+          {!mayUndoMerge && <p role="status">Je dagboek is na aanvullen veranderd.
+            Automatisch terugdraaien is geblokkeerd om nieuwe invoer te beschermen.</p>}
+          <button type="button" disabled={!mayUndoMerge || Boolean(pendingImport) || editingId!==null}
+            onClick={undoLastJournalAppend}>Herstel vorige tabbladnotities</button>
+          <button type="button" className="secondary" onClick={() => {
+            setMergeUndo(null);
+            setMessage('Tijdelijk herstelpunt verwijderd; huidige reactienotities behouden.');
+          }}>Verwerp dit herstelpunt</button>
+          <p>Het herstelpunt is alleen in het geheugen van dit browsertabblad.
+            Sluiten wist het herstelpunt; eigen opgeslagen CSV-bestanden blijven apart bestaan.</p>
+        </div>}
         {message && <p role="status">{message}</p>}
         {recentlyRemoved && <div className="journal-confirm" role="group"
           aria-label="Herstel laatste verwijderde notitie">
