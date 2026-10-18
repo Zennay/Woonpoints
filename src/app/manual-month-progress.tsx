@@ -1311,7 +1311,7 @@ export function PrivateMovingVolume() {
     setItems(previous=>[...previous,{
       id:nextId.current++,name,width,depth,height,quantity:'1'
     }]);
-    setPreview(null);setMessage('');
+    setPackPreview(null);setPreview(null);setMessage('');
   };
   function exportOwnInventory(){
     if(!safeTotal){setMessage('Herstelbestand kan alleen worden bewaard bij geldige invoer.');return;}
