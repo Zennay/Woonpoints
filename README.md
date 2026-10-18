@@ -861,3 +861,44 @@ accountvelden, maakt geen netwerkverzoeken, slaat niets automatisch
 op en stuurt nooit gegevens naar WoningNet. Verversen/wissen verwijdert
 de invoer van het scherm. De bestaande shortlist, woningvergelijker,
 privé-notities en `BOT_DRY_RUN=true` blijven volledig onafhankelijk.
+
+
+## Zelf je verhuisvolume en mogelijke ritten inschatten
+
+De nieuwe sectie **Verhuisvolume** helpt bij het handmatig noteren van
+eigen meubels, apparaten en dozen. Drie fictieve voorbeelden zijn ingevuld
+en kunnen direct worden aangepast of verwijderd. Je kunt maximaal 25
+regels opnemen, elk met een korte eigen naam, breedte/diepte/hoogte in
+**centimeters** en aantal stuks.
+
+Per regel wordt de rechthoekige volume-omhulling berekend:
+`breedte_cm × diepte_cm × hoogte_cm × aantal / 1.000.000`
+in kubieke meters. De gebruiker kiest zelf een extra
+laadruimtepercentage (0–50%) en de **zelf geverifieerde bruikbare m³
+per rit** (1–30). Het scherm toont het totale volume inclusief reserve
+en een afgeronde, **uitsluitend volumematige ondergrens** van het
+aantal ritten. Een werkelijk passend verhuisvoertuig of veilig aantal
+ritten volgt hier nooit automatisch uit: sommige meubels zijn niet
+stapelbaar, passen niet door deuropeningen of overschrijden laadgewicht,
+massa-/aslast, vergunning-, rijbewijs- of veiligheidsregels.
+
+De calculator weigert ongeldige afmetingen/aantallen en volumes buiten
+de begrenzing. Via een **bewust bekeken concept** kan de gebruiker
+uitsluitend de eigen itemlijst en som als TXT downloaden;
+Daarnaast kan een volledige inventaris inclusief eigen afmetingen,
+hoeveelheden, reserveruimte en capaciteit na expliciete klik als
+kleine versie-1 **privé-JSON (max. 8 KiB)** worden opgeslagen. Terugzetten
+vereist het ongewijzigde Woonpoints-exportformaat, sluit ongeldige
+waarden/duplicaatvelden/extra sleutels uit en stelt een aparte
+**bevestiging voordat huidige gegevens worden vervangen**. Een gewijzigd
+huidig formulier maakt een eerder gekozen herstelvoorstel ongeldig.
+Bij afwijzing blijft alle huidige invoer behouden; import/export heeft
+geen invloed op andere Woonpoints-onderdelen of eerdere downloads. de knop biedt
+geen automatische agenda-, account- of backendactie. Persoonlijke
+itemnamen kunnen privé zijn: controleer de export zelf voor opslaan.
+
+Er is geen browseropslag, fotoverwerking, tariefzoeker, accounttoegang,
+WoningNet-integratie of VPS-werklast. Wissen/verversen verwijdert de
+gegevens uit de app, maar niet eventuele zelf gedownloade bestanden.
+De bestaande verhuischecklist, woningvergelijking en
+`BOT_DRY_RUN=true` worden niet gewijzigd.

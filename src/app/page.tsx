@@ -1,5 +1,6 @@
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison } from './position-stats';
 import PositionStats from './position-stats';
+import { PrivateMovingVolume } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
 const cards = [
@@ -42,6 +43,7 @@ export default function HomePage() {
             ['private-photo-comparison-heading', 'Fotovergelijking'],
             ['private-plan-title', 'Planner'],
             ['private-moving-heading', 'Verhuizen'],
+            ['private-moving-volume-heading', 'Verhuisvolume'],
             ['position-stats-heading', 'Posities'],
             ['monthly-positions-heading', 'Maandtrend']
           ] as const).map(([id, title]) =>
@@ -70,6 +72,7 @@ export default function HomePage() {
       <ManualHousingDecisionWorkspace />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
+      <PrivateMovingVolume />
 
       <section className="panel">
         <div>
