@@ -576,3 +576,25 @@ hoeveel werk er nog resteert. Een eigen taak kan worden verwijderd.
 - Er is geen koppeling met het privé-reactiedagboek, zoekpunten of
   WoningNet. Het project blijft in dry-run tot afzonderlijke
   toestemming-, bron- en releasevoorwaarden zijn vervuld.
+
+
+## Privé-agendaconcept van de huidige reactiemaand bewaren
+
+De bestaande handmatige maandplanning kan nu ook **eigen agendaconcepten**
+bewaren en opnieuw openen, los van de optionele ICS-export. Kies maximaal vier
+zelfbedachte reactiemomenten met een lokale begintijd en gezamenlijke duur.
+Met **Bewaar agendaconcept als privé-JSON** download je alleen de maand,
+het aantal nog open eigen momenten, de gekozen dagen/tijden en duur. De teller
+met zelf genoteerde reacties staat *niet* in dit bestand. Er vindt nooit een
+automatische agendaboeking of accountreactie plaats.
+
+Via **Open eigen agendaconcept** lees je alleen een JSON-bestand van maximaal
+4 KiB in: exact bekend versieformaat/velden, huidige kalendermaand, hetzelfde
+aantal open eigen momenten, geldige unieke nog komende dagen, 24-uurs begintijd
+en afspraak die vóór middernacht eindigt. Een apart bevestigingspaneel toont
+de ingelezen keuzes; pas **Vervang mijn agenda-keuzes** past uitsluitend deze
+tijdelijke instellingen toe. Geweigerde of geannuleerde import laat alles
+ongewijzigd. Bij een nieuwe kalendermaand of gewijzigde eigen voortgang
+vervalt een oud herstelvoorstel. Je eigen reactieteller en opgeslagen
+Woonpoints-notitie worden nooit door agenda-import geschreven of vervangen.
+Een gekozen downloadlocatie kan buiten deze app synchroniseren.
