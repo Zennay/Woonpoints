@@ -2110,3 +2110,191 @@ export function PrivateLongTermHousingCosts() {
     </section>
   );
 }
+
+
+/** A standalone, evidence-free, user-controlled viewing checklist for two private options. */
+type PrivateViewingRating = 'unknown' | 'good' | 'concern' | 'bad';
+type PrivateViewingAnswer = { must: boolean; a: PrivateViewingRating; b: PrivateViewingRating };
+const PRIVATE_VIEWING_TOPICS = [
+  {id:'ventilation', label:'Ventilatie en frisse lucht'},
+  {id:'damp', label:'Zichtbaar vocht of schimmel'},
+  {id:'noise', label:'Geluid van buiten en buren'},
+  {id:'light', label:'Daglicht en privacy'},
+  {id:'condition', label:'Staat van keuken en sanitair'},
+  {id:'windows', label:'Ramen, tocht en isolatie'},
+  {id:'safety', label:'Veilige toegang en verlichting'},
+  {id:'storage', label:'Berging en praktische ruimte'},
+  {id:'travel', label:'Eigen reistijd en bereikbaarheid'},
+  {id:'outdoor', label:'Buitenruimte en omgeving'}
+] as const;
+const PRIVATE_VIEWING_RATINGS: PrivateViewingRating[] = ['unknown','good','concern','bad'];
+const newPrivateViewingAnswers = (): PrivateViewingAnswer[] =>
+  PRIVATE_VIEWING_TOPICS.map(() => ({must:false,a:'unknown',b:'unknown'}));
+
+export function PrivateHousingViewingChecklist() {
+  const [entries, setEntries] = useState<PrivateViewingAnswer[]>(newPrivateViewingAnswers);
+  const [pendingRestore, setPendingRestore] = useState<PrivateViewingAnswer[] | null>(null);
+  const [message, setMessage] = useState('');
+  function change(index: number, field: keyof PrivateViewingAnswer, value: boolean | PrivateViewingRating) {
+    setEntries(current => current.map((entry, i) =>
+      i === index ? {...entry,[field]:value} : entry));
+    setPendingRestore(null);
+    setMessage('');
+  }
+  const summary = (key: 'a' | 'b') => {
+    const examined = entries.filter(item => item[key] !== 'unknown');
+    return {
+      good: examined.filter(item => item[key] === 'good').length,
+      concerns: examined.filter(item => item[key] === 'concern' || item[key] === 'bad').length,
+      essential: examined.filter(item => item.must && (item[key] === 'concern' || item[key] === 'bad')).length,
+      unknown: entries.length-examined.length
+    };
+  };
+  const a = summary('a'), b = summary('b');
+  function exportJson() {
+    const payload = {
+      format:'woonpoints-private-viewing-v1',
+      entries:entries.map((row, i) => ({id:PRIVATE_VIEWING_TOPICS[i].id,
+        must:row.must,a:row.a,b:row.b}))
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)+'\n'],
+      {type:'application/json;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-prive-bezichtigingschecklist.json';
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url),2000);
+    setMessage('Eigen checklist als JSON aangeboden voor bewuste lokale opslag.');
+  }
+  async function prepareRestore(file: File | undefined) {
+    setPendingRestore(null);
+    if (!file) return;
+    if (file.size === 0 || file.size > 8192) {
+      setMessage('Bestand geweigerd: maximaal 8 KiB toegestaan.');
+      return;
+    }
+    try {
+      const json: unknown = JSON.parse(await file.text());
+      if (!json || typeof json !== 'object' || Array.isArray(json)) throw Error('object');
+      const root = json as Record<string,unknown>;
+      if (Object.keys(root).sort().join('|') !== 'entries|format' ||
+          root.format !== 'woonpoints-private-viewing-v1' || !Array.isArray(root.entries) ||
+          root.entries.length !== PRIVATE_VIEWING_TOPICS.length) throw Error('format');
+      const restored: PrivateViewingAnswer[] = root.entries.map((candidate: unknown, i: number) => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+          throw Error('row');
+        const row = candidate as Record<string,unknown>;
+        if (Object.keys(row).sort().join('|') !== 'a|b|id|must' ||
+            row.id !== PRIVATE_VIEWING_TOPICS[i].id ||
+            typeof row.must !== 'boolean' ||
+            !PRIVATE_VIEWING_RATINGS.includes(row.a as PrivateViewingRating) ||
+            !PRIVATE_VIEWING_RATINGS.includes(row.b as PrivateViewingRating)) throw Error('rating');
+        return {must:row.must,a:row.a as PrivateViewingRating,b:row.b as PrivateViewingRating};
+      });
+      setPendingRestore(restored);
+      setMessage('Geldig privébestand gelezen. De huidige checklist blijft behouden tot je vervangen bevestigt.');
+    } catch {
+      setMessage('Bestand geweigerd: alleen een ongewijzigd Woonpoints-checklistformaat wordt geaccepteerd.');
+    }
+  }
+  const ratings = [
+    {value:'unknown',label:'Niet beoordeeld'},
+    {value:'good',label:'Goed'},
+    {value:'concern',label:'Twijfel / verder uitzoeken'},
+    {value:'bad',label:'Ongunstig'}
+  ] as const;
+  return (
+    <section className="panel private-budget" aria-labelledby="private-viewing-title">
+      <div>
+        <p className="eyebrow">EIGEN BEZICHTIGING · PRIVÉ BESLISSTEUN</p>
+        <h2 id="private-viewing-title">Vergelijk wat je zelf hebt gezien</h2>
+        <p>Beoordeel tien praktische punten voor woning A en B. Markeer wat voor
+          jou essentieel is. Onbekende punten blijven onbekend; Woonpoints raadt
+          geen ontbrekende staat, veiligheid of toekomstige geschiktheid.</p>
+        <p><strong>Geen officiële keuring of selectieadvies.</strong> Gebruik geen
+          adressen, namen, accounts of persoonlijke notities in dit hulpmiddel.
+          De checklist blijft alleen in dit browsertabblad, tenzij je bewust
+          zelf een JSON-bestand opslaat.</p>
+      </div>
+      <div>
+        <div className="private-budget-table-wrap">
+          <table>
+            <caption>Eigen indrukken; niet door WoningNet of een inspecteur gecontroleerd</caption>
+            <thead><tr><th scope="col">Praktisch punt</th><th scope="col">Essentieel</th>
+              <th scope="col">Woning A</th><th scope="col">Woning B</th></tr></thead>
+            <tbody>{PRIVATE_VIEWING_TOPICS.map((topic, index) => (
+              <tr key={topic.id}>
+                <th scope="row">{topic.label}</th>
+                <td><input type="checkbox" checked={entries[index].must}
+                  aria-label={'Essentieel voor mij: '+topic.label}
+                  onChange={e => change(index,'must',e.target.checked)} /></td>
+                {(['a','b'] as const).map(home => (
+                  <td key={home}>
+                    <select value={entries[index][home]}
+                      aria-label={'Woning '+home.toUpperCase()+' · '+topic.label}
+                      onChange={e => change(index,home,e.target.value as PrivateViewingRating)}>
+                      {ratings.map(rating => <option key={rating.value}
+                        value={rating.value}>{rating.label}</option>)}
+                    </select>
+                  </td>
+                ))}
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div aria-live="polite">
+          {([{label:'A',data:a},{label:'B',data:b}]).map(row => (
+            <p key={row.label}><strong>Woning {row.label}:</strong> {row.data.good} positief,
+              {' '}{row.data.concerns} aandachtspunten (waarvan {row.data.essential} essentieel),
+              {' '}{row.data.unknown} niet beoordeeld.</p>
+          ))}
+          {(a.essential > 0 || b.essential > 0) && (
+            <p role="alert">Minstens één door jou essentieel genoemd punt is als
+              twijfelachtig of ongunstig beoordeeld. Bespreek dit zelf tijdens
+              de bezichtiging of met een deskundige; dit is geen afkeuring.</p>
+          )}
+          {(a.unknown > 0 || b.unknown > 0) &&
+            <p>Niet beoordeelde punten tellen niet als goed of slecht. De
+              aantallen zijn geen numerieke kwaliteitsscore of woningkans.</p>}
+        </div>
+        <div className="month-history-actions">
+          <button type="button" onClick={exportJson}>Bewaar checklist als privé-JSON…</button>
+          <button type="button" onClick={() => {
+            setEntries(newPrivateViewingAnswers());
+            setPendingRestore(null);
+            setMessage('Alle eigen beoordelingen in dit tabblad gewist.');
+          }}>Wis beoordelingen</button>
+        </div>
+        <label style={{display:'block',marginTop:12}} htmlFor="private-viewing-restore">
+          Open eerdere privéchecklist (JSON, max. 8 KiB)
+        </label>
+        <input id="private-viewing-restore" type="file" accept=".json,application/json"
+          onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void prepareRestore(file);
+          }} />
+        {pendingRestore && <div className="month-csv-confirm" role="group"
+          aria-label="Bevestig checklist vervangen">
+          <p>De tien beoordeelde onderdelen van dit bestand vervangen alle
+            huidige beoordelingen en essentieelkeuzes in dit tabblad.</p>
+          <button type="button" onClick={() => {
+            setEntries(pendingRestore);
+            setPendingRestore(null);
+            setMessage('Eigen privéchecklist hersteld; de bron is niet extern gecontroleerd.');
+          }}>Vervang huidige checklist</button>
+          <button type="button" onClick={() => {
+            setPendingRestore(null);setMessage('Herstel geannuleerd: huidige checklist behouden.');
+          }}>Behoud huidige checklist</button>
+        </div>}
+        {message && <p role="status">{message}</p>}
+        <p>Een handmatig gekozen opslaglocatie kan synchroniseren buiten
+          Woonpoints. Je importeert uitsluitend op eigen verzoek en bevestigt
+          apart voordat huidige beoordelingen worden vervangen.</p>
+      </div>
+    </section>
+  );
+}
