@@ -1872,7 +1872,7 @@ export function PrivateMovingHandover() {
   }).filter(Boolean).join('\\n\\n');
   const report = 'Woonpoints · privé sleuteloverdrachtsnotities\\nAlle waarden zijn eigen invoer. Geen officiële meterstand, inspectie, handtekening of ontvangstbewijs.\\n\\n'+draft+'\\n';
   const reportToken=JSON.stringify(entries);
-  const meterLabels:[keyof PrivateHandoverEntry,string][] = [
+  const meterLabels: [('electricity'|'gas'|'water'), string][] = [
     ['electricity','Elektriciteit (kWh)'],['gas','Gas (m³)'],['water','Water (m³)']
   ];
   return (
