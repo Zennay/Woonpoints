@@ -539,8 +539,9 @@ const defaults: Preferences = {maxRent: 1000, minRooms: 2, maxTravel: 45, prefer
 const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: false};
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
-export function ManualHousingShortlist({onCostPrefill}: {
+export function ManualHousingShortlist({onCostPrefill, onPlanPrefill}: {
   onCostPrefill?: (selected: [Home, Home], preferences: Preferences) => void;
+  onPlanPrefill?: (selected: Home) => void;
 } = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
@@ -883,6 +884,14 @@ export function ManualHousingShortlist({onCostPrefill}: {
                 }}>
                 {compared.includes(row.index) ? '✓ In directe vergelijking' : 'Selecteer voor vergelijking'}
               </button>
+              {onPlanPrefill && <button type="button" className="secondary"
+                onClick={() => {
+                  onPlanPrefill({...row.home});
+                  setNotice('Woninglabel aan de planner aangeboden. Kies daar zelf het type en de datum; er is nog niets opgeslagen.');
+                  document.getElementById('private-plan-title')?.scrollIntoView({behavior:'smooth', block:'start'});
+                }}>
+                Plan vervolgactie voor deze woning ↓
+              </button>}
               <button type="button" className="secondary" onClick={() => {
                 setCompared([]);
                 setEditingIndex(null);
@@ -968,7 +977,10 @@ function calendarUtc(date: Date) {
 }
 
 /** A deliberate download, never a browser notification or remote calendar write. */
-export function ManualDeadlinePlanner() {
+export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
+  prefill?: Home | null;
+  onPrefillHandled?: () => void;
+} = {}) {
   const [entries, setEntries] = useState<PrivatePlanItem[]>([]);
   const [draft, setDraft] = useState<PrivatePlanItem>(emptyPrivatePlan);
   const [editing, setEditing] = useState<number | null>(null);
@@ -1093,6 +1105,26 @@ export function ManualDeadlinePlanner() {
         <p>Gebruik alleen een anoniem herkenningslabel (bijvoorbeeld &quot;Woning A&quot;);
           geen adressen, namen, accountgegevens, telefoonnummers of uitnodigingslinks.</p>
       </div>
+      {prefill && onPrefillHandled && <div className="private-plan-confirm"
+        role="group" aria-label="Woninglabel overnemen in nieuwe actie">
+        <p>Maak een nieuwe eigen actie voor <strong>{prefill.label}</strong>?
+          Alleen het neutrale woninglabel wordt voorbereid; huur, adres, reactiedeadline
+          en daadwerkelijke woningstatus worden niet geïmporteerd.
+          Je huidige onbewaarde formulier wordt pas na je bevestiging vervangen.</p>
+        <button type="button" onClick={() => {
+          setEditing(null);
+          setDraft({...emptyPrivatePlan, label: prefill.label});
+          setDeleteIndex(null);
+          setPendingImport(null);
+          setNotice('Label ingevuld. Kies zelf type, datum en tijd en klik dan pas op Voeg eigen actie toe.');
+          onPrefillHandled();
+          document.getElementById('plan-when')?.focus();
+        }}>Ja, maak eigen actie aan</button>
+        <button type="button" className="secondary" onClick={() => {
+          onPrefillHandled();
+          setNotice('Woning-overdracht geannuleerd. Huidige planning en formulier behouden.');
+        }}>Annuleren, behoud formulier</button>
+      </div>}
       <div className="private-plan-overview" aria-live="polite" aria-atomic="true">
         <p><strong>{pending}</strong> open eigen acties · {entries.length} / {MAX_PRIVATE_PLANS} ingevoerd</p>
         <p>{next ? 'Eerstvolgende: '+next.label+' · '+new Date(next.when).toLocaleString('nl-NL')
@@ -1242,17 +1274,20 @@ function calculatePrivateCosts(input: CostDraft): CostResult | null {
 
 type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
 
-/** A shared in-memory workspace bridges two explicitly selected homes into costs. */
+/** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
 export function ManualHousingDecisionWorkspace() {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
+  const [planPrefill, setPlanPrefill] = useState<Home | null>(null);
   return (
     <>
       <ManualHousingShortlist onCostPrefill={(selected, preferences) =>
         setHandoff({
           selected: [{...selected[0]}, {...selected[1]}],
           preferences: {...preferences}
-        })} />
+        })}
+        onPlanPrefill={home => setPlanPrefill({...home})} />
       <ManualHousingCostComparison handoff={handoff} />
+      <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
     </>
   );
 }

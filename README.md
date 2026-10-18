@@ -259,3 +259,18 @@ Gebruik opnieuw de overdrachtsknop om bewust een nieuwe momentopname te maken.
 Het is geen officieel woningaanbod, toewijzings- of huurtoeslagadvies.
 Bestanden kunnen via de door jou gekozen opslagprovider buiten Woonpoints komen;
 zonder downloaden blijft alles uitsluitend in dit tabblad.
+
+
+### Van gekozen woning naar eigen bezichtiging of reactiedeadline
+
+In de bestaande woninglijst kies je bij een woning **Plan vervolgactie voor deze woning ↓**.
+De planner vraagt afzonderlijk om bevestiging voordat een eventueel onbewaard
+formulier wordt vervangen. Na toestemming wordt **uitsluitend het eigen neutrale
+woninglabel** in een nieuw actieformulier gezet; datum, tijd en actietype moet je
+zelf kiezen en expliciet bewaren. Annuleren laat het bestaande formulier en de
+planning intact. Er wordt nooit een echte WoningNet-reactie of automatisch
+kalenderitem aangemaakt. Voor een door jou gecontroleerd tijdstip kun je later
+zelf de bestaande privé-JSON of ICS downloaden (een gekozen kalenderprovider kan
+synchroniseren). Woninglijst, kosten en actieplanning blijven uitsluitend in het
+huidige browsertabblad; wis je de woninglijst, dan worden eerder aangemaakte
+handmatige acties niet automatisch uit de agenda of planning verwijderd.
