@@ -3443,6 +3443,29 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
 function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6):string{
   return JSON.stringify(data);
 }
+/** Predict the exact v6 snapshot after a confirmed legacy or current restore. */
+function restoredMovingWorkspaceV6(
+  current:MovingWorkspaceArchiveV6,
+  imported:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|
+    MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6
+):MovingWorkspaceArchiveV6 {
+  const next:MovingWorkspaceArchiveV6={
+    ...current,
+    quotes:imported.quotes,expenses:imported.expenses,split:imported.split
+  };
+  if(imported.version!==1){
+    next.timeline=imported.timeline;
+    next.handover=imported.handover;
+    next.documents=imported.documents;
+  }
+  if(imported.version!==1&&imported.version!==2){
+    next.packing=imported.version===3?
+      {items:imported.packing.items,transport:[]}:imported.packing;
+  }
+  if(imported.version===5||imported.version===6)next.helpers=imported.helpers;
+  if(imported.version===6)next.address=imported.address;
+  return next;
+}
 
 /**
  * Read-only in-tab hub for the three existing user-authored moving modules.
@@ -3725,10 +3748,23 @@ export function PrivateMovingWorkspace() {
   const [helpers,setHelpers]=useState<MovingWorkspaceArchiveV5['helpers']|null>(null);
   const [address,setAddress]=useState<MovingWorkspaceArchiveV6['address']|null>(null);
   const [pendingRestore,setPendingRestore]=useState<MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4|MovingWorkspaceArchiveV5|MovingWorkspaceArchiveV6|null>(null);
+  const [pendingRestoreSource,setPendingRestoreSource]=useState<string|null>(null);
+  const restoreReadSequence=useRef(0);
+  const [restoreUndo,setRestoreUndo]=useState<{
+    previous:MovingWorkspaceArchiveV6;
+    restoredSignature:string;
+  }|null>(null);
   const [pendingExport,setPendingExport]=useState<string|null>(null);
+  const [exportApproved,setExportApproved]=useState(false);
   const [notice,setNotice]=useState('');
   const [today,setToday]=useState<string|null>(null);
   const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [calendarPreview,setCalendarPreview]=useState<string|null>(null);
+  const [calendarOrigins,setCalendarOrigins]=useState<Array<'planning'|'documents'|'overdracht'|'adres'>>(['planning','documents']);
+  const [calendarWhen,setCalendarWhen]=useState<'upcoming'|'all'>('upcoming');
+  const [calendarPrivacy,setCalendarPrivacy]=useState<'generic'|'titles'>('generic');
+  const [actionScope,setActionScope]=useState<'all'|'urgent'|'dated'|'undated'>('all');
+  const [showAllActions,setShowAllActions]=useState(false);
   const [reportSections,setReportSections]=useState<MovingReportSection[]>(['timeline','documents']);
   const [pendingReport,setPendingReport]=useState<string|null>(null);
   const [pendingMoveDay,setPendingMoveDay]=useState<string|null>(null);
@@ -3803,6 +3839,13 @@ export function PrivateMovingWorkspace() {
     packing:packing!,helpers:helpers!,address:address!
   }:null;
   const signature=archive?privateMovingWorkspaceSignature(archive):'';
+  const archiveJson=archive?JSON.stringify(archive,null,2)+'\n':'';
+  const archiveBytes=new TextEncoder().encode(archiveJson).length;
+  const archiveExportable=complete&&archiveBytes>0&&archiveBytes<=65536;
+  const canApplyWorkspaceRestore=complete&&pendingRestore!==null&&
+    pendingRestoreSource===signature;
+  const canUndoWorkspaceRestore=complete&&restoreUndo!==null&&
+    restoreUndo.restoredSignature===signature;
   const moveDaySteps=archive?buildMoveDaySteps(archive):[];
   const moveDayReport=moveDayPrivacyReport(moveDaySteps);
   const moveDaySignature=JSON.stringify({signature,moveDayReport});
@@ -3905,11 +3948,26 @@ export function PrivateMovingWorkspace() {
   actions.sort((a,b)=>movingActionPriority(a,today)-movingActionPriority(b,today)||
     (a.due||'9999').localeCompare(b.due||'9999')||
     a.title.localeCompare(b.title,'nl-NL'));
-  const dueActions=actions.filter(item=>dateOnly(item.due)!==null);
+  const calendarChoices=[
+    {id:'planning',name:'Verhuisplanning',privacy:'Zelfgekozen taaknamen'},
+    {id:'documents',name:'Documenten',privacy:'Eigen documentomschrijvingen'},
+    {id:'overdracht',name:'Sleuteloverdracht',privacy:'Overdrachtsacties'},
+    {id:'adres',name:'Adreswijzigingen',privacy:'Eigen meldpuntnamen'}
+  ] as const;
+  const dueActions=actions.filter(item=>dateOnly(item.due)!==null&&
+    (calendarOrigins as string[]).includes(item.origin)&&
+    (calendarWhen==='all'||(today!==null&&item.due>=today)));
+  const filteredActions=actions.filter(item=>actionScope==='all'||
+    (actionScope==='undated'&&!item.due)||
+    (actionScope==='dated'&&!!item.due)||
+    (actionScope==='urgent'&&movingActionPriority(item,today)<=2));
+  const visibleActions=showAllActions?filteredActions:filteredActions.slice(0,10);
   const overdueCount=actions.filter(item=>movingActionPriority(item,today)===0).length;
   const dueTodayCount=actions.filter(item=>movingActionPriority(item,today)===1).length;
   const dueWeekCount=actions.filter(item=>movingActionPriority(item,today)===2).length;
-  const calendarSignature=JSON.stringify(dueActions);
+  const calendarSignature=JSON.stringify({
+    signature,today,calendarOrigins,calendarWhen,calendarPrivacy,dueActions
+  });
   const reportSignature=JSON.stringify({signature,reportSections,today,calendarSignature});
   const report=archive&&reportSections.length?
     buildPrivateMovingReport(archive,reportSections,actions,today):null;
@@ -3934,80 +3992,126 @@ export function PrivateMovingWorkspace() {
     setPendingReport(null);
     setNotice('Privé-verhuisdossier lokaal aangeboden. Deel of bewaar het alleen bewust.');
   }
-  function saveCombinedCalendar(){
-    if(!pendingCalendar||pendingCalendar!==calendarSignature||!dueActions.length){
-      setPendingCalendar(null);setNotice('Acties zijn gewijzigd. Bekijk je agenda-export opnieuw.');
+  function prepareCombinedCalendar(){
+    if(!complete||!dueActions.length){
+      setPendingCalendar(null);setCalendarPreview(null);
+      setNotice('Geen eigen, gedateerde acties binnen je geselecteerde agenda-instellingen.');
       return;
     }
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
-    const events=dueActions.map(item=>[
-      'BEGIN:VEVENT',
-      'UID:woonpoints-workspace-'+item.id.replace(/[^a-z0-9-]/gi,'')+'-'+
-        item.due.replace(/-/g,'')+'@local',
-      'DTSTAMP:'+stamp,
-      'DTSTART;VALUE=DATE:'+item.due.replace(/-/g,''),
-      'DTEND;VALUE=DATE:'+dayAtOffset(item.due,1).replace(/-/g,''),
-      'SUMMARY:'+movingCalendarText(item.title),
-      'DESCRIPTION:Eigen Woonpoints-planning. Datum en noodzaak zelf controleren.',
-      'END:VEVENT'
-    ].join('\r\n'));
-    const ics=['BEGIN:VCALENDAR','VERSION:2.0',
+    const lines=['BEGIN:VCALENDAR','VERSION:2.0',
       'PRODID:-//Woonpoints//Prive Verhuisacties//NL','CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',...events,'END:VCALENDAR',''].join('\r\n');
-    exportFile('woonpoints-prive-verhuisactiepunten.ics',ics,'text/calendar;charset=utf-8');
-    setPendingCalendar(null);
-    setNotice('Eigen agenda-ICS aangeboden. Controleer je zelfgekozen datums na import.');
+      'METHOD:PUBLISH'];
+    for(const [index,item] of dueActions.entries()){
+      const genericName={
+        planning:'Eigen verhuisplanning',documents:'Eigen documentcontrole',
+        overdracht:'Eigen sleuteloverdracht',adres:'Eigen adrescontrole'
+      }[item.origin as 'planning'|'documents'|'overdracht'|'adres']||'Eigen verhuisactie';
+      const title=calendarPrivacy==='titles'?item.title:genericName;
+      // Use position-based identifiers instead of raw user task IDs: even the
+      // generic privacy mode must not expose custom IDs in calendar metadata.
+      lines.push('BEGIN:VEVENT',
+        'UID:woonpoints-private-'+String(index+1)+'-'+item.due.replace(/-/g,'')+'@local',
+        'DTSTAMP:'+stamp,
+        'DTSTART;VALUE=DATE:'+item.due.replace(/-/g,''),
+        'DTEND;VALUE=DATE:'+dayAtOffset(item.due,1).replace(/-/g,''),
+        'SUMMARY:'+movingCalendarText(title),
+        'DESCRIPTION:Eigen, niet geverifieerde Woonpoints-actie. Controleer datum en noodzaak zelf.',
+        'END:VEVENT');
+    }
+    lines.push('END:VCALENDAR','');
+    setCalendarPreview(lines.join('\r\n'));
+    setPendingCalendar(calendarSignature);setNotice('');
+  }
+  function saveCombinedCalendar(){
+    if(!complete||!pendingCalendar||pendingCalendar!==calendarSignature||
+      !calendarPreview||!dueActions.length){
+      setPendingCalendar(null);setCalendarPreview(null);
+      setNotice('Brongegevens, dag of agendakeuze gewijzigd. Bekijk de exacte export opnieuw.');
+      return;
+    }
+    exportFile('woonpoints-prive-verhuisactiepunten.ics',calendarPreview,
+      'text/calendar;charset=utf-8');
+    setPendingCalendar(null);setCalendarPreview(null);
+    setNotice('Eigen gecontroleerde agenda-ICS aangeboden. Geen extern account of notificatie gebruikt.');
   }
 
   function exportWorkspace(){
-    if(!archive||pendingExport!==signature){
-      setPendingExport(null);
-      setNotice('Het privé-overzicht is veranderd. Bekijk het exportvoorstel opnieuw.');
+    if(!archiveExportable||!archive||pendingExport!==signature||!exportApproved){
+      setPendingExport(null);setExportApproved(false);
+      setNotice('Gegevens, bestandslimiet of toestemming gewijzigd. Bekijk de actuele JSON opnieuw.');
       return;
     }
-    const json=JSON.stringify(archive,null,2)+'\n';
-    const url=URL.createObjectURL(new Blob([json],{type:'application/json;charset=utf-8'}));
-    const link=document.createElement('a');
-    link.href=url;link.download='woonpoints-prive-verhuiswerkmap.json';link.rel='noopener';
-    document.body.appendChild(link);link.click();link.remove();
-    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
-    setPendingExport(null);
-    setNotice('Privé-werkmap lokaal aangeboden. Je gekozen opslaglocatie kan synchroniseren.');
+    exportFile('woonpoints-prive-verhuiswerkmap.json',
+      archiveJson,'application/json;charset=utf-8');
+    setPendingExport(null);setExportApproved(false);
+    setNotice('Exact gecontroleerde privé-werkmap lokaal aangeboden. Je opslaglocatie kan synchroniseren.');
   }
   async function prepareRestore(file:File|undefined){
-    setPendingRestore(null);setPendingExport(null);
+    const sequence=++restoreReadSequence.current;
+    const source=signature;
+    setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
     if(!file)return;
+    if(!complete||!archive){
+      setNotice('Wacht tot alle huidige werkmaponderdelen zijn geladen; huidige invoer blijft behouden.');
+      return;
+    }
     if(file.size===0||file.size>65536){
       setNotice('Werkmap afgewezen: het JSON-bestand moet maximaal 64 KiB zijn.');
       return;
     }
     try{
       const raw:unknown=JSON.parse(await file.text());
+      if(sequence!==restoreReadSequence.current)return;
       if(!validMovingWorkspaceArchive(raw))throw new Error('schema');
-      setPendingRestore(raw);
-      setNotice('Geldige privé-werkmap gelezen. Niets vervangen totdat je expliciet bevestigt.');
+      setPendingRestore(raw);setPendingRestoreSource(source);
+      setNotice('Geldige eigen werkmap gelezen. Controleer eerst welke onderdelen worden vervangen.');
     }catch{
-      setNotice('Werkmap afgewezen: onjuiste versie, ontbrekende secties of ongeldige invoer. Bestaande gegevens behouden.');
+      if(sequence!==restoreReadSequence.current)return;
+      setNotice('Werkmap geweigerd: verkeerde versie, velden of waarden. Huidige werkmap behouden.');
     }
   }
   function restoreWorkspace(){
-    if(!pendingRestore||!validMovingWorkspaceArchive(pendingRestore))return;
+    if(!archive||!pendingRestore||!canApplyWorkspaceRestore||
+      !validMovingWorkspaceArchive(pendingRestore)){
+      setPendingRestore(null);setPendingRestoreSource(null);
+      setNotice('Je huidige werkmap is na bestandsselectie gewijzigd of niet compleet. Kies opnieuw; niets vervangen.');
+      return;
+    }
     const imported=pendingRestore;
+    const next=restoredMovingWorkspaceV6(archive,imported);
+    setRestoreUndo({
+      previous:JSON.parse(JSON.stringify(archive)) as MovingWorkspaceArchiveV6,
+      restoredSignature:privateMovingWorkspaceSignature(next)
+    });
     window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:restore',{
       detail:imported
     }));
-    setPendingRestore(null);setPendingExport(null);
-    setNotice(imported.version===6?
-      'Eigen werkmap v6 hersteld: negen privé-onderdelen inclusief adreswijzigingen. Geen bericht verstuurd.':
-      imported.version===5?
-      'Oudere werkmap v5 hersteld: acht modules. Bestaande eigen adreswijzigingen behouden.':
-      imported.version===4?
-      'Oudere werkmap v4 hersteld: zeven modules. Bestaande verhuishulp behouden.':
-      imported.version===3?
-      'Oudere werkmap v3 hersteld: zeven modules vervangen; transportstatussen zijn leeggemaakt.':
-      imported.version===2?
-      'Werkmap v2 hersteld: zes oudere modules vervangen, huidige paklijst en transportstatus behouden.':
-      'Werkmap v1 hersteld: alleen offertes, kosten en verdeling vervangen; andere gegevens behouden.');
+    setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingReport(null);setPendingCalendar(null);setCalendarPreview(null);
+    setPendingMoveDay(null);
+    setNotice('Je eigen v'+imported.version+'-werkmap is na broncontrole hersteld. '+
+      'Eén tijdelijk herstel van je vorige, volledige tabbladwerkmap is beschikbaar zolang niets is gewijzigd. '+
+      'Oude formulierversies behouden hun niet-ondersteunde onderdelen. Geen externe actie uitgevoerd.');
+  }
+  function undoWorkspaceRestore(){
+    if(!restoreUndo||!canUndoWorkspaceRestore){
+      setRestoreUndo(null);
+      setNotice('Terugdraaien geweigerd: je huidige werkmap wijkt af van de net herstelde versie. '+
+        'Wijzigingen worden niet overschreven.');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:restore',{
+      detail:restoreUndo.previous
+    }));
+    setRestoreUndo(null);setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setExportApproved(false);
+    setPendingReport(null);setPendingCalendar(null);setCalendarPreview(null);
+    setPendingMoveDay(null);
+    setNotice('Vorige privé-werkmap eenmalig hersteld voor alle negen onderdelen. '+
+      'Eventuele eerder gedownloade bestanden blijven onaangetast.');
   }
   return (
     <section className="panel" aria-labelledby="private-moving-workspace-heading">
@@ -4111,31 +4215,106 @@ export function PrivateMovingWorkspace() {
         {!complete&&<p>Het privé-overzicht verzamelt de huidige formulierstanden.</p>}
         {complete&&!actions.length&&<p>Geen open punten op basis van deze eigen invoer.
           Dit betekent niet dat alle officiële verplichtingen zijn gecontroleerd.</p>}
-        <ol>{actions.slice(0,10).map(action=><li key={action.id}>
+        <div role="group" aria-label="Filter persoonlijke verhuisacties"
+          style={{display:'flex',flexWrap:'wrap',gap:8,margin:'12px 0'}}>
+          {([
+            ['all','Alles'],['urgent','Verlopen, vandaag en komende week'],
+            ['dated','Met datum'],['undated','Zonder datum']
+          ] as const).map(([id,label])=><button key={id} type="button"
+            aria-pressed={actionScope===id}
+            onClick={()=>{setActionScope(id);setShowAllActions(false);}}
+            style={{minHeight:44,padding:'8px 12px',
+              border:'1px solid #355e42',borderRadius:8,
+              background:actionScope===id?'#355e42':'white',
+              color:actionScope===id?'white':'#355e42'}}>{label}</button>)}
+        </div>
+        <p role="status">{filteredActions.length} van {actions.length} eigen acties in deze selectie.</p>
+        <ol>{visibleActions.map(action=><li key={action.id}>
           <strong>{action.title}</strong>{action.due?' · '+action.due:' · geen eigen datum'}
           {movingActionPriority(action,today)===0?' · zelf gekozen datum voorbij':
             movingActionPriority(action,today)===1?' · zelf gekozen datum vandaag':
             movingActionPriority(action,today)===2?' · binnen zeven dagen':''}
           {' · '}<a href={action.href}>Open onderdeel</a>
         </li>)}</ol>
-        {actions.length>10&&<p>Er staan nog {actions.length-10} andere eigen punten open.
-          Open de betreffende planning of documentenlijst voor alle details.</p>}
-        <p>Alleen nog open, zelf gedateerde planning- en documentenpunten worden
-          samen als dagvullende agendapunten aangeboden. Geen notificaties of automatische synchronisatie.</p>
-        <button type="button" disabled={!complete||!dueActions.length} onClick={()=>{
-          setPendingCalendar(calendarSignature);setNotice('');
-        }}>Bekijk gezamenlijke agenda-export ({dueActions.length} eigen datums)…</button>
-        {pendingCalendar===calendarSignature&&dueActions.length>0&&
-          <div role="group" aria-label="Bevestig gezamenlijke privé-agenda-export">
-            <p>Je exporteert {dueActions.length} zelf gedateerde, nog open acties.
-              Datums, persoonlijke taaknamen en documentomschrijvingen kunnen in je agenda terechtkomen.
-              Controleer ook eventueel al verstreken datums.</p>
-            <ul>{dueActions.map(action=><li key={action.id}>
-              {action.due} · {action.title}
-            </li>)}</ul>
-            <button type="button" onClick={saveCombinedCalendar}>Bevestig gezamenlijke .ics-download</button>
-            <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
-          </div>}
+        {filteredActions.length>10&&<button type="button"
+          onClick={()=>setShowAllActions(!showAllActions)}
+          style={{minHeight:44,margin:'8px 0'}}>
+          {showAllActions?'Toon alleen de eerste tien':'Toon alle '+filteredActions.length+' eigen acties'}
+        </button>}
+        <section aria-labelledby="private-workspace-calendar-heading">
+          <h4 id="private-workspace-calendar-heading">Mijn veilige privé-agenda samenstellen</h4>
+          <p>Kies bewust welke soorten eigen acties meegaan in een lokaal ICS-bestand.
+            Alleen je nog open zelfgedateerde acties worden meegenomen. Standaard zijn
+            officiële adressen, vrije taaknamen en identiteiten niet opgenomen:
+            de agenda toont dan neutrale actietitels per categorie. Geen verzonden notificaties,
+            accountverbindingen of officiële termijnen.</p>
+          <fieldset>
+            <legend>Kies welke privé-onderdelen je in je agenda wilt</legend>
+            {calendarChoices.map(choice=><label key={choice.id} style={{display:'block',margin:'8px 0'}}>
+              <input type="checkbox" checked={calendarOrigins.includes(choice.id)}
+                onChange={event=>{
+                  setCalendarOrigins(current=>event.target.checked?
+                    [...current,choice.id]:current.filter(id=>id!==choice.id));
+                  setPendingCalendar(null);setCalendarPreview(null);
+                }}/>
+              {choice.name} <small>({choice.privacy})</small>
+            </label>)}
+          </fieldset>
+          <fieldset>
+            <legend>Welke eigen controledatums?</legend>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-range"
+                checked={calendarWhen==='upcoming'} onChange={()=>{
+                  setCalendarWhen('upcoming');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Vandaag en later (standaard)
+            </label>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-range"
+                checked={calendarWhen==='all'} onChange={()=>{
+                  setCalendarWhen('all');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Ook verstreken eigen datums
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Privacy van agendatitels</legend>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-privacy"
+                checked={calendarPrivacy==='generic'} onChange={()=>{
+                  setCalendarPrivacy('generic');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Neutrale titels, zonder zelf ingevoerde taaknamen (standaard)
+            </label>
+            <label style={{display:'block'}}>
+              <input type="radio" name="private-moving-calendar-privacy"
+                checked={calendarPrivacy==='titles'} onChange={()=>{
+                  setCalendarPrivacy('titles');setPendingCalendar(null);setCalendarPreview(null);
+                }}/> Mijn eigen taaknamen in de agenda (kan privé-informatie bevatten)
+            </label>
+          </fieldset>
+          <p role="status">{dueActions.length} open, zelfgedateerde acties in deze selectie.
+            {' '}Alles blijft in het huidige tabblad totdat jij bewust exporteert.</p>
+          <button type="button" disabled={!complete||!dueActions.length}
+            onClick={prepareCombinedCalendar} style={{minHeight:44}}>
+            Bekijk exacte agenda-inhoud ({dueActions.length} acties)…
+          </button>
+          {pendingCalendar===calendarSignature&&calendarPreview&&dueActions.length>0&&
+            <div role="group" aria-label="Bevestig gecontroleerde privé-agenda">
+              <p>Controleer hieronder de exacte kalenderbron, inclusief datums,
+                titels en technische event-identificaties. De gekozen opslaglocatie
+                kan agenda-inhoud synchroniseren. Dit bestand wordt niet verstuurd.</p>
+              <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+                maxHeight:'25rem',overflowY:'auto'}}>{calendarPreview}</pre>
+              <button type="button" onClick={saveCombinedCalendar}>
+                Bevestig download van deze exacte ICS
+              </button>
+              <button type="button" onClick={()=>{
+                setPendingCalendar(null);setCalendarPreview(null);
+              }}>Annuleren</button>
+            </div>}
+          {pendingCalendar!==null&&pendingCalendar!==calendarSignature&&<p role="status">
+            Je gegevens of de kalenderdag zijn gewijzigd. De eerdere goedkeuring
+            is vervallen; bekijk de nieuwe agenda voordat je downloadt.
+          </p>}
+        </section>
       </section>
       <section aria-labelledby="private-moving-report-heading">
         <h3 id="private-moving-report-heading">Maak een leesbaar verhuisdossier</h3>
@@ -4173,9 +4352,16 @@ export function PrivateMovingWorkspace() {
         en de eigen kamer-/doospaklijst, hulpafspraken en adreswijzigingen.
         Niets wordt op de achtergrond opgeslagen.
         Sla alleen bewust op en controleer of je opslaglocatie synchroniseert.</p>
-      <button type="button" disabled={!complete} onClick={()=>{
-        setPendingExport(signature);setNotice('');
-      }}>Bekijk gecombineerde privé-JSON-export…</button>
+      {complete&&<p>Exacte back-upgrootte: <strong>{archiveBytes.toLocaleString('nl-NL')} bytes</strong>
+        {' '}van maximaal 65.536 bytes voor een later herstelbare JSON.</p>}
+      {complete&&!archiveExportable&&<p role="alert">
+        Je gecombineerde werkmap is groter dan het bestaande 64 KiB-importmaximum.
+        Verklein eigen notities/lijsten voordat je een herstelbestand opslaat;
+        er wordt nooit stilzwijgend een onbruikbare back-up aangeboden.
+      </p>}
+      <button type="button" disabled={!archiveExportable} onClick={()=>{
+        setPendingExport(signature);setExportApproved(false);setNotice('');
+      }}>Bekijk volledige herstelbare privé-JSON…</button>
       {archive&&pendingExport===signature&&<div role="group" aria-label="Bevestig gecombineerde werkmap-export">
         <p>Versie 6 bevat <strong>{quoteCount} offerte(s)</strong>,
           <strong> {expenseCount} kostenpost(en)</strong>,
@@ -4189,8 +4375,22 @@ export function PrivateMovingWorkspace() {
           <strong> {addressTotal} eigen meldpunten</strong>.
           Ook persoonlijke roepnamen, controledatums, notities, meterstanden en dooslabels
           worden mee geëxporteerd.</p>
-        <button type="button" onClick={exportWorkspace}>Bevestig volledige JSON-download</button>
-        <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
+        <p>Controleer nu de <strong>volledige exacte JSON</strong> in plaats van
+          alleen de aantallen. Dit bestand kan gevoelige eigen gegevens bevatten.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+          maxHeight:'25rem',overflowY:'auto'}}>{archiveJson}</pre>
+        <label htmlFor="private-workspace-export-approval"
+          style={{display:'flex',gap:10,alignItems:'center'}}>
+          <input id="private-workspace-export-approval" type="checkbox"
+            checked={exportApproved} onChange={event=>setExportApproved(event.target.checked)}/>
+          Ik heb de volledige actuele inhoud gecontroleerd en wil dit eigen bestand opslaan
+        </label>
+        <button type="button" disabled={!exportApproved} onClick={exportWorkspace}>
+          Download exact deze gecontroleerde JSON
+        </button>
+        <button type="button" onClick={()=>{
+          setPendingExport(null);setExportApproved(false);
+        }}>Annuleren</button>
       </div>}
       <label htmlFor="private-moving-workspace-upload">Herstel eigen werkmap v1, v2, v3, v4, v5 of v6 (JSON, maximaal 64 KiB)</label>
       <input id="private-moving-workspace-upload" type="file" accept=".json,application/json"
@@ -4200,6 +4400,10 @@ export function PrivateMovingWorkspace() {
           void prepareRestore(file);
         }} />
       {pendingRestore&&<div role="group" aria-label="Bevestig volledige privé-werkmap herstellen">
+        {!canApplyWorkspaceRestore&&<p role="alert">
+          De huidige gegevens zijn sinds het lezen veranderd of nog niet volledig geladen.
+          Herstellen is geblokkeerd. Kies opnieuw zonder gegevens te overschrijven.
+        </p>}
         <p>Werkmap <strong>versie {pendingRestore.version}</strong> bevat
           <strong> {pendingRestore.quotes.quotes.length} offerte(s)</strong>,
           <strong> {pendingRestore.expenses.lines.length} kostenpost(en)</strong> en
@@ -4223,10 +4427,41 @@ export function PrivateMovingWorkspace() {
             ' Deze oudere v2-werkmap vervangt zes onderdelen inclusief onbewaarde invoer. De huidige paklijst en transportstatus blijven behouden.':
             ' Deze oudere v1-werkmap vervangt alleen drie onderdelen; planning, overdracht, documenten, paklijst en transportstatus blijven behouden.'}
           Een eerder opgeslagen bestand blijft ongewijzigd.</p>
-        <button type="button" onClick={restoreWorkspace}>Bevestig complete werkmap vervangen</button>
+        <p><strong>Herstelimpact:</strong> je huidige {quoteCount} offertes,
+          {expenseCount} kostenposten en {split?.members.length??0} deelnemers
+          worden vervangen door {pendingRestore.quotes.quotes.length} offertes,
+          {pendingRestore.expenses.lines.length} kostenposten en
+          {pendingRestore.split.members.length} deelnemers.</p>
+        <ul>
+          <li>Verhuisplanning, documentchecklist en overdracht: {
+            pendingRestore.version===1?'behouden': 'vervangen'}.</li>
+          <li>Paklijst en transport: {pendingRestore.version===1||pendingRestore.version===2?
+            'behouden':pendingRestore.version===3?
+            'paklijst vervangen; oude transportmarkeringen gewist':'beide vervangen'}.</li>
+          <li>Verhuishulp: {pendingRestore.version===5||pendingRestore.version===6?
+            'vervangen':'behouden'}.</li>
+          <li>Eigen adreswijzigingen: {pendingRestore.version===6?'vervangen':'behouden'}.</li>
+        </ul>
+        <p>Het vorige volledige dossier wordt tijdelijk uitsluitend in dit
+          browsertabblad bewaard voor één veilige terugdraai-actie.
+          Iedere tussentijdse wijziging aan je gegevens blokkeert die actie.</p>
+        <button type="button" disabled={!canApplyWorkspaceRestore}
+          onClick={restoreWorkspace}>Bevestig geselecteerde vervanging</button>
         <button type="button" onClick={()=>{
-          setPendingRestore(null);setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
+          setPendingRestore(null);setPendingRestoreSource(null);
+          setNotice('Herstel geannuleerd. Alle huidige onderdelen behouden.');
         }}>Annuleren</button>
+      </div>}
+      {restoreUndo&&<div role="group" aria-label="Vorige privé-werkmap terugdraaien">
+        {canUndoWorkspaceRestore?<p>
+          Je kunt deze laatste import éénmalig terugdraaien.
+          Alle negen onderdelen keren dan terug naar de staat van vóór de import.
+          Er worden geen externe accounts of bestanden gewijzigd.</p>:
+          <p role="status">Je werkmap is na de import gewijzigd, of niet alle
+            onderdelen zijn geladen. Terugdraaien is daarom niet toegestaan.</p>}
+        <button type="button" disabled={!canUndoWorkspaceRestore}
+          onClick={undoWorkspaceRestore}>Herstel éénmalig mijn vorige volledige werkmap</button>
+        <button type="button" onClick={()=>setRestoreUndo(null)}>Verwerp tijdelijk herstelpunt</button>
       </div>}
       {notice&&<p role="status">{notice}</p>}
       <p>De werkmap bevestigt geen echte betaling, contract, WoningNet-registratie
