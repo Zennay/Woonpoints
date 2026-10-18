@@ -243,3 +243,36 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .housing-edit-actions button { margin: 0; }
 .housing-undo { border: 2px solid #355e42; border-radius: 12px; padding: 12px; background: #eef5ef; margin: 12px 0; }
 .housing-undo p { margin: 0 0 10px; }
+
+
+/* Standalone, session-only manual deadline planner; no portal credentials or live actions. */
+.private-plan { align-items: start; }
+.private-plan p { color: #536059; line-height: 1.55; }
+.private-plan-overview { border-left: 4px solid #355e42; padding: 4px 14px; background: #f0f5f1; border-radius: 8px; }
+.private-plan-overview p { margin: 7px 0; overflow-wrap: anywhere; }
+.private-plan label { font-weight: 700; display: block; margin: 10px 0 5px; }
+.private-plan fieldset { border: 1px solid #cdddcf; padding: 14px; border-radius: 12px; min-width: 0; }
+.private-plan legend { padding: 0 7px; font-weight: 800; }
+.private-plan input:not([type=checkbox]), .private-plan select {
+  font: inherit; color: #18231c; background: #fff; border: 2px solid #536d5a;
+  border-radius: 9px; width: 100%; max-width: 100%; padding: 10px; min-height: 44px;
+}
+.private-plan button { background: #355e42; color: #fff; border: 2px solid #355e42;
+  font: inherit; font-weight: 700; min-height: 44px; padding: 9px 14px; cursor: pointer; border-radius: 9px; }
+.private-plan button.secondary { background: #fff; color: #355e42; }
+.private-plan button:disabled { opacity: .5; cursor: not-allowed; }
+.private-plan button:focus-visible, .private-plan select:focus-visible,
+.private-plan input:focus-visible { outline: 3px solid #173d25; outline-offset: 3px; }
+.private-plan-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.private-plan-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.private-plan-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.private-plan .private-plan-check { display: flex; gap: 8px; align-items: center; margin: 0; }
+.private-plan-check input { width: 22px; height: 22px; flex: none; }
+.private-plan-items { padding: 0; list-style: none; display: grid; gap: 12px; }
+.private-plan-items > li { border: 1px solid #d4e2d6; border-radius: 12px; padding: 14px; background: #f5f7f5; }
+.private-plan-items > li > strong { font-size: 18px; overflow-wrap: anywhere; display: block; }
+.private-plan-items > li > span { display: block; margin-top: 6px; color: #536059; }
+.private-plan-confirm { border: 2px solid #355e42; padding: 14px; border-radius: 12px; background: #ecf3ec; }
+.private-plan-confirm button + button { margin-left: 10px; }
+.private-plan-archive { margin-top: 18px; border-top: 1px solid #d4e2d6; padding-top: 16px; }
+@media (max-width: 600px) { .private-plan-grid { grid-template-columns: 1fr; } }
