@@ -6,6 +6,7 @@ import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteCompariso
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
+import { PrivateAftercareWeekPlan } from './private-aftercare-week-plan';
 
 type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
 const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
@@ -36,6 +37,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-cost-split-heading',title:'Kosten delen',category:'verhuizen'},
   {id:'position-stats-heading',title:'Posities',category:'inzichten'},
   {id:'monthly-positions-heading',title:'Maandtrend',category:'inzichten'},
+  {id:'nazorg-weekplan-title',title:'Mijn nazorgweekplan',category:'verhuizen'},
   {id:'nazorg-contactlijn',title:'Contacttijdlijn',category:'verhuizen'},
   {id:'nazorg',title:'Nazorg en gebreken',category:'verhuizen'}
 ];
@@ -2152,6 +2154,21 @@ function PrivateMoveAftercare() {
           <p>Conceptkeuze is handmatig en verstuurt niets. Contactmomenten en eigen status pas je per punt in het dossier hieronder aan.</p>
         </div>
       </section>
+      <PrivateAftercareWeekPlan
+        day={currentDay}
+        sourceFingerprint={JSON.stringify({items, history})}
+        actions={followUpInbox.map(({item, urgency, reason}) => ({
+          id: item.id, title: item.title, room: item.room,
+          priority: item.priority, status: item.status === 'afgerond' ? 'open' : item.status,
+          due: item.due, urgency, reason
+        }))}
+        appointments={ownAppointments.map(({event, item}) => ({
+          id: event.id, issueId: item.id, day: event.day, title: item.title, room: item.room
+        }))}
+        onOpen={openIssueFromInbox}
+        onDownload={text => download('woonpoints-prive-nazorgplan.txt',
+          text, 'text/plain;charset=utf-8')}
+      />
       <section className="panel" aria-labelledby="nazorg-contactlijn">
         <div>
           <p className="eyebrow">EIGEN CHRONOLOGIE</p>
