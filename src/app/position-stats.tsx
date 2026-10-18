@@ -3904,6 +3904,7 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
  */
 function PrivateMonthlyCheckCalendar(){
   const [period,setPeriod]=useState<'1'|'3'>('3');
+  const [checkKind,setCheckKind]=useState<'both'|'middle'|'ending'>('both');
   const [preview,setPreview]=useState<{
     signature:string;summary:string;ics:string;count:number
   }|null>(null);
@@ -3912,7 +3913,7 @@ function PrivateMonthlyCheckCalendar(){
   const localNow=new Date();
   const today=[localNow.getFullYear(),String(localNow.getMonth()+1).padStart(2,'0'),
     String(localNow.getDate()).padStart(2,'0')].join('-');
-  const signature=period+'|'+today;
+  const signature=period+'|'+checkKind+'|'+today;
   const current=preview!==null&&preview.signature===signature;
 
   function prepare(){
@@ -3928,6 +3929,8 @@ function PrivateMonthlyCheckCalendar(){
     const visible:string[]=[];
     for(let monthOffset=0;monthOffset<monthCount;monthOffset++){
       for(const [day,kind] of [[15,'Midden in de maand'],[25,'Richting maandeinde']] as const){
+        if(checkKind==='middle'&&day!==15)continue;
+        if(checkKind==='ending'&&day!==25)continue;
         const date=new Date(now.getFullYear(),now.getMonth()+monthOffset,day,12);
         const year=date.getFullYear();
         const month=String(date.getMonth()+1).padStart(2,'0');
@@ -3958,7 +3961,7 @@ function PrivateMonthlyCheckCalendar(){
       setPreview(null);setApproved(false);return;
     }
     lines.push('END:VCALENDAR');
-    setPreview({signature:period+'|'+localToday,summary:visible.join('\n'),
+    setPreview({signature:period+'|'+checkKind+'|'+localToday,summary:visible.join('\n'),
       ics:lines.join('\r\n')+'\r\n',count:visible.length});
     setApproved(false);
     setMessage('Bekijk eerst je eigen, voorlopige kalenderdatums.');
@@ -3986,6 +3989,14 @@ function PrivateMonthlyCheckCalendar(){
     }} style={{minHeight:44,margin:'0 10px',padding:8}}>
       <option value="1">Alleen deze maand</option>
       <option value="3">Deze en de volgende twee maanden</option>
+    </select>
+    <label htmlFor="private-month-calendar-kind">Controlemoment</label>
+    <select id="private-month-calendar-kind" value={checkKind} onChange={event=>{
+      setCheckKind(event.target.value as 'both'|'middle'|'ending');setApproved(false);
+    }} style={{minHeight:44,margin:'0 10px',padding:8}}>
+      <option value="both">15e en 25e</option>
+      <option value="middle">Alleen 15e</option>
+      <option value="ending">Alleen 25e</option>
     </select>
     <button type="button" onClick={prepare}>Bekijk voorgestelde agendadagen</button>
     {preview&&<div role="group" aria-label="Eigen agendadagen bevestigen">
