@@ -1047,6 +1047,10 @@ function PrivateMoveAftercare() {
   const [issuePriority, setIssuePriority] = useState<Priority | 'alle'>('alle');
   const [issueRoom, setIssueRoom] = useState('alle');
   const [showAllFollowUps, setShowAllFollowUps] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
+  const [pendingBulk, setPendingBulk] = useState<{
+    status: 'open' | 'afgerond'; signature: string; count: number
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
@@ -1167,6 +1171,42 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const bulkVisible = shown.filter(item => bulkSelectedIds.includes(item.id));
+  const bulkSignature = JSON.stringify({
+    items, selectedIds: bulkVisible.map(item => item.id), filter,
+    issuePriority, issueRoom, issueQuery
+  });
+  const bulkIsCurrent = pendingBulk !== null && pendingBulk.signature === bulkSignature &&
+    pendingBulk.count === bulkVisible.length;
+
+  function proposeBulkStatus(status: 'open' | 'afgerond') {
+    if (bulkVisible.length === 0) { setMessage('Selecteer eerst zichtbare eigen dossierpunten.'); return; }
+    setPendingBulk({ status, signature: bulkSignature, count: bulkVisible.length });
+  }
+
+  function confirmBulkStatus() {
+    if (pendingBulk === null || !bulkIsCurrent || bulkVisible.length === 0) {
+      setPendingBulk(null);
+      setMessage('Selectie of gegevens zijn veranderd. Selecteer en controleer de bulkactie opnieuw.');
+      return;
+    }
+    const selected = new Set(bulkVisible.map(item => item.id));
+    const next = items.map(item => selected.has(item.id) ?
+      { ...item, status: pendingBulk.status } : item);
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: next, history
+    }, null, 2)).length > MAX_BYTES) {
+      setPendingBulk(null);
+      setMessage('Niet aangepast: eigen privé-JSON zou groter dan 16 KiB worden.');
+      return;
+    }
+    const count = selected.size;
+    setItems(next);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setMessage(count + ' eigen punten als ' + pendingBulk.status +
+      ' gemarkeerd. Geen officiële actie of verhuurderbericht uitgevoerd.');
+  }
 
   function openIssueFromInbox(id: string) {
     // Clearing the local view first ensures the destination cannot be hidden by filters.
@@ -1858,10 +1898,58 @@ function PrivateMoveAftercare() {
           <p>Deze filters werken alleen in dit tabblad. De privé-JSON-back-up blijft volledig en ongewijzigd.</p>
         </div>
         <div>
+          <div className="aftercare-item" role="group" aria-label="Meerdere eigen nazorgpunten beheren">
+            <h3>Meerdere punten tegelijk bijwerken</h3>
+            <p>Selecteer hieronder uitsluitend de eigen punten die je zelf hebt gecontroleerd.
+              De actie wijzigt alleen hun status in dit tabblad; er wordt geen bericht verzonden
+              en geen WoningNet-reactie of officiële afhandeling bevestigd.</p>
+            <p role="status">{bulkVisible.length} van {shown.length} zichtbare punten geselecteerd.</p>
+            <div className="aftercare-actions">
+              <button type="button" className="secondary" disabled={!shown.length}
+                onClick={() => { setBulkSelectedIds(shown.map(item => item.id)); setPendingBulk(null); }}>
+                Selecteer alle zichtbare punten
+              </button>
+              <button type="button" className="secondary" disabled={!bulkSelectedIds.length}
+                onClick={() => { setBulkSelectedIds([]); setPendingBulk(null); }}>
+                Wis selectie
+              </button>
+              <button type="button" disabled={!bulkVisible.length}
+                onClick={() => proposeBulkStatus('afgerond')}>Markeer geselecteerde als afgerond…</button>
+              <button type="button" className="secondary" disabled={!bulkVisible.length}
+                onClick={() => proposeBulkStatus('open')}>Heropen geselecteerde punten…</button>
+            </div>
+            {pendingBulk && <div className="aftercare-confirm" role="group"
+              aria-label="Wijziging van meerdere eigen punten bevestigen">
+              {bulkIsCurrent ? <p>Controleer dit zorgvuldig: {pendingBulk.count} geselecteerde
+                eigen punten krijgen status <strong>{pendingBulk.status}</strong>. Hun notities,
+                contacthistorie en privé-back-ups blijven ongewijzigd. Er wordt niets extern bevestigd.</p>
+                : <p role="status">Het dossier of de selectie is intussen veranderd.
+                  Deze oude bevestiging is ongeldig; stel de bulkactie opnieuw samen.</p>}
+              <div className="aftercare-actions">
+                <button type="button" disabled={!bulkIsCurrent}
+                  onClick={confirmBulkStatus}>Ja, wijzig {pendingBulk.count} eigen punten</button>
+                <button type="button" className="secondary" onClick={() => setPendingBulk(null)}>
+                  Annuleer bulkactie
+                </button>
+              </div>
+            </div>}
+          </div>
           {shown.length === 0 ? <p>Geen aandachtspunten binnen deze weergave. Wis de filters om alles terug te zien.</p> :
             <ul className="aftercare-list">{shown.map(item =>
               <li className="aftercare-item" key={item.id}
                 id={'nazorg-punt-' + item.id} tabIndex={-1}>
+                <label htmlFor={'nazorg-bulk-' + item.id}>
+                  <input id={'nazorg-bulk-' + item.id} type="checkbox"
+                    style={{display:'inline-block', width:18, minHeight:18, marginRight:8}}
+                    checked={bulkSelectedIds.includes(item.id)}
+                    onChange={event => {
+                      setBulkSelectedIds(current => event.target.checked ?
+                        [...current.filter(id => id !== item.id), item.id] :
+                        current.filter(id => id !== item.id));
+                      setPendingBulk(null);
+                    }} />
+                  Selecteer dit punt voor eigen bulkactie
+                </label>
                 <strong>{item.title}</strong>
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
