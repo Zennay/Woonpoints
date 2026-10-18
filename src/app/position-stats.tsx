@@ -4336,6 +4336,7 @@ export function PrivatePhotoComparison() {
   const [selected, setSelected] = useState<Record<Side, number | null>>({ A: null, B: null });
   const [notes, setNotes] = useState<Record<Side, string>>({ A: '', B: '' });
   const [notice, setNotice] = useState('');
+  const [notesExport, setNotesExport] = useState<string | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -4426,7 +4427,49 @@ export function PrivatePhotoComparison() {
     }
     setSelected({ A: null, B: null });
     setNotes({ A: '', B: '' });
+    setNotesExport(null);
     setNotice('Beide privéalbums en aantekeningen uit dit tabblad gewist.');
+  }
+
+  function preparePrivateNotes() {
+    const a = notes.A.trim(), b = notes.B.trim();
+    if (!a && !b) {
+      setNotice('Schrijf eerst een eigen observatie bij minimaal één woning.');
+      setNotesExport(null);
+      return;
+    }
+    // Plain text only. Original image bytes, filenames and object URLs are never exported.
+    const clean = (value: string) => value.replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ')
+      .replace(/\r\n?|\n/g, '\n').trim();
+    const text = [
+      'WOONPOINTS · EIGEN VISUELE WONINGNOTITIES',
+      'Niet gecontroleerd door WoningNet of een andere bron.',
+      'Geen foto’s, adressen, personen of bestanden opgenomen.',
+      '',
+      'WONING A',
+      clean(a) || 'Geen eigen observatie',
+      '',
+      'WONING B',
+      clean(b) || 'Geen eigen observatie',
+      '',
+      'Eigen waarnemingen; geen bouwkundige inspectie of toewijzingsadvies.'
+    ].join('\n') + '\n';
+    setNotesExport(text);
+    setNotice('Controleer eerst het tekstvoorbeeld. Alleen een tweede klik bewaart het bestand.');
+  }
+  function savePrivateNotes() {
+    if (!notesExport) return;
+    const url = URL.createObjectURL(new Blob([notesExport], { type:'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-eigen-fotovergelijking-notities.txt';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setNotesExport(null);
+    setNotice('Alleen je eigen tekstnotities als TXT aangeboden. De gekozen opslaglocatie kan synchroniseren.');
   }
   return <section className="panel" aria-labelledby="private-photo-comparison-heading">
     <div>
@@ -4482,18 +4525,39 @@ export function PrivatePhotoComparison() {
             </ul>}
             <label htmlFor={'private-photo-notes-'+side}>Eigen aantekeningen woning {side} (tijdelijk)</label>
             <textarea id={'private-photo-notes-'+side} rows={4} maxLength={400}
-              value={notes[side]} onChange={event=>setNotes(current=>({
-                ...current,[side]:event.target.value
-              }))} placeholder="Bijvoorbeeld: hoe valt het daglicht?"
+              value={notes[side]} onChange={event=>{
+                setNotes(current=>({...current,[side]:event.target.value}));
+                setNotesExport(null);
+              }} placeholder="Bijvoorbeeld: hoe valt het daglicht?"
               autoComplete="off" />
           </div>;
         })}
+      </div>
+      <div className="month-csv-confirm">
+        <h3>Bewaar alleen eigen observaties</h3>
+        <p>Wil je je korte A/B-aantekeningen zelf bewaren? De tekstexport
+          bevat nooit een foto, bestandsnaam, afbeeldinglink of EXIF-metadata.
+          Controleer je eigen tekst eerst op adressen en andere privégegevens.</p>
+        <button type="button" onClick={preparePrivateNotes}
+          disabled={!notes.A.trim() && !notes.B.trim()}>
+          Toon privé-TXT-voorbeeld…
+        </button>
+        {notesExport !== null && <div role="group"
+          aria-label="Bevestig bewuste export van eigen observaties">
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{notesExport}</pre>
+          <button type="button" onClick={savePrivateNotes}>
+            Ja, bewaar alleen deze tekst als TXT…
+          </button>
+          <button type="button" className="secondary" onClick={()=>{
+            setNotesExport(null);setNotice('Export geannuleerd. Je eigen notities blijven lokaal.');
+          }}>Nee, geen bestand maken</button>
+        </div>}
       </div>
       <button type="button" className="secondary"
         disabled={album.A.length + album.B.length === 0 && !notes.A && !notes.B}
         onClick={clearAll}>Wis beide albums en aantekeningen</button>
       <p role="status">{notice}</p>
-      <p>Geen opslag of verzending: je moet zelf voor je originele foto’s zorgen
+      <p>Geen automatische opslag of verzending: alleen een bewuste eigen TXT-notitie kan worden bewaard. Zorg zelf voor je originele foto’s
         en rekening houden met privacy of auteursrechten bij je eigen bestandskeuze.
         Vergelijking in dit paneel verandert je overige Woonpoints-berekeningen niet.</p>
     </div>
