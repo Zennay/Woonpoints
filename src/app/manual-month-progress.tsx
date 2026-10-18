@@ -4450,6 +4450,13 @@ export function PrivateMovingPackingInventory(){
   const [confirmClear,setConfirmClear]=useState(false);
   const [pendingExport,setPendingExport]=useState<{kind:'json'|'txt';signature:string}|null>(null);
   const [pendingRestore,setPendingRestore]=useState<PackingArchive|null>(null);
+  const [pendingRestoreSource,setPendingRestoreSource]=useState<string|null>(null);
+  const [restoreUndo,setRestoreUndo]=useState<{
+    previousItems:PackingItem[];
+    previousTransport:Record<string,PackingTransportState>;
+    importedSignature:string;
+  }|null>(null);
+  const pendingArchiveSequence=useRef(0);
   const [showLabelContents,setShowLabelContents]=useState(false);
   const [pendingLabels,setPendingLabels]=useState<string|null>(null);
   const [transport,setTransport]=useState<Record<string,PackingTransportState>>({});
@@ -4475,6 +4482,7 @@ export function PrivateMovingPackingInventory(){
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
       setPendingRestore(null);setPendingLabels(null);
+      setRestoreUndo(null);setPendingRestoreSource(null);
       setTransport(imported.version===4||imported.version===5||imported.version===6?
         packingRestoreTransport(imported.packing.items,imported.packing.transport):{});
       setPendingManifest(null);
@@ -4487,6 +4495,10 @@ export function PrivateMovingPackingInventory(){
   },[]);
   const sequence=useRef(0);
   const signature=JSON.stringify(items);
+  const fullPackingSignature=JSON.stringify({items,transport});
+  const canApplyRestore=pendingRestore!==null&&pendingRestoreSource===fullPackingSignature;
+  const canUndoRestore=restoreUndo!==null&&
+    restoreUndo.importedSignature===fullPackingSignature;
   const total=items.reduce((sum,item)=>sum+item.quantity,0);
   const packed=items.filter(item=>item.status!=='Nog inpakken').length;
   const unpacked=items.filter(item=>item.status==='Uitgepakt').length;
@@ -4520,7 +4532,7 @@ export function PrivateMovingPackingInventory(){
     setNotice('Lokaal printbaar HTML-bestand aangeboden. Open het zelf om af te drukken.');
   }
   const resetPending=()=>{
-    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);
+    setPendingExport(null);setPendingRestore(null);setPendingRestoreSource(null);setPendingDelete(null);
     setPendingLabels(null);setPendingManifest(null);
     setConfirmClear(false);setNotice('');
   };
@@ -4598,17 +4610,54 @@ export function PrivateMovingPackingInventory(){
     setPendingExport(null);setNotice('Bestand lokaal aangeboden. Je opslaglocatie kan synchroniseren.');
   }
   async function readArchive(file:File|undefined){
-    setPendingRestore(null);setPendingExport(null);
+    const seq=++pendingArchiveSequence.current;
+    const source=fullPackingSignature;
+    setPendingRestore(null);setPendingRestoreSource(null);setPendingExport(null);
     if(!file)return;
     if(file.size<1||file.size>65536){setNotice('Back-up geweigerd: kies een JSON van maximaal 64 KiB.');return;}
     try{
       const raw:unknown=JSON.parse(await file.text());
+      if(seq!==pendingArchiveSequence.current)return;
       if(!validArchive(raw))throw new Error('invalid archive');
       setPendingRestore(raw);
-      setNotice('Geldige privé-lijst gelezen; bestaande regels nog niet vervangen.');
+      setPendingRestoreSource(source);
+      setNotice('Geldige privé-lijst gelezen. Controleer aantallen vóór bewust vervangen.');
     }catch{
+      if(seq!==pendingArchiveSequence.current)return;
       setNotice('Back-up geweigerd: versie, velden, aantallen of inhoud ongeldig. Huidige lijst behouden.');
     }
+  }
+  function applyPackingRestore(){
+    if(!pendingRestore||!canApplyRestore){
+      setNotice('De huidige paklijst is sinds bestandskeuze gewijzigd. Kies opnieuw; niets vervangen.');
+      return;
+    }
+    const restoredTransport=pendingRestore.version===2?
+      packingRestoreTransport(pendingRestore.items,pendingRestore.transport):{};
+    setRestoreUndo({
+      previousItems:items.map(item=>({...item})),
+      previousTransport:Object.fromEntries(Object.entries(transport).map(([key,value])=>[key,{...value}])),
+      importedSignature:JSON.stringify({items:pendingRestore.items,transport:restoredTransport})
+    });
+    setItems(pendingRestore.items);
+    setTransport(restoredTransport);
+    setPendingManifest(null);setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setPendingDelete(null);setPendingLabels(null);
+    setEditing(null);setForm(blank());setConfirmClear(false);
+    setNotice('Privé-paklijst na bevestiging hersteld. Eén tijdelijke terugdraaioptie is beschikbaar zolang je niets wijzigt.');
+  }
+  function undoPackingRestore(){
+    if(!restoreUndo||!canUndoRestore||pendingRestore){
+      setNotice('Terugdraaien geweigerd: na het importeren is de paklijst of het transport veranderd. Huidige invoer behouden.');
+      return;
+    }
+    setItems(restoreUndo.previousItems.map(item=>({...item})));
+    setTransport(Object.fromEntries(Object.entries(restoreUndo.previousTransport)
+      .map(([key,value])=>[key,{...value}])));
+    setRestoreUndo(null);setPendingRestore(null);setPendingRestoreSource(null);
+    setPendingExport(null);setPendingLabels(null);setPendingManifest(null);
+    setPendingDelete(null);setEditing(null);setForm(blank());setConfirmClear(false);
+    setNotice('Vorige tabblad-paklijst én eigen transportmarkeringen veilig teruggezet. Externe bestanden blijven onaangetast.');
   }
   return <section className="panel" aria-labelledby="private-packing-heading">
     <p className="eyebrow">VERHUIZEN · EIGEN KAMERS EN DOZEN</p>
