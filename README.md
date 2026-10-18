@@ -329,6 +329,19 @@ synchroniseren. De WoningNet-worker blijft BOT_DRY_RUN=true.
 
 ## Eigen bezichtigingschecklist voor twee woningen
 
+
+De checklist levert nu bovendien een **persoonlijke bespreeklijst**:
+alle punten die nog onbekend, twijfelachtig of ongunstig zijn staan
+bij elkaar, waarbij door jezelf essentieel gemarkeerde onderwerpen
+bovenaan verschijnen. Met **Bewaar volledige eigen bespreeklijst als
+TXT** maak je zelf een leesbaar bestand met alle tien inspectiepunten,
+beide eigen beoordelingen en nog te bespreken punten. In dit bestand
+heten de woningen uitsluitend **A/B**, ongeacht hun eventuele labels
+in de browser. Het bestand bevat geen namen, adressen, bronclaims,
+automatische bewijzen of verborgen accountinformatie. Bewaren is
+uitdrukkelijk opt-in en de gekozen locatie kan extern synchroniseren.
+
+
 Het dashboard heeft een **Bezichtiging**-onderdeel met tien vaste categorieën
 zoals ventilatie, vocht, geluid, isolatie en bereikbaarheid. Markeer welke
 punten voor jezelf essentieel zijn en geef voor woning A/B afzonderlijk aan

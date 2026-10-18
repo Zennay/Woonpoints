@@ -2358,6 +2358,17 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled, onPlanFol
     };
   };
   const a = summary('a'), b = summary('b');
+  const viewingFollowups = PRIVATE_VIEWING_TOPICS.flatMap((topic,index) =>
+    (['a','b'] as const).flatMap(home => {
+      const rating = entries[index][home];
+      if (rating === 'good') return [];
+      return [{
+        key:home+'-'+topic.id, home, topic:topic.label, essential:entries[index].must,
+        rating
+      }];
+    })).sort((a,b) => Number(b.essential)-Number(a.essential) ||
+      (a.rating === 'bad' ? -1 : a.rating === 'concern' ? 0 : 1) -
+      (b.rating === 'bad' ? -1 : b.rating === 'concern' ? 0 : 1));
   const openEssentialFindings = PRIVATE_VIEWING_TOPICS.flatMap((topic,index) =>
     (['a','b'] as const).flatMap(home =>
       entries[index].must && (entries[index][home] === 'concern' || entries[index][home] === 'bad')
@@ -2379,6 +2390,51 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled, onPlanFol
     onPlanFollowup(safeLabel);
     setMessage('Eigen vervolgpunt aangeboden aan planner. Bevestig daar eerst; kies daarna zelf datum/tijd.');
     document.getElementById('private-plan-title')?.scrollIntoView({block:'start'});
+  }
+  function exportViewingBrief() {
+    const printable: Record<PrivateViewingRating,string> = {
+      unknown:'NIET BEOORDEELD', good:'Positief', concern:'Verder onderzoeken',
+      bad:'Ongunstig'
+    };
+    // The document deliberately uses fixed A/B identifiers, never typed
+    // source labels, property addresses, free text or account data.
+    const lines = [
+      'WOONPOINTS - MIJN EIGEN BEZICHTIGINGS- EN BESPREKLIJST',
+      'Zelf genoteerde indrukken; geen officiële keuring of woningkans.',
+      'Woningen heten in dit bestand alleen A en B, zonder persoons- of adresgegevens.',
+      '',
+      'EIGEN OVERZICHT',
+      'A: '+a.good+' positief; '+a.concerns+' aandachtspunten; '+a.essential+
+        ' essentieel aandachtspunten; '+a.unknown+' onbekend.',
+      'B: '+b.good+' positief; '+b.concerns+' aandachtspunten; '+b.essential+
+        ' essentieel aandachtspunten; '+b.unknown+' onbekend.',
+      '',
+      'PER ONDERDEEL (niet beoordeeld blijft onbekend)'
+    ];
+    PRIVATE_VIEWING_TOPICS.forEach((topic,index) => {
+      const item = entries[index];
+      lines.push(topic.label + (item.must ? ' [voor mij essentieel]' : ''));
+      lines.push('  A: '+printable[item.a]+'; B: '+printable[item.b]);
+    });
+    lines.push('','ZELF NOG TE CONTROLEREN / BESPREKEN');
+    if (!viewingFollowups.length) lines.push('Geen eigen open punten genoteerd.');
+    else viewingFollowups.forEach(row => {
+      lines.push((row.essential ? '[ESSENTIEEL] ' : '')+
+        'Woning '+row.home.toUpperCase()+' - '+row.topic+' - '+
+        printable[row.rating]);
+    });
+    lines.push('','Dit document bevat alleen de huidige lokale keuzes.');
+    lines.push('Geen woning is door Woonpoints geïnspecteerd of geverifieerd.');
+    lines.push('Niet beoordeeld betekent niet dat iets in orde is.');
+    lines.push('De gekozen bestandslocatie kan het TXT-bestand elders synchroniseren.');
+    const content = lines.join('\n')+'\n';
+    if (new TextEncoder().encode(content).byteLength > 8192) {
+      setMessage('Bespreeklijst is te groot om veilig te exporteren.');
+      return;
+    }
+    downloadPrivatePlanFile(content,'text/plain;charset=utf-8',
+      'woonpoints-eigen-bezichtigings-bespreeklijst.txt');
+    setMessage('Eigen bespreeklijst aangeboden om te bewaren. Geen account- of woninglabels geëxporteerd.');
   }
   function exportJson() {
     const payload = {
@@ -2510,6 +2566,29 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled, onPlanFol
           {(a.unknown > 0 || b.unknown > 0) &&
             <p>Niet beoordeelde punten tellen niet als goed of slecht. De
               aantallen zijn geen numerieke kwaliteitsscore of woningkans.</p>}
+        </div>
+        <div className="private-budget-provenance" aria-labelledby="viewing-review-brief-title">
+          <h3 id="viewing-review-brief-title">Mijn persoonlijke bespreeklijst</h3>
+          <p>Alles wat je nog niet hebt beoordeeld of zelf als twijfelachtig
+            of ongunstig hebt gemarkeerd, blijft zichtbaar als aandachtspunt.
+            Essentiële punten komen eerst; een onbekend punt telt nooit als goed.
+            De lijst is geen officieel inspectierapport.</p>
+          {viewingFollowups.length ? <ol>
+            {viewingFollowups.map(row => <li key={row.key}>
+              <strong>{row.essential ? 'Essentieel · ' : ''}
+                {sourceLabels[row.home === 'a' ? 0 : 1]} · {row.topic}</strong>
+              {' — '}{row.rating === 'unknown' ? 'Nog niet beoordeeld' :
+                row.rating === 'bad' ? 'Ongunstig genoteerd' :
+                'Twijfel, verder uitzoeken'}
+            </li>)}
+          </ol> : <p>Geen eigen open bespreekpunten ingevuld. Dit betekent
+            niet dat de woning officieel goedgekeurd is.</p>}
+          <button type="button" onClick={exportViewingBrief}>
+            Bewaar volledige eigen bespreeklijst als TXT…
+          </button>
+          <p>Het bestand noemt alleen neutraal woning A/B, vaste onderwerpen
+            en jouw beoordelingen, nooit eventuele overgenomen woninglabels,
+            adressen of accountgegevens. Opslag uitsluitend na jouw klik.</p>
         </div>
         {onPlanFollowup && <div className="private-budget-provenance">
           <h3>Maak een eigen vervolgactie van een belangrijk aandachtspunt</h3>
