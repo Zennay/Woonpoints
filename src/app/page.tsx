@@ -28,6 +28,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-moving-workspace-heading',title:'Verhuiswerkmap',category:'verhuizen'},
   {id:'private-moving-day-heading',title:'Verhuisdag',category:'verhuizen'},
   {id:'private-packing-heading',title:'Paklijst',category:'verhuizen'},
+  {id:'private-moving-plan-b-heading',title:'Verhuisdag plan B',category:'verhuizen'},
   {id:'private-moving-helpers-heading',title:'Verhuishulp',category:'verhuizen'},
   {id:'private-address-change-heading',title:'Adreswijzigingen',category:'verhuizen'},
   {id:'private-handover-heading',title:'Sleutelrapport',category:'verhuizen'},
@@ -65,6 +66,7 @@ const homeNavAliases:Record<string,string[]>={
   'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
   'private-moving-day-heading':['dagplanning','tijdlijn','verhuisdag'],
   'private-packing-heading':['dozen','inpakken','uitpakken','inventaris'],
+  'private-moving-plan-b-heading':['noodplan','verhuisdag noodplan','backup vervoer','plan b'],
   'private-moving-helpers-heading':['helpers','vrijwilligers'],
   'private-address-change-heading':['adres doorgeven','post'],
   'private-handover-heading':['sleuteloverdracht','inspectie'],
@@ -573,6 +575,203 @@ function PrivateDepositLedger() {
 return PrivateDepositLedger;
 })();
 
+
+type MovingFallbackId = 'transport' | 'keys' | 'weather' | 'helpers';
+type MovingFallbackEntry = {id:MovingFallbackId;action:string;contact:string;day:string;done:boolean};
+const MOVING_FALLBACKS:ReadonlyArray<{id:MovingFallbackId;title:string;tip:string}> = [
+  {id:'transport',title:'Vervoer valt uit',tip:'Denk aan een alternatief voertuig of een nieuwe rit.'},
+  {id:'keys',title:'Sleuteloverdracht loopt vertraging op',tip:'Leg vast wie je zelf kunt benaderen en waar je tijdelijk terechtkunt.'},
+  {id:'weather',title:'Slecht weer of onveilige toegang',tip:'Houd rekening met veilige opslag, droog materiaal en een andere dag.'},
+  {id:'helpers',title:'Verhuishulp kan niet komen',tip:'Bedenk wie je eerst vraagt en welke zware taken kunnen wachten.'}
+];
+const MOVING_FALLBACK_KIND='woonpoints-private-plan-b';
+const MOVING_FALLBACK_LIMIT=8192;
+const defaultMovingFallbacks=():MovingFallbackEntry[]=>MOVING_FALLBACKS.map(row=>({
+  id:row.id,action:'',contact:'',day:'',done:false
+}));
+function validMovingFallbackDay(day:string):boolean{
+  if(day==='')return true;
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(day))return false;
+  const date=new Date(day+'T00:00:00.000Z');
+  return Number.isFinite(date.valueOf())&&date.toISOString().slice(0,10)===day &&
+    day>='2000-01-01'&&day<='2099-12-31';
+}
+function movingFallbackEntryValid(raw:unknown):raw is MovingFallbackEntry{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const row=raw as Record<string,unknown>;
+  if(Object.keys(row).sort().join(',')!=='action,contact,day,done,id')return false;
+  const id=MOVING_FALLBACKS.find(item=>item.id===row.id);
+  const safeText=(value:unknown,max:number)=>typeof value==='string'&&
+    value.length<=max&&!/[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]/u.test(value);
+  return Boolean(id)&&safeText(row.action,200)&&safeText(row.contact,60)&&
+    typeof row.day==='string'&&validMovingFallbackDay(row.day)&&typeof row.done==='boolean';
+}
+function parseMovingFallbackBackup(value:unknown):MovingFallbackEntry[]|null{
+  if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  const data=value as Record<string,unknown>;
+  if(Object.keys(data).sort().join(',')!=='entries,kind,version'||
+    data.kind!==MOVING_FALLBACK_KIND||data.version!==1||
+    !Array.isArray(data.entries)||data.entries.length!==MOVING_FALLBACKS.length||
+    !data.entries.every(movingFallbackEntryValid))return null;
+  if(data.entries.some((row:MovingFallbackEntry,index:number)=>row.id!==MOVING_FALLBACKS[index].id))return null;
+  return data.entries.map((row:MovingFallbackEntry)=>({...row}));
+}
+function movingFallbackDownload(name:string,body:string,mime:string){
+  const url=URL.createObjectURL(new Blob([body],{type:mime}));
+  try{
+    const link=document.createElement('a');link.href=url;link.download=name;
+    document.body.appendChild(link);link.click();link.remove();
+  }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+}
+function PrivateMovingFallbackPlan(){
+  const [entries,setEntries]=useState<MovingFallbackEntry[]>(defaultMovingFallbacks);
+  const [preview,setPreview]=useState<'txt'|'json'|null>(null);
+  const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
+  const [undo,setUndo]=useState<{before:MovingFallbackEntry[];after:string}|null>(null);
+  const [confirmReset,setConfirmReset]=useState(false);
+  const [notice,setNotice]=useState('');
+  const valid=entries.every(movingFallbackEntryValid);
+  const completed=entries.filter(row=>row.done).length;
+  const ready=entries.filter(row=>row.action.trim()!==''&&row.contact.trim()!=='').length;
+  const today=(()=>{const now=new Date();const pad=(n:number)=>String(n).padStart(2,'0');
+    return now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());})();
+  const dated=entries.filter(row=>row.day&&row.day<=today&&!row.done);
+  const backup=JSON.stringify({kind:MOVING_FALLBACK_KIND,version:1,entries},null,2)+'\\n';
+  const printable=[
+    'WOONPOINTS · MIJN PRIVÉ VERHUISDAG PLAN B',
+    'Zelf ingevulde plannen. Geen bevestigde reserveringen of officiële afspraken.',
+    '',
+    ...entries.flatMap((row,index)=>[
+      (index+1)+'. '+MOVING_FALLBACKS[index].title+' · '+(row.done?'zelf afgehandeld':'nog open'),
+      'Alternatief: '+(row.action.trim()||'(niet ingevuld)'),
+      'Zelf te benaderen: '+(row.contact.trim()||'(niet ingevuld)'),
+      'Zelf gekozen controledatum: '+(row.day||'(geen datum)'),''
+    ])
+  ].join('\\r\\n')+'\\r\\n';
+  const update=(id:MovingFallbackId,patch:Partial<MovingFallbackEntry>)=>{
+    setEntries(previous=>previous.map(row=>row.id===id?{...row,...patch}:row));
+    setPreview(null);setIncoming(null);setUndo(null);setConfirmReset(false);setNotice('');
+  };
+  async function importBackup(event:ChangeEvent<HTMLInputElement>){
+    const file=event.target.files?.[0];event.target.value='';
+    setIncoming(null);setPreview(null);setUndo(null);setConfirmReset(false);
+    if(!file)return;
+    if(file.size===0||file.size>MOVING_FALLBACK_LIMIT){
+      setNotice('Herstel geweigerd: bestand is leeg of groter dan 8 KiB. Huidige plannen blijven staan.');
+      return;
+    }
+    try{
+      const parsed:unknown=JSON.parse(await file.text());
+      const next=parseMovingFallbackBackup(parsed);
+      if(!next)throw new Error('schema');
+      setIncoming(next);
+      setNotice('Privébestand gecontroleerd. Je huidige vier plannen zijn nog niet vervangen.');
+    }catch{setNotice('Herstel geweigerd: dit is geen geldig Woonpoints-plan-B-bestand. Niets veranderd.');}
+  }
+  return <section className="panel" aria-labelledby="private-moving-plan-b-heading"
+    style={{display:'block'}}>
+    <p className="eyebrow">VERHUISDAG · EIGEN NOODPLAN</p>
+    <h2 id="private-moving-plan-b-heading">Mijn plan B bij tegenslag</h2>
+    <p>Bereid zelf vier veelvoorkomende tegenvallers voor. Noteer een concrete volgende stap,
+      een roepnaam of rol en eventueel een controledatum. Dit is uitsluitend privé tabbladgeheugen:
+      geen leverancier, verhuurder, hulpverlener of WoningNet wordt gebeld of ingelicht.
+      Vermeld hier geen telefoonnummers, adressen of geheime gegevens.</p>
+    <p role="status" aria-live="polite"><strong>{ready}/4 alternatieven voorbereid;
+      {' '}{completed}/4 zelf afgehandeld.</strong>
+      {dated.length>0&&<> <strong>{dated.length} open controledatum(s) vandaag of eerder.</strong></>}</p>
+    <div style={{display:'grid',gap:14}}>
+      {MOVING_FALLBACKS.map((scenario,index)=>{
+        const row=entries[index];
+        return <article key={scenario.id}
+          style={{padding:14,border:'1px solid #d4dfd5',borderRadius:10}}>
+          <h3>{index+1} · {scenario.title}</h3><p>{scenario.tip}</p>
+          <label style={{display:'block'}}>Mijn alternatief
+            <input type="text" maxLength={200} value={row.action}
+              onChange={event=>update(row.id,{action:event.target.value})}
+              placeholder="Wat ga ik zelf doen?" style={{display:'block',width:'100%',minHeight:44}}/>
+          </label>
+          <label style={{display:'block',marginTop:10}}>Wie kan ik zelf benaderen? (roepnaam of rol)
+            <input type="text" maxLength={60} value={row.contact}
+              onChange={event=>update(row.id,{contact:event.target.value})}
+              placeholder="Bijvoorbeeld: buur of verhuizer" style={{display:'block',width:'100%',minHeight:44}}/>
+          </label>
+          <label style={{display:'block',marginTop:10}}>Zelf gekozen controledatum (optioneel)
+            <input type="date" min="2000-01-01" max="2099-12-31" value={row.day}
+              onChange={event=>update(row.id,{day:event.target.value})}
+              style={{display:'block',minHeight:44}}/>
+          </label>
+          <label style={{display:'flex',gap:10,alignItems:'center',marginTop:12}}>
+            <input type="checkbox" checked={row.done}
+              onChange={event=>update(row.id,{done:event.target.checked})}/>
+            Ik heb dit zelf afgehandeld
+          </label>
+          {row.day&&row.day<=today&&!row.done&&<p role="status">
+            Controleer deze zelfgekozen datum; er wordt geen melding verzonden.</p>}
+        </article>;
+      })}
+    </div>
+    <details style={{marginTop:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>Privéoverzicht downloaden of herstellen</summary>
+      <p>Een export bevat alle ingevulde alternatieven, roepnamen en datums. Controleer de
+        inhoud en kies zelf een veilige opslagplek; die kan extern synchroniseren.</p>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        <button type="button" disabled={!valid} onClick={()=>{setPreview('txt');setIncoming(null);}}
+          style={{minHeight:44}}>Bekijk afdrukbaar TXT-overzicht</button>
+        <button type="button" disabled={!valid} onClick={()=>{setPreview('json');setIncoming(null);}}
+          style={{minHeight:44}}>Bekijk volledige privéback-up</button>
+      </div>
+      {preview&&<div>
+        <p>Dit is de <strong>exacte inhoud</strong> van je eigen download:</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflow:'auto'}}>
+          {preview==='txt'?printable:backup}
+        </pre>
+        <button type="button" onClick={()=>{
+          if(preview==='txt')movingFallbackDownload('woonpoints-verhuisdag-plan-b.txt',
+            printable,'text/plain;charset=utf-8');
+          else movingFallbackDownload('woonpoints-verhuisdag-plan-b.json',
+            backup,'application/json;charset=utf-8');
+          setPreview(null);setNotice('Privébestand aan je browser aangeboden; je bewaart het zelf.');
+        }} style={{minHeight:44}}>Download precies dit bestand</button>
+        <button type="button" onClick={()=>setPreview(null)}
+          style={{minHeight:44,marginLeft:8}}>Annuleer</button>
+      </div>}
+      <label htmlFor="moving-fallback-import" style={{display:'block',marginTop:16}}>
+        Herstel mijn eigen plan-B-back-up (maximaal 8 KiB)
+      </label>
+      <input id="moving-fallback-import" type="file" accept=".json,application/json"
+        onChange={importBackup} style={{maxWidth:'100%'}}/>
+      {incoming&&<div>
+        <p>Geldig privébestand: {incoming.filter(row=>row.done).length} afgehandeld,
+          {incoming.filter(row=>row.action.trim()&&row.contact.trim()).length} voorbereid.
+          Dit vervangt alle vier huidige regels, niet je andere verhuisgegevens.</p>
+        <button type="button" onClick={()=>{
+          setUndo({before:entries.map(row=>({...row})),after:JSON.stringify(incoming)});
+          setEntries(incoming);setIncoming(null);setConfirmReset(false);
+          setNotice('Eigen plannen vervangen. Eénmalig herstel is mogelijk zolang niets verandert.');
+        }} style={{minHeight:44}}>Vervang mijn vier plannen</button>
+        <button type="button" onClick={()=>setIncoming(null)}
+          style={{minHeight:44,marginLeft:8}}>Behoud huidige plannen</button>
+      </div>}
+      {undo&&<button type="button" disabled={JSON.stringify(entries)!==undo.after}
+        onClick={()=>{setEntries(undo.before);setUndo(null);setNotice('Vorige tabbladplannen hersteld.');}}
+        style={{display:'block',minHeight:44,marginTop:12}}>Draai laatste herstel éénmaal terug</button>}
+      <button type="button" onClick={()=>{setConfirmReset(true);setIncoming(null);setPreview(null);}}
+        style={{display:'block',minHeight:44,marginTop:16}}>Wis mijn plan-B-notities</button>
+      {confirmReset&&<div>
+        <p>Alle vier alternatieven, roepnamen, controledatums en eigen statussen uit dit
+          tabblad wissen? Andere Woonpoints-onderdelen blijven bestaan.</p>
+        <button type="button" onClick={()=>{
+          setEntries(defaultMovingFallbacks());setUndo(null);setConfirmReset(false);
+          setNotice('Alleen dit privé-plan B is gewist.');
+        }} style={{minHeight:44}}>Ja, wis alleen dit plan</button>
+        <button type="button" onClick={()=>setConfirmReset(false)}
+          style={{minHeight:44,marginLeft:8}}>Niet wissen</button>
+      </div>}
+    </details>
+    {notice&&<p role="status" aria-live="polite">{notice}</p>}
+  </section>;
+}
+
 export default function HomePage() {
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const cards = initialCards.map(([label,value,detail])=>{
@@ -1017,6 +1216,7 @@ export default function HomePage() {
       <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
       <PrivateMovingPackingInventory />
+      <PrivateMovingFallbackPlan />
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
