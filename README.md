@@ -344,3 +344,19 @@ Import weigert extra sleutels, onbekende waarden, verkeerde volgorde of
 bestanden boven 8 KiB en vereist afzonderlijke bevestiging voordat huidige
 beoordelingen worden vervangen. Een zelf gekozen opslaglocatie kan elders
 synchroniseren. Er is geen netwerkverzoek, WoningNet-koppeling of live reactie.
+
+### Van eigen kostenvergelijking naar meerjarenkosten
+
+Na **Vergelijk mijn bedragen** in het bestaande privé-kostenoverzicht kun je
+**Bied deze twee kostenramingen aan voor meerjarenvergelijking** kiezen. Deze actie
+maakt uitsluitend een lokale momentopname van de twee reeds ingevulde huren,
+service-, energie- en reiskosten plus eenmalige startkosten. In het meerjarenpaneel
+verschijnt **eerst een aparte bevestiging** voordat eventuele eerder ingevulde
+scenario's worden vervangen. Annuleren laat alle huidige bedragen intact.
+
+Er worden geen prijzen, huurstijgingen of kansen uit woningportalen gehaald.
+Beide hypothetische jaarlijkse huurstijgingen starten expliciet op **0%**;
+controleer en wijzig dat percentage daarna zelf. De ingevoerde duur blijft
+bij een overdracht behouden. Gewijzigde bedragen in het bronoverzicht veranderen
+het reeds overgenomen meerjarenmodel niet stilzwijgend. Deze overdracht schrijft
+geen bestanden, cookies of browseropslag en voert geen netwerkverzoeken uit.
