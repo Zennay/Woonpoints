@@ -124,8 +124,11 @@ account-/cloudsynchronisatie. De gezamenlijke back-up omvat uitsluitend:
    te herstellen. De volledige versie-, sleutel-, inhouds- en omvangscontrole
    vindt **vóór iedere wijziging** plaats. Een onvolledig, corrupt,
    niet-canoniek of te groot bestand wordt volledig geweigerd.
-4. Het scherm toont welke vier onderdelen worden vervangen en vereist een
-   afzonderlijke bevestiging. De bestaande sessie-opslagkeuzes per module
+4. Het scherm toont welke vier onderdelen in het bestand staan. Je kiest zelf
+   of je **alle vier** of juist één of meer specifieke onderdelen wilt
+   vervangen; niet-geselecteerde formulieren blijven onveranderd. Het scherm
+   vereist een afzonderlijke bevestiging en zonder geselecteerde onderdelen
+   kan niet worden hersteld. De bestaande sessie-opslagkeuzes per module
    blijven ongewijzigd (standaard uit).
 5. Meteen na herstellen kun je **de vorige tabbladstatus éénmalig
    terugzetten**, zolang de vier bronwaarden niet onafhankelijk zijn gewijzigd.
@@ -133,10 +136,10 @@ account-/cloudsynchronisatie. De gezamenlijke back-up omvat uitsluitend:
 
 De module gebruikt voor elk onderdeel diens **bestaande canonieke
 JSON-hersteldecoder**, inclusief validatie van verborgen meterwaarden.
-Voor het gelijktijdig vervangen meldt het centrale scherm de vier
-gevalideerde nieuwe snapshots alleen via lokale browsertabblad-events aan
-de bestaande React-componenten; zij verwerken die uitsluitend na hernieuwde
-eigen decode-/groottecheck. Alle wijzigingen verschijnen onmiddellijk in
+Voor het gelijktijdig vervangen meldt het centrale scherm uitsluitend de
+**geselecteerde**, vooraf gevalideerde nieuwe snapshots via lokale
+browsertabblad-events aan de bestaande React-componenten; zij verwerken die
+uitsluitend na hernieuwde eigen decode-/groottecheck. Alle wijzigingen verschijnen onmiddellijk in
 het bestaande verhuisregiebord, inclusief eigen controledatums en voortgang.
 
 **Privacygrenzen:** er wordt niets automatisch opgeslagen,
