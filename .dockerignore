@@ -22,8 +22,6 @@ src/app/api/health/*
 !src/app/layout.tsx
 !src/app/manual-month-progress.tsx
 !src/app/position-stats.tsx
-# The reviewed local-only 7/30-day action planner is a required page import.
-!src/app/private-aftercare-week-plan.tsx
 !src/app/page.tsx
 !src/lib
 src/lib/*
