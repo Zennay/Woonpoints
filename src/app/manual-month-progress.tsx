@@ -3978,6 +3978,51 @@ export function PrivateMovingWorkspace() {
         <a href="#private-moving-helpers-heading">Verhuishulp</a>
       </div>
 
+
+      <section aria-labelledby="private-move-day-readiness-heading">
+        <h3 id="private-move-day-readiness-heading">Mijn verhuisdag · voorbereiden, vertrekken, aankomen</h3>
+        <p>Dit overzicht verbindt je eigen planning, documenten, hulp, dozen en
+          laad-/aflevermarkeringen. Het laat acties en ontbrekende gegevens apart
+          zien. Een groen eigen vinkje is nooit een officiële goedkeuring,
+          werkelijke levering of bevestiging van een helper.</p>
+        {!complete&&<p>De privé-werkmap verzamelt nog gegevens uit de acht onderdelen.
+          Niets wordt op de achtergrond opgeslagen.</p>}
+        {complete&&MOVE_DAY_PHASES.map(phase=>{
+          const rows=moveDaySteps.filter(step=>step.phase===phase.id);
+          const open=rows.filter(step=>step.status==='open').length;
+          const missing=rows.filter(step=>step.status==='onbekend').length;
+          return <div key={phase.id}>
+            <h4>{phase.name}</h4>
+            <p>{open} zelf na te kijken · {missing} onbekend ·
+              {' '+rows.filter(step=>step.status==='eigen-klaar').length}
+              {' '}onderdelen volgens eigen invoer afgewerkt.</p>
+            <ul>{rows.map(step=><li key={step.id}>
+              <strong>{step.status==='open'?'Nog regelen: ':
+                step.status==='onbekend'?'Onbekend: ':'Eigen voortgang: '}
+                {step.title}</strong>
+              <p>{step.detail} <a href={step.href}>Werk dit onderdeel bij</a></p>
+            </li>)}</ul>
+          </div>;
+        })}
+        <p>De momentopname bevat uitsluitend geaggregeerde statusregels.
+          Er worden geen persoonsnamen, bedragen, privéadressen, doosinhoud of
+          originele notities geëxporteerd. Je opslaglocatie kan synchroniseren.</p>
+        <button type="button" disabled={!complete} onClick={()=>{
+          setPendingMoveDay(moveDaySignature);setNotice('');
+        }}>Bekijk mijn privé-verhuisdagoverzicht als TXT…</button>
+        {archive&&pendingMoveDay===moveDaySignature&&
+          <div role="group" aria-label="Bevestig geanonimiseerd verhuisdagoverzicht">
+            <p>Controleer vóór opslag de volledige tekst. Dit is een door jou
+              gemaakte overzichtsnotitie, geen bewijs van vertrek of aankomst.</p>
+            <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:'25rem',overflowY:'auto'}}>{moveDayReport}</pre>
+            <button type="button" onClick={downloadMoveDay}>
+              Bevestig lokale TXT-download
+            </button>
+            <button type="button" onClick={()=>setPendingMoveDay(null)}>Annuleren</button>
+          </div>}
+      </section>
+
       <section aria-labelledby="private-moving-actions-heading">
         <h3 id="private-moving-actions-heading">Wat wil je nog zelf regelen?</h3>
         <p>Eigen actieoverzicht, geen officiële toewijzing of deadline.
