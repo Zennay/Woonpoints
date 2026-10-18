@@ -2697,6 +2697,39 @@ function privatePointsDecodeArchive(raw: string): PrivatePointsEntry[] | null {
     return null;
   }
 }
+function privatePointsDecodeCsv(raw: string): PrivatePointsEntry[] | null {
+  if (!raw || new TextEncoder().encode(raw).byteLength > 4096 ||
+      /[^\x0A\x0D\x20-\x7E]/.test(raw)) return null;
+  // Only ASCII ISO-like month + integer; no labels, formulas, or spreadsheet directives.
+  const normalized = raw.replace(/\r\n/g,'\n');
+  if (normalized.includes('\r')) return null;
+  const lines = (normalized.endsWith('\n')
+    ? normalized.slice(0,-1) : normalized).split('\n');
+  if (lines[0] !== 'month,points' ||
+      lines.length < 2 || lines.length > PRIVATE_POINTS_MAX + 1) return null;
+  const parsed: PrivatePointsEntry[] = [];
+  for (const line of lines.slice(1)) {
+    if (!/^20\d{2}-(?:0[1-9]|1[0-2]),(?:0|[1-9]\d{0,4})$/.test(line)) return null;
+    const [month,value] = line.split(',');
+    parsed.push({month,points:Number(value)});
+  }
+  if (!privatePointsValid(parsed)) return null;
+  return parsed.sort((a,b)=>a.month.localeCompare(b.month));
+}
+function downloadPrivatePointsCsv(rows: PrivatePointsEntry[]) {
+  const content = ['month,points',...rows.map(row=>row.month+','+String(row.points))]
+    .join('\r\n')+'\r\n';
+  // CSV columns are strictly numeric/canonical month: cannot begin with a formula.
+  const url = URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'woonpoints-eigen-zoekpunten.csv';
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 function downloadPrivatePointsArchive(rows: PrivatePointsEntry[]) {
   const content = JSON.stringify({format:PRIVATE_POINTS_ARCHIVE,entries:rows},null,2)+'\n';
   const url = URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
@@ -2757,6 +2790,22 @@ export function PrivateSearchPointsHistory() {
     setEditingMonth(null);
     setPoints('');
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
+  }
+  async function selectCsvArchive(file: File|undefined) {
+    setPendingImport(null);
+    if (!file) return;
+    if (file.size < 1 || file.size > 4096) {
+      setMessage('CSV geweigerd: maximaal 4 KiB toegestaan.');
+      return;
+    }
+    try {
+      const imported = privatePointsDecodeCsv(await file.text());
+      if (!imported) throw new Error('invalid');
+      setPendingImport(imported);
+      setMessage('Eigen CSV gelezen; bevestig apart of je de huidige maandstanden wilt vervangen.');
+    } catch {
+      setMessage('CSV geweigerd: gebruik exact month,points en geldige unieke maand,gehele-punten-regels. Huidige notities behouden.');
+    }
   }
   async function selectArchive(file: File|undefined) {
     setPendingImport(null);
@@ -2863,6 +2912,10 @@ export function PrivateSearchPointsHistory() {
           downloadPrivatePointsArchive(sorted);
           setMessage('Privé-JSON aangeboden om zelf op te slaan; de gekozen map kan synchroniseren.');
         }}>Bewaar eigen maandstanden als JSON…</button>
+        <button type="button" disabled={!rows.length} onClick={()=>{
+          downloadPrivatePointsCsv(sorted);
+          setMessage('Eigen numerieke CSV aangeboden. Controleer de gekozen bestandslocatie.');
+        }}>Bewaar eigen maandstanden als CSV…</button>
         <button type="button" className="secondary" disabled={!rows.length}
           onClick={()=>setConfirmClear(true)}>Wis alle maandstanden…</button>
       </div>
@@ -2880,7 +2933,16 @@ export function PrivateSearchPointsHistory() {
         const file=event.currentTarget.files?.[0];event.currentTarget.value='';
         void selectArchive(file);
       }} />
-      {pendingImport && <div className="private-points-confirm" role="group" aria-label="Bevestig privé-JSON-restore">
+      <label htmlFor="points-import-csv">Lees eigen maandstanden-CSV (max. 4 KiB)</label>
+      <input type="file" id="points-import-csv" accept=".csv,text/csv"
+        onChange={event=>{
+          const file=event.currentTarget.files?.[0];event.currentTarget.value='';
+          void selectCsvArchive(file);
+        }} />
+      <p>De CSV gebruikt uitsluitend twee vaste kolommen:
+        <code>month,points</code> en bijvoorbeeld <code>2026-10,12</code>.
+        Alleen hele, zelf afgelezen punten, geen formules of vrije tekst.</p>
+      {pendingImport && <div className="private-points-confirm" role="group" aria-label="Bevestig privé-puntenbestand herstellen">
         <p>Dit bestand bevat {pendingImport.length} geldige eigen maandstanden.
           Bevestigen vervangt alle {rows.length} huidige notities, niet je
           accountgegevens of andere Woonpoints-onderdelen.</p>
