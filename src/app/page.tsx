@@ -1047,6 +1047,10 @@ function PrivateMoveAftercare() {
   const [issuePriority, setIssuePriority] = useState<Priority | 'alle'>('alle');
   const [issueRoom, setIssueRoom] = useState('alle');
   const [showAllFollowUps, setShowAllFollowUps] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
+  const [pendingBulk, setPendingBulk] = useState<{
+    status: 'open' | 'afgerond'; signature: string; count: number
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
@@ -1167,6 +1171,42 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const bulkVisible = shown.filter(item => bulkSelectedIds.includes(item.id));
+  const bulkSignature = JSON.stringify({
+    items, selectedIds: bulkVisible.map(item => item.id), filter,
+    issuePriority, issueRoom, issueQuery
+  });
+  const bulkIsCurrent = pendingBulk !== null && pendingBulk.signature === bulkSignature &&
+    pendingBulk.count === bulkVisible.length;
+
+  function proposeBulkStatus(status: 'open' | 'afgerond') {
+    if (bulkVisible.length === 0) { setMessage('Selecteer eerst zichtbare eigen dossierpunten.'); return; }
+    setPendingBulk({ status, signature: bulkSignature, count: bulkVisible.length });
+  }
+
+  function confirmBulkStatus() {
+    if (pendingBulk === null || !bulkIsCurrent || bulkVisible.length === 0) {
+      setPendingBulk(null);
+      setMessage('Selectie of gegevens zijn veranderd. Selecteer en controleer de bulkactie opnieuw.');
+      return;
+    }
+    const selected = new Set(bulkVisible.map(item => item.id));
+    const next = items.map(item => selected.has(item.id) ?
+      { ...item, status: pendingBulk.status } : item);
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: next, history
+    }, null, 2)).length > MAX_BYTES) {
+      setPendingBulk(null);
+      setMessage('Niet aangepast: eigen privé-JSON zou groter dan 16 KiB worden.');
+      return;
+    }
+    const count = selected.size;
+    setItems(next);
+    setPendingBulk(null);
+    setBulkSelectedIds([]);
+    setMessage(count + ' eigen punten als ' + pendingBulk.status +
+      ' gemarkeerd. Geen officiële actie of verhuurderbericht uitgevoerd.');
+  }
 
   function openIssueFromInbox(id: string) {
     // Clearing the local view first ensures the destination cannot be hidden by filters.
