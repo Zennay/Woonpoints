@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { summarizePositionPairs, summarizeManualPositionHistory, formatPositionPercentile } from '../lib/position-statistics.mjs';
+import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
 /** Ephemeral local arithmetic only: not a WoningNet account connection. */
 export default function PositionStats() {
@@ -50,6 +50,42 @@ export default function PositionStats() {
 /** Browser-memory-only M1 monthly trend; never reads or writes an account. */
 export function ManualPositionHistory() {
   const [input, setInput] = useState('');
+  const [pendingImport, setPendingImport] = useState<{ text: string; count: number } | null>(null);
+  const [fileMessage, setFileMessage] = useState('');
+  async function selectCsv(file: File | undefined) {
+    if (!file) return;
+    setPendingImport(null);
+    setFileMessage('');
+    if (file.size === 0 || file.size > 16384) {
+      setFileMessage('Bestand geweigerd: selecteer een kleine geldige Woonpoints-CSV.');
+      return;
+    }
+    try {
+      const restored = importManualPositionHistoryCsv(await file.text());
+      const sample = summarizeManualPositionHistory(restored);
+      if (!sample) throw new TypeError('empty');
+      setPendingImport({ text: restored, count: sample.sampleCount });
+    } catch {
+      setFileMessage('Bestand geweigerd: verkeerde indeling of ongeldige gegevens. Je huidige invoer is behouden.');
+    }
+  }
+  function downloadCsv() {
+    try {
+      const csv = exportManualPositionHistoryCsv(input);
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      link.href = url;
+      link.download = 'woonpoints-handmatige-maandposities.csv';
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setFileMessage('CSV aangeboden om lokaal te bewaren. De gekozen opslaglocatie kan synchroniseren.');
+    } catch {
+      setFileMessage('Export niet beschikbaar: controleer eerst je handmatige posities.');
+    }
+  }
   let history: ReturnType<typeof summarizeManualPositionHistory> = null;
   let invalid = false;
   try {
@@ -105,9 +141,45 @@ export function ManualPositionHistory() {
         />
         <p>Niet opgeslagen, niet verzonden. Vul geen adressen, namen,
           inloggegevens of andere persoonlijke informatie in.</p>
-        <button type="button" onClick={() => setInput('')} disabled={!input.length}>
-          Wis maandhistorie
-        </button>
+        <div className="month-history-actions">
+          <button type="button" onClick={() => {
+            setInput('');
+            setPendingImport(null);
+            setFileMessage('');
+          }} disabled={!input.length}>Wis maandhistorie</button>
+          <button type="button" onClick={downloadCsv} disabled={invalid || !history}>
+            Exporteer CSV…
+          </button>
+        </div>
+        <label className="month-csv-picker" htmlFor="month-csv-input">
+          Importeer eerder bewaarde maandhistorie (CSV, max. 16 KB)
+        </label>
+        <input type="file" id="month-csv-input" accept=".csv,text/csv"
+          onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void selectCsv(file);
+          }} />
+        {pendingImport && (
+          <div className="month-csv-confirm" role="group" aria-label="Bevestig CSV-import">
+            <p><strong>{pendingImport.count}</strong> geldige handmatige resultaten gevonden.
+              Importeren vervangt alle huidige invoer in dit tabblad. Er wordt niets naar WoningNet verzonden.</p>
+            <div className="month-history-actions">
+              <button type="button" onClick={() => {
+                setInput(pendingImport.text);
+                setPendingImport(null);
+                setFileMessage('CSV lokaal ingelezen. Nog steeds ongeverifieerde handmatige gegevens.');
+              }}>Vervang huidige invoer</button>
+              <button type="button" onClick={() => {
+                setPendingImport(null);
+                setFileMessage('Import geannuleerd: huidige invoer behouden.');
+              }}>Annuleren</button>
+            </div>
+          </div>
+        )}
+        {fileMessage && <p role="status">{fileMessage}</p>}
+        <p>CSV-export is uitsluitend op eigen verzoek. Een bestand op een
+          cloudgesynchroniseerde locatie kan buiten Woonpoints terechtkomen.</p>
         <div aria-live="polite" aria-atomic="true">
           {invalid && (
             <p role="alert">Gebruik maximaal 120 geldige datum,positie/totaal-regels,
