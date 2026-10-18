@@ -4463,15 +4463,16 @@ export function PrivateMovingPackingInventory(){
     function restore(event:Event){
       const imported=(event as CustomEvent<unknown>).detail;
       if(!validMovingWorkspaceArchive(imported)||
-        (imported.version!==3&&imported.version!==4))return;
+        (imported.version!==3&&imported.version!==4&&
+          imported.version!==5&&imported.version!==6))return;
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
       setPendingRestore(null);setPendingLabels(null);
-      setTransport(imported.version===4?
+      setTransport(imported.version>=4?
         packingRestoreTransport(imported.packing.items,imported.packing.transport):{});
       setPendingManifest(null);
-      setNotice(imported.version===4?
-        'Paklijst en eigen transportmarkeringen uit v4-werkmap hersteld.':
+      setNotice(imported.version>=4?
+        'Paklijst en eigen transportmarkeringen uit v4/v5/v6-werkmap hersteld.':
         'Oude v3-paklijst hersteld. Niet-bewaarde transportmarkeringen zijn leeggemaakt.');
     }
     window.addEventListener('woonpoints:moving-workspace:restore',restore);
