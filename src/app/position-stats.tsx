@@ -1358,7 +1358,7 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
   const budgetInputs = readBudgetInputs(budgetDraft);
   const forecastA = left && budgetInputs ? calculateBudgetForecast(left, budgetInputs) : null;
   const forecastB = right && budgetInputs ? calculateBudgetForecast(right, budgetInputs) : null;
-  const moveMonths = /^(?:[1-9]|[12]\\d|3[0-6])$/.test(movePlan.months)
+  const moveMonths = /^(?:[1-9]|[12]\d|3[0-6])$/.test(movePlan.months)
     ? Number(movePlan.months) : null;
   const reserveMonths = /^(?:[0-9]|1[0-2])$/.test(movePlan.reserveMonths)
     ? Number(movePlan.reserveMonths) : null;
@@ -1402,7 +1402,7 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
       'Stijging gezamenlijke woonlasten in tegenslag: ' + budgetInputs.rise + '%',
       '', ...formatScenario(left, forecastA), '', ...formatScenario(right, forecastB),
       ...(savingA && savingB && moveMonths !== null && reserveMonths !== null
-        ? ['', 'VERHUISS PAARDOEL - ZELF GEKOZEN PLANNING',
+        ? ['', 'VERHUISSPAARDOEL - ZELF GEKOZEN PLANNING',
            'Maanden tot verhuizing: ' + moveMonths,
            'Maanden gewenste vaste-lastenbuffer: ' + reserveMonths,
            left.label + ' doel: ' + currencyCost(savingA.target) +
