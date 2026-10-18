@@ -3214,6 +3214,17 @@ type MovingWorkspaceArchiveV3 = Omit<MovingWorkspaceArchiveV2,'version'> & {
   version:3;
   packing:{items:PackingItem[]};
 };
+type MovingWorkspaceArchiveV4=Omit<MovingWorkspaceArchiveV3,'version'|'packing'> & {
+  version:4;
+  packing:{items:PackingItem[];transport:PackingTransportRow[]};
+};
+function validMovingWorkspacePackingV4(raw:unknown):raw is MovingWorkspaceArchiveV4['packing']{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const data=raw as Record<string,unknown>;
+  if(Object.keys(data).sort().join('|')!=='items|transport')return false;
+  return validArchive({format:'woonpoints-private-packing-list',version:2,
+    items:data.items,transport:data.transport});
+}
 function validMovingWorkspacePacking(value:unknown):value is MovingWorkspaceArchiveV3['packing']{
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
   const data=value as Record<string,unknown>;
@@ -3299,16 +3310,16 @@ function validMovingWorkspaceDocuments(value:unknown):
 }
 
 
-function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 {
+function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive | MovingWorkspaceArchiveV2 | MovingWorkspaceArchiveV3 | MovingWorkspaceArchiveV4 {
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const obj = raw as Record<string,unknown>;
-  const v2=obj.version===2,v3=obj.version===3;
+  const v2=obj.version===2,v3=obj.version===3,v4=obj.version===4;
   const keys=Object.keys(obj).sort().join('|');
-  if(keys!==(v3?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
+  if(keys!==((v3||v4)?'documents|expenses|format|handover|packing|quotes|split|timeline|version':
     v2?'documents|expenses|format|handover|quotes|split|timeline|version':
     'expenses|format|quotes|split|version') ||
     obj.format !== 'woonpoints-private-moving-workspace' ||
-    (obj.version!==1&&!v2&&!v3))return false;
+    (obj.version!==1&&!v2&&!v3&&!v4))return false;
   const quoteData=obj.quotes, expenseData=obj.expenses, splitData=obj.split;
   if(!quoteData||typeof quoteData!=='object'||Array.isArray(quoteData)||
     !expenseData||typeof expenseData!=='object'||Array.isArray(expenseData)||
@@ -3332,12 +3343,13 @@ function validMovingWorkspaceArchive(raw:unknown): raw is MovingWorkspaceArchive
   const expenseIds=(expenses.lines as MovingExpenseLine[]).map(e=>e.id);
   return new Set(quoteIds).size===quoteIds.length &&
     new Set(expenseIds).size===expenseIds.length &&
-    (!(v2||v3) || (validMovingWorkspaceTimeline(obj.timeline)&&
+    (!(v2||v3||v4) || (validMovingWorkspaceTimeline(obj.timeline)&&
       validMovingWorkspaceHandover(obj.handover)&&
       validMovingWorkspaceDocuments(obj.documents))) &&
-    (!v3 || validMovingWorkspacePacking(obj.packing));
+    (!v3 || validMovingWorkspacePacking(obj.packing)) &&
+    (!v4 || validMovingWorkspacePackingV4(obj.packing));
 }
-function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3):string{
+function privateMovingWorkspaceSignature(data:MovingWorkspaceArchive|MovingWorkspaceArchiveV2|MovingWorkspaceArchiveV3|MovingWorkspaceArchiveV4):string{
   return JSON.stringify(data);
 }
 
@@ -3387,7 +3399,7 @@ function movingReportLine(value:string):string{
   return value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,900);
 }
 function buildPrivateMovingReport(
-  archive:MovingWorkspaceArchiveV3,sections:MovingReportSection[],
+  archive:MovingWorkspaceArchiveV4,sections:MovingReportSection[],
   actions:PrivateMovingAction[],today:string|null
 ):string{
   const lines:string[]=[
