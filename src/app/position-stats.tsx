@@ -64,7 +64,8 @@ export function ManualPositionHistory({
     text: string; count: number; originalSource: string
   } | null>(null);
   const [positionImportUndo, setPositionImportUndo] = useState<{
-    original: string; imported: string; mode: 'append'|'replace'
+    original: string; imported: string; mode: 'append'|'replace';
+    origin: 'csv'|'journal'
   } | null>(null);
   const positionImportSequence = useRef(0);
   const [fileMessage, setFileMessage] = useState('');
@@ -75,6 +76,13 @@ export function ManualPositionHistory({
   const importedPositionLines = pendingImport?.text.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
   const existingPositionLines = input.split('\n').map(v=>v.trim()).filter(Boolean);
   const samePositionLines = importedPositionLines.filter(v=>existingPositionLines.includes(v)).length;
+  const journalOfferLines=journalOffer?.data.split('\n').map(v=>v.trim()).filter(Boolean) ?? [];
+  const journalOfferCombined=[input.trim(),journalOffer?.data.trim()??''].filter(Boolean).join('\n');
+  const journalOfferOverlap=journalOfferLines.filter(v=>existingPositionLines.includes(v)).length;
+  const canAppendJournalPositions=Boolean(journalOffer && !pendingImport &&
+    journalOfferCombined.length<=8192 &&
+    existingPositionLines.length+journalOfferLines.length<=120);
+
   const combinedPositionText = [input.trim(),pendingImport?.text.trim()??'']
     .filter(Boolean).join('\n');
   const canAppendPositionImport = Boolean(pendingImport && importSourceCurrent &&
@@ -115,13 +123,34 @@ export function ManualPositionHistory({
     try {
       if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
         throw new Error('Not a supported month position list');
-      setPositionImportUndo({original:input,imported:candidate,mode});
+      setPositionImportUndo({original:input,imported:candidate,mode,origin:'csv'});
       setInput(candidate);
       setPendingImport(null);
       setFileMessage(mode==='append'?'CSV-posities toegevoegd; vorige tekst tijdelijk herstelbaar.':
         'Maandposities bewust vervangen; vorige tekst tijdelijk herstelbaar.');
     }catch{
       setFileMessage('De combinatie voldoet niet aan de grenzen voor geldige datums, posities, 120 regels of 24 maanden. Niets aangepast.');
+    }
+  }
+  function transferJournalPositions(mode:'append'|'replace'){
+    if(!journalOffer||pendingImport)return;
+    if(mode==='append'&&!canAppendJournalPositions){
+      setFileMessage('Aanvullen niet mogelijk door te veel posities of tekst. Je huidige gegevens blijven staan.');
+      return;
+    }
+    const candidate=mode==='append'?journalOfferCombined:journalOffer.data;
+    try{
+      if(candidate.length>8192||!summarizeManualPositionHistory(candidate))
+        throw new Error('Invalid manual history');
+      setPositionImportUndo({original:input,imported:candidate,mode,origin:'journal'});
+      setInput(candidate);
+      setPendingImport(null);
+      setFileMessage(mode==='append'?
+        'Eigen dagboekposities veilig toegevoegd; eerdere grafiekgegevens behouden.':
+        'Posities bewust vervangen vanuit eigen dagboek; vorige tekst tijdelijk herstelbaar.');
+      onJournalDecision?.();
+    }catch{
+      setFileMessage('Overdracht niet mogelijk binnen de geldige datum-, positie- en maandgrenzen. Huidige historie behouden.');
     }
   }
   function undoPositionImport() {
@@ -207,20 +236,35 @@ export function ManualPositionHistory({
         <p>Niet opgeslagen, niet verzonden. Vul geen adressen, namen,
           inloggegevens of andere persoonlijke informatie in.</p>
         {journalOffer && (
-          <div className="month-csv-confirm" role="group" aria-label="Bevestig overdracht van reactiedagboek">
-            <p>Je reactiedagboek biedt <strong>{journalOffer.count}</strong> zelf ingevoerde
-              eindposities aan. Deze gegevens zijn niet officieel gecontroleerd.
-              Overnemen vervangt de huidige maandgrafiek-invoer, maar wist het
-              reactiedagboek niet.</p>
+          <div className="month-csv-confirm" role="group" aria-label="Kies eigen dagboekoverdracht">
+            <h3>Reactiedagboek → maandgrafiek: toevoegen of vervangen?</h3>
+            <p>Je eigen dagboek biedt <strong>{journalOffer.count}</strong> zelf ingevoerde
+              eindposities aan. De maandgrafiek bevat nu <strong>{existingPositionLines.length}</strong>
+              zelf getypte resultaten. Deze gegevens zijn nooit door WoningNet bevestigd.</p>
+            {journalOfferOverlap>0&&<p role="status">Er lijken {journalOfferOverlap}
+              posities met exact dezelfde datum/rang/totaal al voor te komen.
+              Dat bewijst geen dubbele woning. Er wordt niets automatisch weggegooid.</p>}
+            <p><strong>Veilig toevoegen:</strong> bestaande maandgrafiekregels blijven staan.
+              Na toevoegen zouden er {existingPositionLines.length+journalOfferLines.length}
+              resultaten zijn, onder dezelfde limieten van 120 regels, 24 maanden en 8192 tekens.</p>
+            {!canAppendJournalPositions&&<p role="status">
+              Aanvullen is momenteel niet mogelijk wegens een open CSV-import of de
+              maximale regelaantal-/tekstgrens. Je kunt zelf bewust vervangen of behouden.</p>}
             <div className="month-history-actions">
-              <button type="button" onClick={() => {
-                setInput(journalOffer.data);
-                setPendingImport(null);
-                setFileMessage('Posities uit je eigen reactiedagboek overgenomen. Geen WoningNet-broncontrole.');
-                onJournalDecision?.();
-              }}>Gebruik in maandgrafiek</button>
-              <button type="button" onClick={() => onJournalDecision?.()}>Behoud huidige grafiek</button>
+              <button type="button" disabled={!canAppendJournalPositions}
+                onClick={() => transferJournalPositions('append')}>
+                Voeg eigen dagboekposities toe zonder huidige te wissen
+              </button>
+              <button type="button" disabled={Boolean(pendingImport)}
+                onClick={() => transferJournalPositions('replace')}>
+                Vervang grafiek bewust door eigen dagboekposities
+              </button>
+              <button type="button" onClick={() => onJournalDecision?.()}>
+                Behoud huidige maandgrafiek
+              </button>
             </div>
+            <p>Beide bewuste overdrachtkeuzes bewaren één tijdelijk herstelpunt van
+              de vorige grafiektekst. Het dagboek zelf wordt nooit gewijzigd.</p>
           </div>
         )}
         <div className="month-history-actions">
@@ -278,7 +322,9 @@ export function ManualPositionHistory({
         )}
         {positionImportUndo && <div className="month-csv-confirm" role="group"
           aria-label="Vorige posities veilig terugzetten">
-          <h3>Laatste CSV-import terugdraaien</h3>
+          <h3>Laatste eigen gegevensoverdracht terugdraaien</h3>
+          <p>Bron: {positionImportUndo.origin==='journal'?'persoonlijk reactiedagboek':'eigen CSV-bestand'}.
+            De vorige grafiektekst is enkel tijdelijk in dit tabblad opgeslagen.</p>
           <p>Je laatste {positionImportUndo.mode==='append'?'aanvulling':'vervanging'}
             bevat een tijdelijk herstelpunt met je vorige tabbladtekst.
             Dit is alleen geldig zolang er nadien niets aan de posities is veranderd.</p>
@@ -395,9 +441,10 @@ export type PrivateJournalCountOffer = {
 
 /** Transfers only a voluntary aggregate; never source records or account data. */
 export function ManualReactionJournal({
-  onTransfer, onMonthCountOffer, onJournalSnapshot, reportMonth
+  onTransfer, onTransferCancel, onMonthCountOffer, onJournalSnapshot, reportMonth
 }: {
   onTransfer?: (data: string, count: number) => void;
+  onTransferCancel?: () => void;
   onMonthCountOffer?: (offer: PrivateJournalCountOffer | null) => void;
   onJournalSnapshot?: (summary: PrivateJournalSnapshot) => void;
   reportMonth?: string;
@@ -457,7 +504,8 @@ export function ManualReactionJournal({
     // A pending cross-panel proposal cannot survive a modification, restore
     // request or deletion in its original source journal.
     onMonthCountOffer?.(null);
-  }, [entries,pendingImport,onMonthCountOffer]);
+    onTransferCancel?.(); // Previously offered positions are stale after journal edits/import.
+  }, [entries,pendingImport,onMonthCountOffer,onTransferCancel]);
   useEffect(() => {
     if (!onJournalSnapshot) return;
     const now=new Date();
@@ -965,9 +1013,11 @@ export function ManualPositionsWorkspace({
   reportMonth?: string;
 } = {}) {
   const [offer, setOffer] = useState<{ data: string; count: number } | null>(null);
+  const cancelStaleOffer=useCallback(()=>setOffer(null),[]);
   return (
     <>
       <ManualReactionJournal onTransfer={(data, count) => setOffer({ data, count })}
+        onTransferCancel={cancelStaleOffer}
         onMonthCountOffer={onMonthCountOffer}
         onJournalSnapshot={onJournalSnapshot} reportMonth={reportMonth} />
       <ManualPositionHistory journalOffer={offer} onJournalDecision={() => setOffer(null)} />
