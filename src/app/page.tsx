@@ -6027,12 +6027,24 @@ function PrivateUtilityDeadlineDesk({
  * or local storage. A calendar file may be shared by an external calendar app
  * only after an explicit full preview and a separate user consent checkbox.
  */
+
+const UTILITY_TAB_STORAGE_KEY='woonpoints:private-utility-transfer:tab-recovery:v1';
+function encodeUtilityTab(entries:Record<PrivateUtilityKey,PrivateUtilityStep>):string{
+  return privateUtilityBackup(entries);
+}
+function decodeUtilityTab(raw:string):Record<PrivateUtilityKey,PrivateUtilityStep>|null{
+  try{return privateUtilityRestore(raw);}catch{return null;}
+}
 function PrivateUtilityTransfer({
   onLogContact,onPulse
 }: { onLogContact?: (utility:PrivateUtilityKey)=>void;
      onPulse?: (pulse:PrivateMovePulse)=>void }={}) {
-  const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
-    PRIVATE_UTILITY_EMPTY);
+  const {value:entries,setValue:setEntries,enabled:rememberUtilities,
+    hydrated:utilitiesReady,storageMessage:utilitiesStorageMessage,
+    enable:enableUtilitiesRestore,disable:disableUtilitiesRestore}
+    =usePrivateTabRecovery<Record<PrivateUtilityKey,PrivateUtilityStep>>(
+      UTILITY_TAB_STORAGE_KEY,()=>PRIVATE_UTILITY_EMPTY,
+      encodeUtilityTab,decodeUtilityTab,4096);
   const [preview, setPreview] = useState<{
     source: string; text: string; kind: 'txt' | 'ics' | 'json'
   } | null>(null);
@@ -6150,6 +6162,27 @@ function PrivateUtilityTransfer({
     <p>Gebruik zes handmatige stappen om je verhuizing te organiseren. Je kiest je eigen
       controledatums en houdt apart bij wat nog openstaat, wat je zelf hebt aangevraagd
       en wat je zelf als afgerond hebt genoteerd. Een status is nooit officiële bevestiging.</p>
+    <details style={{marginBottom:16}}>
+      <summary style={{cursor:'pointer',fontWeight:700}}>
+        Mijn checklist bij herladen behouden ({rememberUtilities?'aan':'uit'})
+      </summary>
+      <p>Zonder toestemming blijven de zes eigen statussen en datums alleen in dit
+        tabbladgeheugen. Met jouw expliciete toestemming gebruiken we
+        <strong> niet-versleutelde sessie-opslag in dit tabblad</strong> voor het
+        exact gevalideerde bestand. Scripts op deze website kunnen dit lezen;
+        gebruik dit niet op een gedeeld apparaat en vul geen persoonsgegevens in.
+        Er gebeurt niets bij je leveranciers. Sluiten van het tabblad verwijdert
+        de sessie doorgaans; langdurig bewaren gaat via je eigen JSON-download.</p>
+      {rememberUtilities?<button type="button" disabled={!utilitiesReady}
+        onClick={disableUtilitiesRestore} style={{minHeight:44}}>
+        Stop en wis mijn tabbladchecklist</button>:
+        <button type="button" disabled={!utilitiesReady}
+          onClick={enableUtilitiesRestore} style={{minHeight:44}}>
+          Ja, onthoud mijn zes stappen bij herladen</button>}
+      <p role="status" aria-live="polite">
+        {utilitiesStorageMessage|| (utilitiesReady?'Geen sessieopslag actief.':'Opslag wordt gecontroleerd.')}
+      </p>
+    </details>
     <div style={{ display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 310px), 1fr))', gap: 12 }}>
       {PRIVATE_UTILITIES.map(item => <fieldset key={item.id} id={'utility-step-' + item.id} style={{
