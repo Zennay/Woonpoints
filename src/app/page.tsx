@@ -4852,7 +4852,7 @@ function privateContactValid(entry: PrivateUtilityContact): boolean {
     (entry.followUp === '' || handoverValidDay(entry.followUp)) &&
     typeof entry.note === 'string' && entry.note.trim().length > 0 &&
     entry.note.length <= CONTACT_NOTE_LIMIT &&
-    !/[\\u0000-\\u001f\\u007f\\u2028\\u2029]/u.test(entry.note);
+    !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(entry.note);
 }
 function privateContactBackup(entries: PrivateUtilityContact[]): string {
   return JSON.stringify({ kind: 'woonpoints-private-utility-contacts',
@@ -4931,7 +4931,7 @@ function PrivateUtilityContactLog() {
   const visible=entries.filter(entry=>selected==='all'||entry.utility===selected)
     .sort((a,b)=>b.day.localeCompare(a.day)||b.id-a.id);
   const noteValid=draft.note.trim().length>0 && draft.note.length<=CONTACT_NOTE_LIMIT &&
-    !/[\\u0000-\\u001f\\u007f\\u2028\\u2029]/u.test(draft.note);
+    !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(draft.note);
   const draftValid=handoverValidDay(draft.day) &&
     (draft.followUp===''||handoverValidDay(draft.followUp)) && noteValid;
   const today=new Date();
