@@ -236,20 +236,35 @@ export function ManualPositionHistory({
         <p>Niet opgeslagen, niet verzonden. Vul geen adressen, namen,
           inloggegevens of andere persoonlijke informatie in.</p>
         {journalOffer && (
-          <div className="month-csv-confirm" role="group" aria-label="Bevestig overdracht van reactiedagboek">
-            <p>Je reactiedagboek biedt <strong>{journalOffer.count}</strong> zelf ingevoerde
-              eindposities aan. Deze gegevens zijn niet officieel gecontroleerd.
-              Overnemen vervangt de huidige maandgrafiek-invoer, maar wist het
-              reactiedagboek niet.</p>
+          <div className="month-csv-confirm" role="group" aria-label="Kies eigen dagboekoverdracht">
+            <h3>Reactiedagboek → maandgrafiek: toevoegen of vervangen?</h3>
+            <p>Je eigen dagboek biedt <strong>{journalOffer.count}</strong> zelf ingevoerde
+              eindposities aan. De maandgrafiek bevat nu <strong>{existingPositionLines.length}</strong>
+              zelf getypte resultaten. Deze gegevens zijn nooit door WoningNet bevestigd.</p>
+            {journalOfferOverlap>0&&<p role="status">Er lijken {journalOfferOverlap}
+              posities met exact dezelfde datum/rang/totaal al voor te komen.
+              Dat bewijst geen dubbele woning. Er wordt niets automatisch weggegooid.</p>}
+            <p><strong>Veilig toevoegen:</strong> bestaande maandgrafiekregels blijven staan.
+              Na toevoegen zouden er {existingPositionLines.length+journalOfferLines.length}
+              resultaten zijn, onder dezelfde limieten van 120 regels, 24 maanden en 8192 tekens.</p>
+            {!canAppendJournalPositions&&<p role="status">
+              Aanvullen is momenteel niet mogelijk wegens een open CSV-import of de
+              maximale regelaantal-/tekstgrens. Je kunt zelf bewust vervangen of behouden.</p>}
             <div className="month-history-actions">
-              <button type="button" onClick={() => {
-                setInput(journalOffer.data);
-                setPendingImport(null);
-                setFileMessage('Posities uit je eigen reactiedagboek overgenomen. Geen WoningNet-broncontrole.');
-                onJournalDecision?.();
-              }}>Gebruik in maandgrafiek</button>
-              <button type="button" onClick={() => onJournalDecision?.()}>Behoud huidige grafiek</button>
+              <button type="button" disabled={!canAppendJournalPositions}
+                onClick={() => transferJournalPositions('append')}>
+                Voeg eigen dagboekposities toe zonder huidige te wissen
+              </button>
+              <button type="button" disabled={Boolean(pendingImport)}
+                onClick={() => transferJournalPositions('replace')}>
+                Vervang grafiek bewust door eigen dagboekposities
+              </button>
+              <button type="button" onClick={() => onJournalDecision?.()}>
+                Behoud huidige maandgrafiek
+              </button>
             </div>
+            <p>Beide bewuste overdrachtkeuzes bewaren één tijdelijk herstelpunt van
+              de vorige grafiektekst. Het dagboek zelf wordt nooit gewijzigd.</p>
           </div>
         )}
         <div className="month-history-actions">
@@ -307,7 +322,9 @@ export function ManualPositionHistory({
         )}
         {positionImportUndo && <div className="month-csv-confirm" role="group"
           aria-label="Vorige posities veilig terugzetten">
-          <h3>Laatste CSV-import terugdraaien</h3>
+          <h3>Laatste eigen gegevensoverdracht terugdraaien</h3>
+          <p>Bron: {positionImportUndo.origin==='journal'?'persoonlijk reactiedagboek':'eigen CSV-bestand'}.
+            De vorige grafiektekst is enkel tijdelijk in dit tabblad opgeslagen.</p>
           <p>Je laatste {positionImportUndo.mode==='append'?'aanvulling':'vervanging'}
             bevat een tijdelijk herstelpunt met je vorige tabbladtekst.
             Dit is alleen geldig zolang er nadien niets aan de posities is veranderd.</p>
