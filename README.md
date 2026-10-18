@@ -692,3 +692,27 @@ inclusief zichtbaar tijdelijk/niet-bevestigd browseropslaggedrag, en
   broninformatie ontbreekt. Het aparte eigen overzicht claimt dus
   geen geverifieerde WoningNet-stand, toegekende zoekpunten of
   automatisch geldige reacties. De worker blijft `BOT_DRY_RUN=true`.
+
+
+## Eigen zoekpunten erbij in het gecombineerde privé-overzicht
+
+Het persoonlijke maandoverzicht laat nu naast de **eigen maandteller** en
+het **persoonlijke reactiedagboek** ook de laatst door jou genoteerde
+zoekpuntenmaand zien. Dit derde kaartje toont uitsluitend de laatste
+handmatige puntenwaarde en, indien aanwezig, het exacte verschil met de
+vorige *ingevulde* maand. Het schat geen tussenmaanden of toekomstige
+punten, bevestigt geen geldige WoningNet-reacties en vervangt geen
+officieel accountoverzicht. De bestaande officiële bronkaarten blijven
+daarom terecht **Onbekend** waar broncontrole ontbreekt.
+
+- Wijzig, verwijder of herstel een privépuntenstand in de bestaande
+  zoekpuntenmodule: het kaartje volgt alleen de huidige React-status van
+  dat browsertabblad, zonder achtergrondopslag of eigen data-API.
+- Er is een zichtbare directe link naar de oorspronkelijke
+  zoekpuntenhistorie, naast de links naar maandplanning en dagboek.
+- De bestaande vorm en plaatsing van de drie invoerpanelen blijven
+  behouden. Geen automatische overdracht tussen zoekpunten en eigen
+  reacties: het is uitsluitend een transparante momentopname.
+- Zelfs een verschil van nul is een *persoonlijke waarneming*, geen
+  officiële toekenning of voorspelling. De WoningNet-worker blijft in
+  dry-run en account-/toestemmings-/releasegates blijven intact.
