@@ -3928,7 +3928,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
         <button type="button" className="secondary" onClick={()=>{
           setPendingExport(null);setExportApproved(false);
         }}>Annuleren</button>
-      </div>
+      </div>}
       {confirmClear && <div className="private-points-confirm" role="group" aria-label="Bevestig alle notities wissen">
         <p>Alle {rows.length} eigen maandstanden uit dit tabblad verwijderen?</p>
         <button type="button" onClick={()=>{
