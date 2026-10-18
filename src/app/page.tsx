@@ -1062,6 +1062,10 @@ function PrivateMoveAftercare() {
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
   const [message, setMessage] = useState('');
+  const [includePrivateTxtNotes, setIncludePrivateTxtNotes] = useState(false);
+  const [pendingTextExport, setPendingTextExport] = useState<{
+    source: string; preview: string; count: number
+  } | null>(null);
   // A draft is a human-reviewed local export, never a sent or verified notice.
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
   const [includeDetails, setIncludeDetails] = useState(false);
@@ -1192,6 +1196,12 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const textExportSignature = JSON.stringify({
+    items, shown, filter, issuePriority, issueRoom, issueQuery, includePrivateTxtNotes
+  });
+  const textExportCurrent = pendingTextExport !== null &&
+    pendingTextExport.source === textExportSignature &&
+    pendingTextExport.count === shown.length;
   const bulkVisible = shown.filter(item => bulkSelectedIds.includes(item.id));
   const bulkSignature = JSON.stringify({
     items, selectedIds: bulkVisible.map(item => item.id), filter,
@@ -1691,13 +1701,37 @@ function PrivateMoveAftercare() {
     setMessage('Concept-TXT gedownload. Er is niets verstuurd.');
   }
   function exportText() {
-    const lines = ['WOONPOINTS — eigen nazorgoverzicht', 'Niet verzonden of juridisch geverifieerd.', ''];
+    if (!shown.length) { setPendingTextExport(null); return; }
+    const lines = [
+      'WOONPOINTS — eigen nazorgoverzicht',
+      'Alleen ' + shown.length + ' zelf gekozen zichtbare punten.',
+      'Niet verzonden of juridisch geverifieerd.',
+      includePrivateTxtNotes ? 'Privénotities bewust INBEGREPEN.' : 'Privénotities bewust VERBORGEN.',
+      ''
+    ];
     for (const item of shown) {
-      lines.push(`${item.room} — ${item.title}`, `Status: ${item.status} · Prioriteit: ${item.priority} · Eigen streefdatum: ${item.due || 'geen'}`,
-        item.note || '(geen toelichting)', '');
+      lines.push(`${item.room} — ${item.title}`,
+        `Status: ${item.status} · Prioriteit: ${item.priority} · Eigen streefdatum: ${item.due || 'geen'}`,
+        includePrivateTxtNotes ? (item.note || '(geen eigen toelichting)') : '(privénotitie verborgen)', '');
     }
-    download('woonpoints-nazorg-overzicht.txt', lines.join('\n'), 'text/plain;charset=utf-8');
-    setMessage('Eigen TXT met ' + shown.length + ' zichtbare punten gemaakt; andere filters zijn niet meegenomen. Neem de inhoud zelf door vóór delen.');
+    const preview = lines.join('\n');
+    if (preview.length > 100000) {
+      setPendingTextExport(null);
+      setMessage('Dit overzicht is te groot; beperk eerst je eigen selectie.');
+      return;
+    }
+    setPendingTextExport({source: textExportSignature, preview, count: shown.length});
+    setMessage('Voorbeeld klaargezet. Controleer de volledige tekst en bevestig pas daarna de eigen download.');
+  }
+  function confirmTextExport() {
+    if (pendingTextExport === null || !textExportCurrent) {
+      setPendingTextExport(null);
+      setMessage('Export geweigerd: selectie, privéoptie of dossier is gewijzigd. Maak een nieuw voorbeeld.');
+      return;
+    }
+    download('woonpoints-nazorg-overzicht.txt', pendingTextExport.preview, 'text/plain;charset=utf-8');
+    setPendingTextExport(null);
+    setMessage('Zelf gecontroleerd TXT-overzicht van ' + shown.length + ' punten gedownload; niets verstuurd.');
   }
   async function importFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -2429,11 +2463,41 @@ function PrivateMoveAftercare() {
           <div className="aftercare-actions">
             <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
             <button className="secondary" disabled={!items.length} onClick={exportCsv}>Download CSV</button>
-            <button className="secondary" disabled={!shown.length} onClick={exportText}>Download TXT van {shown.length} zichtbare punten</button>
+            <button className="secondary" disabled={!shown.length} onClick={exportText}>Controleer TXT van {shown.length} zichtbare punten…</button>
           </div>
-          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen de TXT-download
-            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters. Controleer privénotities
-            vóór je een gekozen bestand ergens anders opslaat of deelt.</p>
+          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen een TXT-overzicht
+            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters, na
+            voorafgaande volledige preview en aparte bevestiging.</p>
+          <label className="aftercare-check" htmlFor="nazorg-txt-private-notes">
+            <input id="nazorg-txt-private-notes" type="checkbox"
+              checked={includePrivateTxtNotes}
+              onChange={event => {
+                setIncludePrivateTxtNotes(event.target.checked);
+                setPendingTextExport(null);
+              }}/>
+            Voeg mijn privénotities bewust toe aan de TXT (standaard uit)
+          </label>
+          {pendingTextExport !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Privé-TXT controleren vóór de download">
+            <h3>Controleer je volledige TXT vóór bewaren</h3>
+            {textExportCurrent ? <p>{pendingTextExport.count} zichtbare punten in deze
+              momentopname. Privénotities zijn {includePrivateTxtNotes ? 'bewust opgenomen' : 'verborgen'}.
+              Controleer hieronder alle regels en bepaal zelf waar het bestand wordt bewaard.</p>
+              : <p className="aftercare-warning" role="status">
+                Je dossier of de zichtbare selectie is veranderd. Oude toestemming is ongeldig.
+                Maak een nieuw TXT-voorbeeld.</p>}
+            {textExportCurrent && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:360,overflowY:'auto',padding:12,background:'#fff',
+              border:'1px solid #b6c7ba',borderRadius:8}}>{pendingTextExport.preview}</pre>}
+            <div className="aftercare-actions">
+              <button type="button" disabled={!textExportCurrent}
+                onClick={confirmTextExport}>Ja, download dit exacte TXT-bestand</button>
+              <button type="button" className="secondary"
+                onClick={() => {setPendingTextExport(null);setMessage('TXT-download geannuleerd.');}}>
+                Annuleer TXT
+              </button>
+            </div>
+          </div>}
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
