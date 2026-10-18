@@ -3887,7 +3887,12 @@ type PackingItem = {
   id:string;label:string;room:Room;quantity:number;box:string;
   priority:boolean;status:PackingState;
 };
-type PackingArchive = {format:'woonpoints-private-packing-list';version:1;items:PackingItem[]};
+type PackingTransportStage='geladen'|'afgeleverd';
+type PackingTransportRow={room:Room;box:string;stage:PackingTransportStage};
+type PackingTransportState={stage:PackingTransportStage;fingerprint:string};
+type PackingArchive =
+  | {format:'woonpoints-private-packing-list';version:1;items:PackingItem[]}
+  | {format:'woonpoints-private-packing-list';version:2;items:PackingItem[];transport:PackingTransportRow[]};
 type FormState = {label:string;room:Room;quantity:string;box:string;priority:boolean;status:PackingState};
 const blank = ():FormState=>({
   label:'',room:'Woonkamer',quantity:'1',box:'',priority:false,status:'Nog inpakken'
@@ -3910,12 +3915,30 @@ function validItem(raw:unknown):raw is PackingItem{
 function validArchive(raw:unknown):raw is PackingArchive{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
   const obj=raw as Record<string,unknown>;
-  if(Object.keys(obj).sort().join('|')!=='format|items|version'|| 
-    obj.format!=='woonpoints-private-packing-list'||obj.version!==1||
+  const isV2=obj.version===2;
+  if(Object.keys(obj).sort().join('|')!==(isV2?'format|items|transport|version':'format|items|version')||
+    obj.format!=='woonpoints-private-packing-list'||(obj.version!==1&&!isV2)||
     !Array.isArray(obj.items)||obj.items.length>80||
     !obj.items.every(validItem))return false;
-  const ids=obj.items.map((item:PackingItem)=>item.id);
-  return new Set(ids).size===ids.length;
+  const items=obj.items as PackingItem[];
+  if(new Set(items.map(item=>item.id)).size!==items.length)return false;
+  if(!isV2)return true;
+  if(!Array.isArray(obj.transport)||obj.transport.length>80)return false;
+  const boxes=new Set(packingBoxGroups(items).map(group=>JSON.stringify([group.room,group.box])));
+  const keys=new Set<string>();
+  for(const raw of obj.transport){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+    const row=raw as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='box|room|stage'||
+      typeof row.room!=='string'||!ROOMS.includes(row.room as Room)||
+      typeof row.box!=='string'||!row.box||row.box.length>30||
+      CONTROL.test(row.box)||row.box!==row.box.trim()||
+      (row.stage!=='geladen'&&row.stage!=='afgeleverd'))return false;
+    const key=JSON.stringify([row.room,row.box]);
+    if(!boxes.has(key)||keys.has(key))return false;
+    keys.add(key);
+  }
+  return true;
 }
 function downloadPrivateFile(name:string,content:string,mime:string){
   const url=URL.createObjectURL(new Blob([content],{type:mime}));
@@ -3961,6 +3984,64 @@ function packingBoxGroups(items:PackingItem[]):PackingBoxGroup[]{
   }
   return groups.sort((a,b)=>a.room.localeCompare(b.room,'nl-NL')||
     a.box.localeCompare(b.box,'nl-NL'));
+}
+
+function packingTransportKey(group:PackingBoxGroup):string{
+  return JSON.stringify([group.room,group.box]);
+}
+function packingTransportFingerprint(group:PackingBoxGroup):string{
+  // Bound to exactly the current not-yet-unpacked contents: a stale stamp
+  // must never silently confirm different quantities, priorities or labels.
+  return JSON.stringify(group.items.map(item=>[
+    item.id,item.label,item.quantity,item.priority,item.status
+  ]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+}
+function packingCurrentTransport(
+  groups:PackingBoxGroup[],state:Record<string,PackingTransportState>
+):PackingTransportRow[]{
+  return groups.flatMap(group=>{
+    const current=state[packingTransportKey(group)];
+    return current&&current.fingerprint===packingTransportFingerprint(group)?
+      [{room:group.room,box:group.box,stage:current.stage}]:[];
+  });
+}
+function packingRestoreTransport(
+  items:PackingItem[],rows:PackingTransportRow[]
+):Record<string,PackingTransportState>{
+  const states:Record<string,PackingTransportState>={};
+  for(const group of packingBoxGroups(items)){
+    const row=rows.find(item=>item.room===group.room&&item.box===group.box);
+    if(row)states[packingTransportKey(group)]={
+      stage:row.stage,fingerprint:packingTransportFingerprint(group)
+    };
+  }
+  return states;
+}
+function packingTransportReport(
+  groups:PackingBoxGroup[],entries:PackingTransportRow[],
+  withContents:boolean
+):string{
+  const lines=['WOONPOINTS - EIGEN VERHUISTRANSPORTOVERZICHT',
+    'Handmatig ingevulde laad- en aflevermarkeringen; niet extern geverifieerd.',
+    'Totaal '+groups.length+' dozen; '+
+      entries.filter(row=>row.stage==='geladen').length+' als geladen en '+
+      entries.filter(row=>row.stage==='afgeleverd').length+' als afgeleverd gemarkeerd.',''];
+  for(const group of groups){
+    const stage=entries.find(row=>row.room===group.room&&row.box===group.box)?.stage||'nog laden';
+    const urgent=group.items.some(item=>item.priority);
+    lines.push('['+stage+'] '+group.room+' / doos '+group.box+
+      ' - '+group.items.length+' regels - '+
+      group.items.reduce((n,item)=>n+item.quantity,0)+' stuks'+
+      (urgent?' - EERST NODIG':''));
+    if(withContents)for(const item of group.items){
+      lines.push('  '+item.quantity+' x '+item.label+
+        (item.priority?' - eerst nodig':''));
+    }
+  }
+  lines.push('','Dozen zonder eigen dooscode en al uitgepakte regels staan hier niet in.',
+    'Geen laadbewijs, bezorgbewijs, verzekeringsinventaris of officiële verhuismelding.',
+    'Eigen labels kunnen privacygevoelig zijn. Bewaar en deel dit document bewust.');
+  return lines.join('\n')+'\n';
 }
 function packingHtmlText(value:string):string{
   return value.replace(/&/g,'&amp;').replace(/</g,'&lt;')
