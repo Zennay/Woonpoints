@@ -719,7 +719,7 @@ export function ManualReactionJournal({
           <p>Het herstelpunt is alleen in het geheugen van dit browsertabblad.
             Sluiten wist het herstelpunt; eigen opgeslagen CSV-bestanden blijven apart bestaan.</p>
         </div>}
-        {message && <p role="status">{message}</p>
+        {message && <p role="status">{message}</p>}
         {recentlyRemoved && <div className="journal-confirm" role="group"
           aria-label="Herstel laatste verwijderde notitie">
           <p>Je verwijderde zojuist eigen notitie #{recentlyRemoved.item.id}
