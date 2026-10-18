@@ -3476,6 +3476,12 @@ function buildPrivateMovingReport(
       '['+row.status+'] '+row.room+' - '+row.quantity+' x '+movingReportLine(row.label)+
       (row.box?' - doos '+movingReportLine(row.box):' - doos onbekend')+
       (row.priority?' - EERST NODIG':'')):['Nog geen eigen pakregels ingevoerd.']);
+    const boxes=packingBoxGroups(archive.packing.items);
+    add('EIGEN LAAD- EN AFLEVERMARKERINGEN',boxes.length?boxes.map(group=>{
+      const recorded=archive.packing.transport.find(row=>
+        row.room===group.room&&row.box===group.box);
+      return '['+(recorded?.stage||'nog laden')+'] '+group.room+' - doos '+movingReportLine(group.box);
+    }):['Geen eigen dozen met labels genoteerd.']);
   }
   const relevant=actions.filter(a=>
     (a.origin==='planning'&&selected.has('timeline'))||
@@ -4123,21 +4129,28 @@ export function PrivateMovingPackingInventory(){
   const [notice,setNotice]=useState('');
   useEffect(()=>{
     const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
-      detail:{version:1,section:'packing',data:{items}}
+      detail:{version:1,section:'packing',data:{
+        items,transport:packingCurrentTransport(packingBoxGroups(items),transport)
+      }}
     }));
     window.addEventListener('woonpoints:moving-workspace:request',publish);
     publish();
     return()=>window.removeEventListener('woonpoints:moving-workspace:request',publish);
-  },[items]);
+  },[items,transport]);
   useEffect(()=>{
     function restore(event:Event){
       const imported=(event as CustomEvent<unknown>).detail;
-      if(!validMovingWorkspaceArchive(imported)||imported.version!==3)return;
+      if(!validMovingWorkspaceArchive(imported)||
+        (imported.version!==3&&imported.version!==4))return;
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
-      setPendingRestore(null);setPendingLabels(null);setTransport({});
+      setPendingRestore(null);setPendingLabels(null);
+      setTransport(imported.version===4?
+        packingRestoreTransport(imported.packing.items,imported.packing.transport):{});
       setPendingManifest(null);
-      setNotice('Paklijst uit eigen v3-werkmap hersteld. Transportmarkeringen zijn niet in v3 opgeslagen en zijn leeggemaakt.');
+      setNotice(imported.version===4?
+        'Paklijst en eigen transportmarkeringen uit v4-werkmap hersteld.':
+        'Oude v3-paklijst hersteld. Niet-bewaarde transportmarkeringen zijn leeggemaakt.');
     }
     window.addEventListener('woonpoints:moving-workspace:restore',restore);
     return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
