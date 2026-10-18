@@ -1100,3 +1100,38 @@ aantal- en identiteitsvelden voor maximaal 80 eigen pakregels.
 Woonpoints blijft uitsluitend een handmatig hulpmiddel. Er worden geen
 officiële termijnen, rechten, woningtoewijzingen of betaalbewijzen
 geclaimd. `BOT_DRY_RUN=true` en account-/toestemmingsgates blijven intact.
+
+
+## Eigen laden en afleveren per doos (geen externe tracking)
+
+De bestaande privé-**Paklijst per kamer** bevat nu een
+**Verhuisrit: eigen laad- en afleveroverzicht**. Elke unieke combinatie
+van eigen kamer en dooscode krijgt een afzonderlijke manuele status:
+**nog laden → geladen → afgeleverd**, met de mogelijkheid om te
+corrigeren naar **nog laden**. De knop voor laden werkt alleen wanneer
+alle genoteerde artikelen in de doos zelf als ingepakt zijn gemarkeerd.
+Een doos zonder code telt niet mee en krijgt een zichtbare waarschuwing.
+
+- Voortgang per doos en totalen voor geladen, afgeleverd en nog niet
+  geladen. Eigen prioriteitsdozen blijven duidelijk zichtbaar.
+- Een losse, volledig te controleren TXT-transportlijst bevat alleen
+  kamer, dooscode, aantallen en eigen status; eigen artikelomschrijvingen
+  komen uitsluitend na het aanvinken van een afzonderlijke opt-in mee.
+- Wijzigingen aan een pakregel (ook inpakstatus) verwijderen alle eerdere
+  transportmarkeringen: nooit een achterhaalde persoonlijke 'afgeleverd'-
+  status meenemen naar een andere inhoud.
+- De zelfstandige privé-JSON-back-up is nu **versie 2** en bewaart
+  pakregels én de geldige handmatige transportstatussen. Oude paklijst
+  **versie 1** kan nog worden ingelezen, maar heeft geen transportstatus
+  en maakt huidige laadmarkeringen leeg. Import vraagt een afzonderlijke
+  bevestiging, beperkt het bestand tot 64 KiB en weigert onbekende velden,
+  ongeldige statussen, dubbele dozen en ongerelateerde transportrecords.
+- De reeds bestaande gecombineerde werkmap **versie 3** bevat vooralsnog
+  de pakregels, maar nog niet deze nieuwe laadstatussen. Bij herstel van
+  werkmap v3 worden laadstatussen veilig teruggezet naar onbekend;
+  bewaar ze voorlopig via de zelfstandige paklijst-v2-JSON.
+
+Niets in deze transportweergave is een echte vervoerdersscan,
+afleverbewijs, WoningNet-bevestiging of verzekeringsinventaris.
+Alles blijft uitsluitend in tijdelijk browsergeheugen totdat je
+zelf bewust een bestand downloadt; geen netwerk of automatische opslag.
