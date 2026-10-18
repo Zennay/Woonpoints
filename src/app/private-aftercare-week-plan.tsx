@@ -27,6 +27,7 @@ type Props = {
   actions: PrivateWeekAction[];
   appointments: PrivateWeekAppointment[];
   onOpen: (id: string) => void;
+  onPrepareNotice: (ids: string[], mode: 'eerste-melding' | 'opvolging') => void;
   onDownload: (content: string) => void;
 };
 
@@ -48,7 +49,7 @@ function reportLine(value: string): string {
 }
 
 export function PrivateAftercareWeekPlan({
-  day, sourceFingerprint, actions, appointments, onOpen, onDownload
+  day, sourceFingerprint, actions, appointments, onOpen, onPrepareNotice, onDownload
 }: Props) {
   const [horizonDays, setHorizonDays] = useState<7 | 30>(7);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -194,6 +195,24 @@ export function PrivateAftercareWeekPlan({
             </li>)}
           </ul>
         </fieldset>}
+      <div className="aftercare-actions" aria-label="Geselecteerde eigen acties als concept voorbereiden">
+        <button type="button" className="secondary"
+          disabled={currentSelection.length < 1 || currentSelection.length > 12}
+          onClick={() => onPrepareNotice(currentSelection.map(action => action.id), 'eerste-melding')}>
+          Zet mijn selectie klaar voor een eerste-meldingsconcept ↓
+        </button>
+        <button type="button" className="secondary"
+          disabled={currentSelection.length < 1 || currentSelection.length > 12}
+          onClick={() => onPrepareNotice(currentSelection.map(action => action.id), 'opvolging')}>
+          Zet mijn selectie klaar voor een opvolgconcept ↓
+        </button>
+      </div>
+      {currentSelection.length > 12 && <p className="aftercare-warning" role="status">
+        Een berichtconcept accepteert maximaal 12 actuele aandachtspunten. Kies er minder;
+        je eigen downloadbare plan mag wel meer acties bevatten.
+      </p>}
+      <p>Deze knoppen openen uitsluitend de bestaande concepteditor. Zij maken geen bericht,
+        leggen geen melding vast en sturen niets naar een verhuurder.</p>
       {upcomingAppointments.length > 0 && <details className="aftercare-history">
         <summary>Mijn {upcomingAppointments.length} toekomstige eigen afspraaknotities</summary>
         <ol>{upcomingAppointments.map(appointment => <li key={appointment.id}>
