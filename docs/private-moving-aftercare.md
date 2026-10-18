@@ -31,6 +31,14 @@ Onder **Concept voor de verhuurder** kies je expliciet 1–12 eigen, nog niet-af
 - Een aparte checkbox bevestigt menselijke inhoudscontrole. Daarna kan de gebruiker bewust kopiëren naar het klembord of een TXT-bestand downloaden. Er is geen netwerk-, e-mail-, WoningNet- of verhuurderkoppeling en geen automatische verzending of statuswijziging naar ‘gemeld’.
 - Klembord en zelfgekozen opslagplek vallen buiten Woonpoints; een bestand of reeds gekopieerde tekst kan niet op afstand worden ingetrokken. De gebruiker controleert zelf ontvanger en eventueel benodigde bijlagen voordat deze iets verstuurt.
 
+## Contacthistorie per aandachtspunt (alleen eigen observaties)
+
+Elk aandachtspunt heeft een inklapbare **Mijn contacthistorie**. Per punt kun je maximaal acht handmatige gebeurtenissen vastleggen, tot 160 gebeurtenissen in totaal, elk met een eigen geldige kalenderdatum, keuze uit eigen notitie / zelf contact opgenomen / reactie zelf genoteerd / afspraak en een korte omschrijving van maximaal 240 tekens. Je kunt een afzonderlijk moment na aparte bevestiging wissen. Verwijder je het bijbehorende aandachtspunt, dan worden ook diens tabbladmomenten verwijderd. Voor een zelf verstuurd bericht of genoteerde reactie is een datum in de toekomst niet toegestaan; geplande afspraken mogen een eigen toekomstige datum hebben. Geen gebeurtenis bewijst dat de andere partij werkelijk iets heeft ontvangen of bevestigd.
+
+**Herstelcompatibiliteit:** een nieuwe complete privé-JSON-back-up schrijft schema **2** met `items` plus `history`. De eerdere schema-1 back-up met uitsluitend `items` blijft importeerbaar; contacthistorie wordt dan leeg hersteld. Schema-2 invoer wordt met dezelfde 16-KiB limiet, uitsluitend bekende velden, individuele limieten, referentiële item-ID's, unieke event-ID's en per-item limieten gevalideerd. De oorspronkelijke tabbladstaat blijft bij mislukte of geannuleerde import behouden. Een geslaagde restore vraagt nog steeds een afzonderlijke vervangingsbevestiging, inclusief zichtbare aantallen punten en contactmomenten.
+
+De gewone CSV en TXT bevatten **alleen** aandachtspunten, geen contacttijdlijn; voor een volledige privéback-up moet bewust JSON worden gekozen. Bij toevoegen van een contactmoment wordt vooraf gecontroleerd of de volledige ingesprongen JSON nog binnen de 16 KiB blijft; anders wordt het moment niet opgeslagen. Er is geen koppeling met e-mail, verhuurder, WoningNet, berichten, automatisch statusbeheer of externe tijdstempels.
+
 ## Privacy, veiligheid en grenzen
 
 - Maximaal 80 aandachtspunten; tabbladgeheugen, geen automatische opslag, cookies, localStorage, API-aanroep of sync.

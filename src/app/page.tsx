@@ -141,6 +141,15 @@ type Item = {
   created: string;
 };
 type Draft = Pick<Item, 'title' | 'room' | 'priority' | 'due' | 'note'>;
+type ContactKind = 'eigen-notitie' | 'zelf-verstuurd' | 'reactie-genoteerd' | 'afspraak';
+type FollowUp = { id: string; issueId: string; kind: ContactKind; day: string; detail: string };
+type AftercareBackup = { items: Item[]; history: FollowUp[] };
+const CONTACT_TYPES: { id: ContactKind; title: string }[] = [
+  { id: 'eigen-notitie', title: 'Eigen voortgangsnotitie' },
+  { id: 'zelf-verstuurd', title: 'Ik heb zelf contact opgenomen' },
+  { id: 'reactie-genoteerd', title: 'Reactie door mij genoteerd' },
+  { id: 'afspraak', title: 'Afspraak volgens mijn eigen notitie' }
+];
 
 const EMPTY: Draft = { title: '', room: '', priority: 'normaal', due: '', note: '' };
 const LIMIT = 80;
@@ -174,18 +183,48 @@ const validItem = (v: unknown): v is Item => {
     validText(v.note, 0, 500) &&
     typeof v.created === 'string' && validDate(v.created);
 };
-const readBackup = (text: string): Item[] => {
+const validFollowUp = (v: unknown): v is FollowUp => {
+  if (!isRecord(v) || !exactKeys(v, ['id', 'issueId', 'kind', 'day', 'detail'])) return false;
+  return typeof v.id === 'string' && /^log-[0-9a-f-]{36}$/.test(v.id) &&
+    typeof v.issueId === 'string' && /^item-[0-9a-f-]{36}$/.test(v.issueId) &&
+    CONTACT_TYPES.some(type => type.id === v.kind) &&
+    typeof v.day === 'string' && validDate(v.day) &&
+    validText(v.detail, 1, 240);
+};
+const readBackup = (text: string): AftercareBackup => {
   if (new TextEncoder().encode(text).length > MAX_BYTES) throw Error('Bestand groter dan 16 KiB.');
   const data: unknown = JSON.parse(text);
-  if (!isRecord(data) || !exactKeys(data, ['kind', 'schema', 'items']) ||
-      data.kind !== KIND || data.schema !== 1 || !Array.isArray(data.items) ||
-      data.items.length > LIMIT || !data.items.every(validItem)) {
+  if (!isRecord(data) || data.kind !== KIND || !Array.isArray(data.items) ||
+      data.items.length > LIMIT || !data.items.every(validItem) ||
+      (data.schema !== 1 && data.schema !== 2)) {
     throw Error('Dit is geen ondersteund en geldig Woonpoints-nazorgbestand.');
   }
   const ids = data.items.map(item => (item as Item).id);
-  if (new Set(ids).size !== ids.length) throw Error('Dit bestand bevat dubbele items.');
-  return data.items as Item[];
+  if (new Set(ids).size !== ids.length) throw Error('Dit bestand bevat dubbele punten.');
+  if (data.schema === 1) {
+    if (!exactKeys(data, ['kind', 'schema', 'items'])) throw Error('Onbekende velden in oud nazorgbestand.');
+    return { items: data.items as Item[], history: [] };
+  }
+  if (!exactKeys(data, ['kind', 'schema', 'items', 'history']) ||
+      !Array.isArray(data.history) || data.history.length > 160 ||
+      !data.history.every(validFollowUp)) {
+    throw Error('Ongeldige contacthistorie of onbekende velden in nazorgbestand.');
+  }
+  const events = data.history as FollowUp[];
+  const allowed = new Set(ids);
+  const eventIds = new Set<string>();
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    if (!allowed.has(event.issueId) || eventIds.has(event.id)) {
+      throw Error('Contactmoment verwijst naar onbekend punt of is dubbel.');
+    }
+    eventIds.add(event.id);
+    counts.set(event.issueId, (counts.get(event.issueId) || 0) + 1);
+    if ((counts.get(event.issueId) || 0) > 8) throw Error('Te veel contactmomenten bij één punt.');
+  }
+  return { items: data.items as Item[], history: events };
 };
+
 function download(name: string, body: string, mime: string) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(new Blob([body], { type: mime }));
@@ -249,12 +288,18 @@ function calendarFor(items: Item[]): string {
 
 function PrivateMoveAftercare() {
   const [items, setItems] = useState<Item[]>([]);
+  const [history, setHistory] = useState<FollowUp[]>([]);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+  const [historyKind, setHistoryKind] = useState<ContactKind>('eigen-notitie');
+  const [historyDay, setHistoryDay] = useState(today());
+  const [historyDetail, setHistoryDetail] = useState('');
+  const [historyDeletePending, setHistoryDeletePending] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState<'actief' | 'alles' | 'afgerond'>('actief');
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
-  const [incoming, setIncoming] = useState<Item[] | null>(null);
+  const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
   const [message, setMessage] = useState('');
   // A draft is a human-reviewed local export, never a sent or verified notice.
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
@@ -321,8 +366,42 @@ function PrivateMoveAftercare() {
       ? 'Zelf als gemeld gemarkeerd. Er is niets aan een verhuurder verstuurd.'
       : 'Eigen status aangepast. Geen externe bevestiging.');
   }
+  function addFollowUp(event: FormEvent<HTMLFormElement>, issueId: string) {
+    event.preventDefault();
+    const clean = historyDetail.trim();
+    if (!items.some(item => item.id === issueId) || !CONTACT_TYPES.some(type => type.id === historyKind) ||
+        !validDate(historyDay) || !validText(clean, 1, 240)) {
+      setMessage('Controleer de datum en je contactnotitie (max. 240 tekens).'); return;
+    }
+    if (historyKind !== 'afspraak' && historyDay > today()) {
+      setMessage('Een zelf genoteerd contact kan niet in de toekomst liggen. Kies voor een geplande afspraak.'); return;
+    }
+    if (history.length >= 160 || history.filter(item => item.issueId === issueId).length >= 8) {
+      setMessage('Het maximum van 8 contactmomenten per punt of 160 in totaal is bereikt.'); return;
+    }
+    const next: FollowUp[] = [...history, {
+      id: 'log-' + crypto.randomUUID(), issueId, kind: historyKind, day: historyDay, detail: clean
+    }];
+    const bytes = new TextEncoder().encode(JSON.stringify({ kind: KIND, schema: 2, items, history: next }, null, 2)).length;
+    if (bytes > MAX_BYTES) {
+      setMessage('Geen ruimte meer binnen de veilige privéback-up van 16 KiB. Verwijder oude contactmomenten of verkort invoer.'); return;
+    }
+    setHistory(next);
+    setHistoryDetail('');
+    setHistoryDay(today());
+    setHistoryKind('eigen-notitie');
+    setHistoryTarget(null);
+    setHistoryDeletePending(null);
+    setMessage('Contactmoment alleen in dit tabblad opgeslagen; niet extern geverifieerd of verzonden.');
+  }
+  function removeFollowUp(id: string) {
+    setHistory(prev => prev.filter(event => event.id !== id));
+    setHistoryDeletePending(null);
+    setMessage('Eigen contactnotitie uit het tabblad verwijderd. Externe berichten blijven onaangetast.');
+  }
+
   function exportJson() {
-    const json = JSON.stringify({ kind: KIND, schema: 1, items }, null, 2);
+    const json = JSON.stringify({ kind: KIND, schema: 2, items, history }, null, 2);
     if (new TextEncoder().encode(json).length > MAX_BYTES) {
       setMessage('Export overschrijdt 16 KiB; verkort notities of verwijder afgeronde items.'); return;
     }
@@ -418,7 +497,7 @@ function PrivateMoveAftercare() {
     try {
       const value = readBackup(await file.text());
       setIncoming(value);
-      setMessage(`Gecontroleerd bestand: ${value.length} aandachtspunten. Bevestig vervanging apart.`);
+      setMessage(`Gecontroleerd bestand: ${value.items.length} punten, ${value.history.length} contactmomenten. Bevestig vervanging apart.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Import kon niet worden gelezen.');
     }
@@ -450,6 +529,11 @@ function PrivateMoveAftercare() {
         .aftercare .aftercare-notice-picks legend { font-weight:700; }
         .aftercare .aftercare-notice-picks ul { list-style:none; margin:0; padding:0; max-height:350px; overflow:auto; }
         .aftercare #nazorg-notice-text { min-height:290px; }
+        .aftercare .aftercare-history { background:#fff; border:1px solid #d0e0d4; border-radius:10px; padding:12px; margin:12px 0; }
+        .aftercare .aftercare-history summary { cursor:pointer; font-weight:700; color:#355e42; }
+        .aftercare .aftercare-history ol { padding-left:24px; }
+        .aftercare .aftercare-history li { margin:12px 0; padding:8px 0; border-bottom:1px solid #d0e0d4; }
+
 
         @media(max-width:650px) { .aftercare .aftercare-grid { grid-template-columns:1fr; } }
       `}</style>
@@ -534,6 +618,51 @@ function PrivateMoveAftercare() {
                 <p>{item.room} · <b>{item.priority}</b> · {item.status}</p>
                 <p>Eigen streefdatum: {item.due || 'niet ingesteld'}{item.status !== 'afgerond' && item.due && item.due < currentDay ? ' · VERSTREKEN' : ''}</p>
                 {item.note && <p className="aftercare-note">{item.note}</p>}
+                <details className="aftercare-history">
+                  <summary>Mijn contacthistorie ({history.filter(event => event.issueId === item.id).length})</summary>
+                  <p>Alleen wat je zelf invult. Geen e-mail-, verhuurder- of WoningNet-verificatie.</p>
+                  {history.filter(event => event.issueId === item.id).length > 0 ?
+                    <ol>{history.filter(event => event.issueId === item.id)
+                      .slice().sort((a, b) => b.day.localeCompare(a.day))
+                      .map(log => <li key={log.id}>
+                        <strong>{log.day} · {CONTACT_TYPES.find(type => type.id === log.kind)?.title}</strong>
+                        <p className="aftercare-note">{log.detail}</p>
+                        <button className="secondary" onClick={() => setHistoryDeletePending(log.id)}>Verwijder dit moment…</button>
+                        {historyDeletePending === log.id && <div className="aftercare-confirm">
+                          <p>Contactmoment uit dit tabblad wissen?</p>
+                          <div className="aftercare-actions">
+                            <button onClick={() => removeFollowUp(log.id)}>Ja, wis moment</button>
+                            <button className="secondary" onClick={() => setHistoryDeletePending(null)}>Behoud moment</button>
+                          </div>
+                        </div>}
+                      </li>)}</ol> : <p>Nog geen persoonlijke contactmomenten vastgelegd.</p>}
+                  <button disabled={history.length >= 160 || history.filter(event => event.issueId === item.id).length >= 8}
+                    className="secondary" onClick={() => {
+                      setHistoryTarget(item.id); setHistoryDeletePending(null);
+                      setHistoryDay(today()); setHistoryKind('eigen-notitie'); setHistoryDetail('');
+                    }}>Contactmoment toevoegen</button>
+                  {historyTarget === item.id && <form onSubmit={event => addFollowUp(event, item.id)}>
+                    <div className="aftercare-grid">
+                      <div><label htmlFor={'nazorg-log-kind-' + item.id}>Soort eigen notitie</label>
+                        <select id={'nazorg-log-kind-' + item.id} value={historyKind}
+                          onChange={event => setHistoryKind(event.target.value as ContactKind)}>
+                          {CONTACT_TYPES.map(type => <option key={type.id} value={type.id}>{type.title}</option>)}
+                        </select></div>
+                      <div><label htmlFor={'nazorg-log-day-' + item.id}>Datum</label>
+                        <input id={'nazorg-log-day-' + item.id} type="date" required
+                          min="2020-01-01" max="2099-12-31" value={historyDay}
+                          onChange={event => setHistoryDay(event.target.value)} /></div>
+                    </div>
+                    <label htmlFor={'nazorg-log-detail-' + item.id}>Wat heb jij zelf waargenomen of afgesproken?</label>
+                    <textarea id={'nazorg-log-detail-' + item.id} required maxLength={240} value={historyDetail}
+                      onChange={event => setHistoryDetail(event.target.value)}
+                      placeholder="Geen persoonlijke gegevens of vertrouwelijke berichtkopieën" />
+                    <div className="aftercare-actions">
+                      <button type="submit">Bewaar eigen moment</button>
+                      <button className="secondary" type="button" onClick={() => setHistoryTarget(null)}>Annuleer</button>
+                    </div>
+                  </form>}
+                </details>
                 <div className="aftercare-actions">
                   {item.status !== 'gemeld' && item.status !== 'afgerond' && <button onClick={() => setStatus(item.id, 'gemeld')}>Ik heb dit zelf gemeld</button>}
                   {item.status !== 'afgerond' && <button onClick={() => setStatus(item.id, 'afgerond')}>Markeer afgerond</button>}
@@ -544,7 +673,7 @@ function PrivateMoveAftercare() {
                 {pendingDelete === item.id && <div className="aftercare-confirm" role="group" aria-label="Verwijderen bevestigen">
                   <p>Dit aandachtspunt uit het tabblad verwijderen?</p>
                   <div className="aftercare-actions">
-                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
+                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setHistory(prev => prev.filter(entry => entry.issueId !== item.id)); setHistoryTarget(null); setHistoryDeletePending(null); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
                     <button className="secondary" onClick={() => setPendingDelete(null)}>Behoud</button>
                   </div>
                 </div>}
@@ -608,6 +737,7 @@ function PrivateMoveAftercare() {
         <div>
           <p className="eyebrow">ZELF BEWAREN</p>
           <h2 id="nazorg-backup-title">Back-up en overdracht</h2>
+          <p>De versie-2 JSON-back-up bevat ook je zelf genoteerde contactmomenten. Eerdere versie-1 bestanden blijven importeerbaar zonder contacthistorie. CSV/TXT bevatten alleen de aandachtspunten; gebruik JSON voor volledig herstel.</p>
           <p>Bewaar optioneel een volledig JSON-bestand, een CSV-overzicht of een leesbaar TXT-dossier. Export kan via je gekozen bestandsprovider buiten Woonpoints synchroniseren.</p>
           <p>Import vervangt uitsluitend na een aparte bevestiging je huidige tabblad. Woonpoints bewaart geen automatische kopieën.</p>
         </div>
@@ -620,9 +750,9 @@ function PrivateMoveAftercare() {
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
-            <p>{incoming.length} geldige punten gevonden. Je huidige {items.length} punten worden pas na bevestiging vervangen.</p>
+            <p>{incoming.items.length} geldige punten en {incoming.history.length} contactmomenten gevonden. Je huidige {items.length} punten en {history.length} contactmomenten worden pas na bevestiging vervangen.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems(incoming); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setMessage('Import bevestigd. Alleen dit tabblad is gewijzigd.'); }}>Vervang huidige punten</button>
+              <button onClick={() => { setItems(incoming.items); setHistory(incoming.history); setHistoryTarget(null); setHistoryDeletePending(null); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setMessage('Import bevestigd. Alleen dit tabblad is gewijzigd.'); }}>Vervang huidige punten</button>
               <button className="secondary" onClick={() => { setIncoming(null); setMessage('Import geannuleerd; bestaande punten behouden.'); }}>Annuleer import</button>
             </div>
           </div>}
@@ -630,7 +760,7 @@ function PrivateMoveAftercare() {
           {clearPending && <div className="aftercare-confirm">
             <p>Alle huidige aandachtspunten definitief uit dit tabblad verwijderen? Een eerder gedownloade back-up blijft bestaan.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems([]); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
+              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
               <button className="secondary" onClick={() => setClearPending(false)}>Behoud punten</button>
             </div>
           </div>}
