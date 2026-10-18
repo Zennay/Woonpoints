@@ -539,9 +539,10 @@ const defaults: Preferences = {maxRent: 1000, minRooms: 2, maxTravel: 45, prefer
 const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: false};
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
-export function ManualHousingShortlist({onCostPrefill, onPlanPrefill}: {
+export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingPrefill}: {
   onCostPrefill?: (selected: [Home, Home], preferences: Preferences) => void;
   onPlanPrefill?: (selected: Home) => void;
+  onViewingPrefill?: (selected: [Home, Home]) => void;
 } = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
@@ -812,6 +813,16 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill}: {
               }}>
               Neem deze twee woningen mee naar totale kosten ↓
             </button>}
+            {onViewingPrefill && <button type="button" disabled={!comparison} onClick={() => {
+              const first = homes[compared[0]], second = homes[compared[1]];
+              if (!comparison || !first || !second) return;
+              const checkedFirst = normalizeManualHome(first) as Home | null;
+              const checkedSecond = normalizeManualHome(second) as Home | null;
+              if (!checkedFirst || !checkedSecond) return;
+              onViewingPrefill([{...checkedFirst}, {...checkedSecond}]);
+              setNotice('Twee eigen woninglabels aangeboden voor bezichtiging. Bevestig daar eerst om bestaande beoordelingen te wissen.');
+              document.getElementById('private-viewing-title')?.scrollIntoView({block:'start'});
+            }}>Bied deze twee woningen aan voor bezichtigingschecklist ↓</button>}
           </div>
         </section>
         <ol className="housing-results">
@@ -1435,6 +1446,7 @@ export function ManualHousingDecisionWorkspace() {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
   const [planPrefill, setPlanPrefill] = useState<Home | null>(null);
   const [longTermOffer, setLongTermOffer] = useState<PrivateLongTermOffer | null>(null);
+  const [viewingOffer, setViewingOffer] = useState<[string, string] | null>(null);
   return (
     <>
       <ManualHousingShortlist onCostPrefill={(selected, preferences) =>
@@ -1442,12 +1454,15 @@ export function ManualHousingDecisionWorkspace() {
           selected: [{...selected[0]}, {...selected[1]}],
           preferences: {...preferences}
         })}
-        onPlanPrefill={home => setPlanPrefill({...home})} />
+        onPlanPrefill={home => setPlanPrefill({...home})}
+        onViewingPrefill={selected => setViewingOffer([selected[0].label, selected[1].label])} />
       <ManualHousingCostComparison handoff={handoff}
         onLongTermOffer={offer => setLongTermOffer(offer)} />
       <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
       <PrivateLongTermHousingCosts offer={longTermOffer}
         onOfferHandled={() => setLongTermOffer(null)} />
+      <PrivateHousingViewingChecklist offer={viewingOffer}
+        onOfferHandled={() => setViewingOffer(null)} />
     </>
   );
 }
@@ -2203,8 +2218,12 @@ const PRIVATE_VIEWING_RATINGS: PrivateViewingRating[] = ['unknown','good','conce
 const newPrivateViewingAnswers = (): PrivateViewingAnswer[] =>
   PRIVATE_VIEWING_TOPICS.map(() => ({must:false,a:'unknown',b:'unknown'}));
 
-export function PrivateHousingViewingChecklist() {
+export function PrivateHousingViewingChecklist({offer, onOfferHandled}: {
+  offer?: [string,string] | null;
+  onOfferHandled?: () => void;
+} = {}) {
   const [entries, setEntries] = useState<PrivateViewingAnswer[]>(newPrivateViewingAnswers);
+  const [sourceLabels, setSourceLabels] = useState<[string,string]>(['Woning A','Woning B']);
   const [pendingRestore, setPendingRestore] = useState<PrivateViewingAnswer[] | null>(null);
   const [message, setMessage] = useState('');
   function change(index: number, field: keyof PrivateViewingAnswer, value: boolean | PrivateViewingRating) {
@@ -2292,11 +2311,33 @@ export function PrivateHousingViewingChecklist() {
           zelf een JSON-bestand opslaat.</p>
       </div>
       <div>
+        {offer && <div className="month-csv-confirm" role="group"
+          aria-label="Bevestig eigen woningselectie voor bezichtiging">
+          <h3>Gebruik je eigen shortlist-woningen?</h3>
+          <p>Je hebt <strong>{offer[0]}</strong> en <strong>{offer[1]}</strong>
+            {' '}zelf geselecteerd. Deze labels zijn niet officieel geverifieerd.
+            Toepassen zet <strong>alle tien eerdere beoordelingen en essentiële keuzes terug
+            op niet beoordeeld</strong> om foutieve toewijzing te voorkomen.
+            De namen blijven alleen in dit tabblad en worden niet meegeëxporteerd.</p>
+          <div className="month-history-actions">
+            <button type="button" onClick={() => {
+              setEntries(newPrivateViewingAnswers());
+              setPendingRestore(null);
+              setSourceLabels([...offer]);
+              setMessage('Eigen woninglabels overgenomen en alle eerdere beoordelingen gewist; geen WoningNet-bewijs.');
+              onOfferHandled?.();
+            }}>Gebruik selectie en wis oude beoordelingen</button>
+            <button type="button" onClick={() => {
+              setMessage('Overname geannuleerd. Huidige beoordelingen zijn behouden.');
+              onOfferHandled?.();
+            }}>Behoud huidige checklist</button>
+          </div>
+        </div>}
         <div className="private-budget-table-wrap">
           <table>
             <caption>Eigen indrukken; niet door WoningNet of een inspecteur gecontroleerd</caption>
             <thead><tr><th scope="col">Praktisch punt</th><th scope="col">Essentieel</th>
-              <th scope="col">Woning A</th><th scope="col">Woning B</th></tr></thead>
+              <th scope="col">{sourceLabels[0]}</th><th scope="col">{sourceLabels[1]}</th></tr></thead>
             <tbody>{PRIVATE_VIEWING_TOPICS.map((topic, index) => (
               <tr key={topic.id}>
                 <th scope="row">{topic.label}</th>
@@ -2306,7 +2347,7 @@ export function PrivateHousingViewingChecklist() {
                 {(['a','b'] as const).map(home => (
                   <td key={home}>
                     <select value={entries[index][home]}
-                      aria-label={'Woning '+home.toUpperCase()+' · '+topic.label}
+                      aria-label={sourceLabels[home === 'a' ? 0 : 1]+' · '+topic.label}
                       onChange={e => change(index,home,e.target.value as PrivateViewingRating)}>
                       {ratings.map(rating => <option key={rating.value}
                         value={rating.value}>{rating.label}</option>)}
@@ -2319,7 +2360,7 @@ export function PrivateHousingViewingChecklist() {
         </div>
         <div aria-live="polite">
           {([{label:'A',data:a},{label:'B',data:b}]).map(row => (
-            <p key={row.label}><strong>Woning {row.label}:</strong> {row.data.good} positief,
+            <p key={row.label}><strong>{sourceLabels[row.label === 'A' ? 0 : 1]}:</strong> {row.data.good} positief,
               {' '}{row.data.concerns} aandachtspunten (waarvan {row.data.essential} essentieel),
               {' '}{row.data.unknown} niet beoordeeld.</p>
           ))}
@@ -2337,7 +2378,7 @@ export function PrivateHousingViewingChecklist() {
           <button type="button" onClick={() => {
             setEntries(newPrivateViewingAnswers());
             setPendingRestore(null);
-            setMessage('Alle eigen beoordelingen in dit tabblad gewist.');
+            setMessage('Alle eigen beoordelingen in dit tabblad gewist; twee lokale woninglabels behouden.');
           }}>Wis beoordelingen</button>
         </div>
         <label style={{display:'block',marginTop:12}} htmlFor="private-viewing-restore">
@@ -2352,11 +2393,14 @@ export function PrivateHousingViewingChecklist() {
         {pendingRestore && <div className="month-csv-confirm" role="group"
           aria-label="Bevestig checklist vervangen">
           <p>De tien beoordeelde onderdelen van dit bestand vervangen alle
-            huidige beoordelingen en essentieelkeuzes in dit tabblad.</p>
+            huidige beoordelingen en essentieelkeuzes in dit tabblad.
+            De opgeslagen checklist bevat geen woninglabels; bij herstel
+            worden die bewust teruggezet op neutraal Woning A en Woning B.</p>
           <button type="button" onClick={() => {
             setEntries(pendingRestore);
+            setSourceLabels(['Woning A','Woning B']);
             setPendingRestore(null);
-            setMessage('Eigen privéchecklist hersteld; de bron is niet extern gecontroleerd.');
+            setMessage('Eigen privéchecklist hersteld met neutrale woninglabels; de bron is niet extern gecontroleerd.');
           }}>Vervang huidige checklist</button>
           <button type="button" onClick={() => {
             setPendingRestore(null);setMessage('Herstel geannuleerd: huidige checklist behouden.');
@@ -2365,7 +2409,9 @@ export function PrivateHousingViewingChecklist() {
         {message && <p role="status">{message}</p>}
         <p>Een handmatig gekozen opslaglocatie kan synchroniseren buiten
           Woonpoints. Je importeert uitsluitend op eigen verzoek en bevestigt
-          apart voordat huidige beoordelingen worden vervangen.</p>
+          apart voordat huidige beoordelingen worden vervangen. De JSON
+          bevat alleen scores voor A/B; woninglabels blijven bewust buiten
+          het bestand, ook bij een uit je shortlist overgenomen selectie.</p>
       </div>
     </section>
   );
