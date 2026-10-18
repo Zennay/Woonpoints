@@ -989,7 +989,7 @@ function calendarUtc(date: Date) {
 
 /** A deliberate download, never a browser notification or remote calendar write. */
 export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
-  prefill?: Home | null;
+  prefill?: {label:string; kind?:PrivatePlanKind} | null;
   onPrefillHandled?: () => void;
 } = {}) {
   const [entries, setEntries] = useState<PrivatePlanItem[]>([]);
@@ -1149,10 +1149,10 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
           Je huidige onbewaarde formulier wordt pas na je bevestiging vervangen.</p>
         <button type="button" onClick={() => {
           setEditing(null);
-          setDraft({...emptyPrivatePlan, label: prefill.label});
+          setDraft({...emptyPrivatePlan, label: prefill.label, kind: prefill.kind ?? 'reactie'});
           setDeleteIndex(null);
           setPendingImport(null);
-          setNotice('Label ingevuld. Kies zelf type, datum en tijd en klik dan pas op Voeg eigen actie toe.');
+          setNotice('Eigen label voorbereid. Controleer het actietype en kies zelf datum/tijd; er is nog niets opgeslagen.');
           onPrefillHandled();
           document.getElementById('plan-when')?.focus();
         }}>Ja, maak eigen actie aan</button>
@@ -1444,7 +1444,8 @@ type PrivateLongTermOffer = {
 /** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
 export function ManualHousingDecisionWorkspace() {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
-  const [planPrefill, setPlanPrefill] = useState<Home | null>(null);
+  const [planPrefill, setPlanPrefill] =
+    useState<{label:string; kind?:PrivatePlanKind} | null>(null);
   const [longTermOffer, setLongTermOffer] = useState<PrivateLongTermOffer | null>(null);
   const [viewingOffer, setViewingOffer] = useState<[string, string] | null>(null);
   return (
@@ -1461,7 +1462,8 @@ export function ManualHousingDecisionWorkspace() {
       <PrivateLongTermHousingCosts offer={longTermOffer}
         onOfferHandled={() => setLongTermOffer(null)} />
       <PrivateHousingViewingChecklist offer={viewingOffer}
-        onOfferHandled={() => setViewingOffer(null)} />
+        onOfferHandled={() => setViewingOffer(null)}
+        onPlanFollowup={label => setPlanPrefill({label, kind:'beslissing'})} />
       <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
     </>
   );
@@ -2218,14 +2220,16 @@ const PRIVATE_VIEWING_RATINGS: PrivateViewingRating[] = ['unknown','good','conce
 const newPrivateViewingAnswers = (): PrivateViewingAnswer[] =>
   PRIVATE_VIEWING_TOPICS.map(() => ({must:false,a:'unknown',b:'unknown'}));
 
-export function PrivateHousingViewingChecklist({offer, onOfferHandled}: {
+export function PrivateHousingViewingChecklist({offer, onOfferHandled, onPlanFollowup}: {
   offer?: [string,string] | null;
   onOfferHandled?: () => void;
+  onPlanFollowup?: (label:string) => void;
 } = {}) {
   const [entries, setEntries] = useState<PrivateViewingAnswer[]>(newPrivateViewingAnswers);
   const [sourceLabels, setSourceLabels] = useState<[string,string]>(['Woning A','Woning B']);
   const [pendingRestore, setPendingRestore] = useState<PrivateViewingAnswer[] | null>(null);
   const [message, setMessage] = useState('');
+  const [issueChoice, setIssueChoice] = useState('');
   function change(index: number, field: keyof PrivateViewingAnswer, value: boolean | PrivateViewingRating) {
     setEntries(current => current.map((entry, i) =>
       i === index ? {...entry,[field]:value} : entry));
@@ -2242,6 +2246,28 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled}: {
     };
   };
   const a = summary('a'), b = summary('b');
+  const openEssentialFindings = PRIVATE_VIEWING_TOPICS.flatMap((topic,index) =>
+    (['a','b'] as const).flatMap(home =>
+      entries[index].must && (entries[index][home] === 'concern' || entries[index][home] === 'bad')
+        ? [{value:home+'-'+index, home, topic}] : []
+    ));
+  function offerFindingToPlanner() {
+    const finding = openEssentialFindings.find(item => item.value === issueChoice);
+    if (!finding || !onPlanFollowup) {
+      setMessage('Kies eerst één nog steeds actueel essentieel aandachtspunt.');
+      return;
+    }
+    const source = sourceLabels[finding.home === 'a' ? 0 : 1];
+    const suffix = ' · '+finding.topic.label;
+    const safeLabel = source.slice(0, 64 - suffix.length) + suffix;
+    if (!safeLabel.trim() || safeLabel.length > 64) {
+      setMessage('Ongeldig label. Gebruik neutrale kortere woningnamen.');
+      return;
+    }
+    onPlanFollowup(safeLabel);
+    setMessage('Eigen vervolgpunt aangeboden aan planner. Bevestig daar eerst; kies daarna zelf datum/tijd.');
+    document.getElementById('private-plan-title')?.scrollIntoView({block:'start'});
+  }
   function exportJson() {
     const payload = {
       format:'woonpoints-private-viewing-v1',
@@ -2373,6 +2399,26 @@ export function PrivateHousingViewingChecklist({offer, onOfferHandled}: {
             <p>Niet beoordeelde punten tellen niet als goed of slecht. De
               aantallen zijn geen numerieke kwaliteitsscore of woningkans.</p>}
         </div>
+        {onPlanFollowup && <div className="private-budget-provenance">
+          <h3>Maak een eigen vervolgactie van een belangrijk aandachtspunt</h3>
+          <p>Alleen door jou als essentieel en twijfelachtig/ongunstig beoordeelde
+            punten staan hieronder. Kies er maximaal één om aan je privéplanner
+            aan te bieden. Dit regelt geen officiële bezichtiging of herstel
+            en voegt niets automatisch aan je planning toe.</p>
+          <label htmlFor="viewing-issue-to-plan">Mijn vervolgpunt</label>
+          <select id="viewing-issue-to-plan" value={openEssentialFindings.some(x => x.value === issueChoice) ? issueChoice : ''}
+            onChange={e => setIssueChoice(e.target.value)}>
+            <option value="">Kies een essentieel aandachtspunt…</option>
+            {openEssentialFindings.map(item =>
+              <option value={item.value} key={item.value}>
+                {sourceLabels[item.home === 'a' ? 0 : 1]} · {item.topic.label}
+              </option>)}
+          </select>
+          <button type="button" disabled={!openEssentialFindings.length}
+            onClick={offerFindingToPlanner}>Bied dit punt aan de privéplanner aan ↓</button>
+          <p>De planner laat je apart bevestigen en vraagt altijd zelf een
+            datum en tijd. De inspectie blijft ongewijzigd.</p>
+        </div>}
         <div className="month-history-actions">
           <button type="button" onClick={exportJson}>Bewaar checklist als privé-JSON…</button>
           <button type="button" onClick={() => {
