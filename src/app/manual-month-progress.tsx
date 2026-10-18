@@ -4160,6 +4160,10 @@ export function PrivateMovingPackingInventory(){
   };
   function stampTransport(group:PackingBoxGroup,stage:PackingTransportStage|null){
     const key=packingTransportKey(group);
+    if(stage!==null&&group.items.some(item=>item.status==='Nog inpakken')){
+      setNotice('Deze doos bevat nog niet ingepakte regels. Rond die eerst af.');
+      return;
+    }
     if(stage==='afgeleverd'&&!transportEntries.some(row=>
       row.room===group.room&&row.box===group.box&&row.stage==='geladen')){
       setNotice('Markeer een doos eerst zelf als geladen voordat je aflevering noteert.');
@@ -4338,6 +4342,73 @@ export function PrivateMovingPackingInventory(){
     </li>)}</ol>
     {visible.length===0&&items.length>0&&<p>Geen regels binnen je filters.</p>}
 
+
+    <section aria-labelledby="private-transport-heading">
+      <h3 id="private-transport-heading">Verhuisrit: eigen laad- en afleveroverzicht</h3>
+      <p>Volg per zelf ingevulde doos of jij hem als geladen en later als
+        afgeleverd hebt gemarkeerd. Dat kan alleen als alle artikelen in
+        die doos al zijn ingepakt. Dit is een persoonlijke notitie,
+        geen scan, chauffeursbevestiging of officieel afleverbewijs.</p>
+      <dl>
+        <div><dt>Dozen met een label</dt><dd>{boxGroups.length}</dd></div>
+        <div><dt>Door jezelf als geladen gemarkeerd</dt><dd>{loadedCount}</dd></div>
+        <div><dt>Door jezelf als afgeleverd gemarkeerd</dt><dd>{deliveredCount}</dd></div>
+        <div><dt>Nog niet geladen</dt><dd>{boxGroups.length-loadedCount-deliveredCount}</dd></div>
+      </dl>
+      {unlabelled>0&&<p role="status">
+        {unlabelled} eigen pakregel(s) zonder dooscode tellen niet mee
+        in de vervoerscontrole. Geef ze eerst een eigen dooslabel.</p>}
+      {boxGroups.length===0&&<p>Maak eerst een eigen dooscode bij je pakregels.</p>}
+      <ol>{boxGroups.map(group=>{
+        const current=transportEntries.find(row=>row.room===group.room&&row.box===group.box);
+        const stage=current?.stage||'nog laden';
+        const waiting=group.items.some(item=>item.status==='Nog inpakken');
+        return <li key={packingTransportKey(group)}>
+          <strong>{group.room} · doos {group.box}</strong>
+          {' · '}{group.items.length} regels, {' '}
+          {group.items.reduce((n,item)=>n+item.quantity,0)} stuks
+          {group.items.some(item=>item.priority)?' · EERST NODIG':''}
+          <p>Eigen transportstatus: <strong>{stage}</strong>.
+            {waiting?' Nog niet alle inhoud is ingepakt.':''}</p>
+          {stage==='nog laden'&&<button type="button" disabled={waiting}
+            onClick={()=>stampTransport(group,'geladen')}>
+            Markeer zelf als geladen
+          </button>}
+          {stage==='geladen'&&<button type="button" disabled={waiting}
+            onClick={()=>stampTransport(group,'afgeleverd')}>
+            Markeer zelf als afgeleverd
+          </button>}
+          {stage!=='nog laden'&&<button type="button"
+            onClick={()=>stampTransport(group,null)}>
+            Herstel: nog niet geladen
+          </button>}
+        </li>;
+      })}</ol>
+      <label htmlFor="private-transport-show-contents">
+        <input id="private-transport-show-contents" type="checkbox"
+          checked={showManifestContents} onChange={event=>{
+            setShowManifestContents(event.target.checked);setPendingManifest(null);setNotice('');
+          }} />
+        Neem ook mijn eigen artikelomschrijvingen op in het vervoerbestand (standaard uit)
+      </label>
+      <button type="button" disabled={!boxGroups.length} onClick={()=>{
+        setPendingManifest(manifestSignature);setNotice('');
+      }}>Bekijk complete eigen vervoer-/afleverlijst…</button>
+      {pendingManifest===manifestSignature&&boxGroups.length>0&&
+        <div role="group" aria-label="Bevestig privé-vervoerbestand">
+          <p>Dit is je eigen momentopname van alle bekende dozen.
+            Bekijk de exacte tekst voordat je een eventueel privacygevoelig
+            lokaal TXT-bestand downloadt. Er wordt niets automatisch gedeeld.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'24rem',
+            overflowY:'auto'}}>{manifest}</pre>
+          <button type="button" onClick={saveManifest}>Bevestig privé-TXT-download</button>
+          <button type="button" onClick={()=>setPendingManifest(null)}>Annuleren</button>
+        </div>}
+      <p>Elke wijziging aan pakregels of hun inpakstatus trekt eerdere
+        laad-/aflevermarkeringen in. Je kunt ze daarna opnieuw zelf vastleggen.
+        De zelfstandige paklijst-back-up v2 bewaart deze markeringen;
+        oudere werkmap v3 en paklijst v1 bevatten ze niet.</p>
+    </section>
     <section aria-labelledby="private-box-labels-heading">
       <h3 id="private-box-labels-heading">Printbare eigen dozenlabels</h3>
       <p>Maak voor elke unieke combinatie van kamer en dooslabel een offline A4-vel
