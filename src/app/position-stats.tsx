@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
-  encodeHousingShortlist, decodeHousingShortlist } from '../lib/position-statistics.mjs';
+  encodeHousingShortlist, decodeHousingShortlist, compareTwoManualHomes,
+  exportManualHousingDecisionNote } from '../lib/position-statistics.mjs';
 import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, summarizeManualReactionJournal, exportManualReactionJournalCsv, importManualReactionJournalCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
 /** Ephemeral local arithmetic only: not a WoningNet account connection. */
@@ -545,9 +546,11 @@ export function ManualHousingShortlist() {
   const [notice, setNotice] = useState('');
   const [pendingImport, setPendingImport] = useState<{preferences: Preferences; homes: Home[]} | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [compared, setCompared] = useState<number[]>([]);
   const validPreferences = normalizeHousingPreferences(preferences) as Preferences | null;
   const ranked = validPreferences ? rankManualHomes(homes, validPreferences) : null;
   const eligible = ranked?.filter((row: {suitable: boolean}) => row.suitable).length ?? 0;
+  const comparison = validPreferences ? compareTwoManualHomes(homes, validPreferences, compared) : null;
 
   function addHome(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -584,6 +587,20 @@ export function ManualHousingShortlist() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
     setNotice('JSON aangeboden voor jouw eigen archief. De gekozen bestandsprovider kan synchroniseren.');
+  }
+
+  function exportDecisionNote() {
+    const brief = exportManualHousingDecisionNote(homes, preferences, compared);
+    if (!brief) {
+      setNotice('Kies eerst twee geldige woningen om een eigen beslisnotitie op te slaan.');
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([brief], {type: 'text/plain;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'woonpoints-eigen-woningafweging.txt'; link.rel = 'noopener';
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setNotice('Eigen beslisnotitie aangeboden. Zelf gekozen bestandsproviders kunnen synchroniseren.');
   }
 
   async function selectJson(file: File | undefined) {
@@ -678,7 +695,7 @@ export function ManualHousingShortlist() {
             voorkeuren. Overnemen vervangt je huidige lokale vergelijking geheel.</p>
           <button type="button" onClick={() => {
             setPreferences(pendingImport.preferences); setHomes(pendingImport.homes);
-            setPendingImport(null); setConfirmClear(false);
+            setCompared([]); setPendingImport(null); setConfirmClear(false);
             setNotice('Privévergelijking lokaal overgenomen; gegevens blijven ongeverifieerd.');
           }}>Vervang vergelijking</button>
           <button type="button" className="secondary" onClick={() => {
@@ -687,7 +704,7 @@ export function ManualHousingShortlist() {
         </div>}
         {confirmClear && <div className="housing-confirm" role="group" aria-label="Wissen bevestigen">
           <p>Alleen deze handmatig ingevulde woningvergelijking verwijderen? Andere Woonpoints-notities blijven bestaan.</p>
-          <button type="button" onClick={() => {setHomes([]); setConfirmClear(false);
+          <button type="button" onClick={() => {setHomes([]); setCompared([]); setConfirmClear(false);
             setPendingImport(null); setNotice('Woningen uit dit tabblad verwijderd.');}}>Ja, wis woningen</button>
           <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>Behoud woningen</button>
         </div>}
@@ -695,6 +712,43 @@ export function ManualHousingShortlist() {
         <h3>Jouw rangorde: {eligible} passend van {homes.length} ingevoerde woningen</h3>
         {!homes.length && <p>Voeg een woning toe om de vergelijking te starten. De gegevens zijn alleen voor jou zichtbaar in dit tabblad.</p>}
         {!ranked && homes.length > 0 && <p role="alert">Je voorkeuren zijn niet volledig. De rangorde is onbekend.</p>}
+        <section className="housing-side-by-side" aria-labelledby="housing-pair-heading">
+          <h3 id="housing-pair-heading">Vergelijk twee woningen direct</h3>
+          <p>Selecteer hieronder precies twee woningen. Het gaat om verschillen in jouw eigen
+            invoer, niet om een huurgarantie, officieel passend aanbod of woningkans.</p>
+          <p aria-live="polite">{compared.length}/2 geselecteerd</p>
+          {comparison && <div className="housing-pair-grid">
+            <article>
+              <h4>{homes[compared[0]]?.label}</h4>
+              <p>{comparison.choices[0].suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
+            </article>
+            <article>
+              <h4>{homes[compared[1]]?.label}</h4>
+              <p>{comparison.choices[1].suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
+            </article>
+            <div className="housing-pair-facts">
+              <p><strong>Maandhuurverschil:</strong> €{comparison.monthlyRentGap}
+                {comparison.lowerRent ? ` · Lager bij ${comparison.lowerRent}` : ' · Gelijk'}</p>
+              <p><strong>12 keer hetzelfde maandverschil:</strong> €{comparison.twelveMonthRentGap}
+                {' '}(geen voorspelling van toekomstige huur)</p>
+              <p><strong>Verschil in enkele reistijd:</strong> {comparison.minutesGap} minuten
+                {comparison.shorterTravel ? ` · Korter bij ${comparison.shorterTravel}` : ' · Gelijk'}</p>
+              <p><strong>Kamerverschil:</strong> {comparison.roomsGap}
+                {comparison.moreRooms ? ` · Meer bij ${comparison.moreRooms}` : ' · Gelijk'}</p>
+              <p>Servicekosten, energie, woonlasten, wachtrijregels en veranderende reistijden
+                zijn niet meegenomen.</p>
+            </div>
+          </div>}
+          <div className="housing-choice-buttons">
+            <button className="secondary" type="button" disabled={!compared.length}
+              onClick={() => {setCompared([]); setNotice('Directe vergelijking leeggemaakt.');}}>
+              Wis selectie
+            </button>
+            <button type="button" disabled={!comparison} onClick={exportDecisionNote}>
+              Bewaar beslisnotitie als TXT…
+            </button>
+          </div>
+        </section>
         <ol className="housing-results">
           {ranked?.map((row: {index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}) => (
             <li key={row.index} className="housing-item">
@@ -705,7 +759,19 @@ export function ManualHousingShortlist() {
               <p>Zelf genoteerd: €{row.home.rent}/maand · {row.home.rooms} kamers · {row.home.travel} minuten ·
                 {row.home.balcony ? ' balkon' : ' geen balkon'}</p>
               <ul>{row.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+              <button type="button"
+                aria-pressed={compared.includes(row.index)}
+                className="secondary"
+                disabled={!compared.includes(row.index) && compared.length >= 2}
+                onClick={() => {
+                  setCompared(current => current.includes(row.index)
+                    ? current.filter(id => id !== row.index)
+                    : current.length < 2 ? [...current, row.index] : current);
+                }}>
+                {compared.includes(row.index) ? '✓ In directe vergelijking' : 'Selecteer voor vergelijking'}
+              </button>
               <button type="button" className="secondary" onClick={() => {
+                setCompared([]);
                 setHomes(current => current.filter((_, index) => index !== row.index));
                 setNotice('Woning verwijderd uit je privévergelijking.');
               }}>Verwijder deze woning</button>
