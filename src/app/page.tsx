@@ -843,6 +843,12 @@ function PrivateMoveAftercare() {
 
   const uploadRef = useRef<HTMLInputElement>(null);
   const currentDay = today();
+  // The downloadable, pretty-printed v2 JSON is the actual storage budget.
+  // Counting only compact JSON would accept edits that cannot be backed up.
+  const aftercareBackupBytes = new TextEncoder().encode(JSON.stringify({
+    kind: KIND, schema: 2, items, history
+  }, null, 2)).length;
+  const aftercareBackupPercent = Math.min(100, Math.ceil(100 * aftercareBackupBytes / MAX_BYTES));
   const active = items.filter(item => item.status !== 'afgerond');
   const overdue = active.filter(item => item.due && item.due < currentDay);
   const noticeItems = active.filter(item => chosenIssueIds.includes(item.id)).slice(0, 12);
@@ -963,13 +969,19 @@ function PrivateMoveAftercare() {
       setMessage('Controleer de titel, ruimte, datum en notitie.'); return;
     }
     if (!editing && items.length >= LIMIT) { setMessage('Maximum van 80 aandachtspunten bereikt.'); return; }
-    if (editing) {
-      setItems(prev => prev.map(item => item.id === editing ? { ...item, ...clean } : item));
-    } else {
-      setItems(prev => [...prev, {
-        ...clean, id: 'item-' + crypto.randomUUID(), created: today(), status: 'open'
-      }]);
+    const nextItems: Item[] = editing
+      ? items.map(item => item.id === editing ? { ...item, ...clean } : item)
+      : [...items, { ...clean, id: 'item-' + crypto.randomUUID(), created: today(), status: 'open' }];
+    if (editing && !items.some(item => item.id === editing)) {
+      setMessage('Dit aandachtspunt is niet meer aanwezig; niets aangepast.'); return;
     }
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: nextItems, history
+    }, null, 2)).length > MAX_BYTES) {
+      setMessage('Wijziging niet opgeslagen: de privé-JSON-back-up zou groter dan 16 KiB worden. Verkort eerst notities of verwijder oude punten.');
+      return;
+    }
+    setItems(nextItems);
     setDraft(EMPTY);
     setEditing(null);
     setIncoming(null);
@@ -982,7 +994,14 @@ function PrivateMoveAftercare() {
     document.getElementById('nazorg-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function setStatus(id: string, status: Status) {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, status } : item));
+    if (!items.some(item => item.id === id)) return;
+    const nextItems = items.map(item => item.id === id ? { ...item, status } : item);
+    if (new TextEncoder().encode(JSON.stringify({
+      kind: KIND, schema: 2, items: nextItems, history
+    }, null, 2)).length > MAX_BYTES) {
+      setMessage('Status niet aangepast: verkort eerst je eigen dossier voor een geldige JSON-back-up.'); return;
+    }
+    setItems(nextItems);
     setMessage(status === 'gemeld'
       ? 'Zelf als gemeld gemarkeerd. Er is niets aan een verhuurder verstuurd.'
       : 'Eigen status aangepast. Geen externe bevestiging.');
@@ -1109,6 +1128,11 @@ function PrivateMoveAftercare() {
     }
     try {
       const data = readCompleteHandover(await file.text());
+      if (new TextEncoder().encode(JSON.stringify({
+        kind: KIND, schema: 2, items: data.aftercare.items, history: data.aftercare.history
+      }, null, 2)).length > MAX_BYTES) {
+        throw Error('Nazorg in deze complete import past niet in een nieuwe 16 KiB-back-up. Huidige gegevens behouden.');
+      }
       setPendingCompleteImport(data);
       setCompleteMessage('Volledige back-up ingelezen en gecontroleerd. Bevestig het vervangen van beide onderdelen.');
     } catch (error) {
@@ -1323,6 +1347,11 @@ function PrivateMoveAftercare() {
     if (file.size > MAX_BYTES) { setMessage('Import geweigerd: maximaal 16 KiB.'); return; }
     try {
       const value = readBackup(await file.text());
+      if (new TextEncoder().encode(JSON.stringify({
+        kind: KIND, schema: 2, items: value.items, history: value.history
+      }, null, 2)).length > MAX_BYTES) {
+        throw Error('Dit bestand kan niet opnieuw als eigen 16 KiB-JSON-back-up worden bewaard. Huidige gegevens behouden.');
+      }
       setIncoming(value);
       setMessage(`Gecontroleerd bestand: ${value.items.length} punten, ${value.history.length} contactmomenten. Bevestig vervanging apart.`);
     } catch (error) {
@@ -1388,12 +1417,18 @@ function PrivateMoveAftercare() {
           <h2 id="nazorg-status">Je eigen overzicht</h2>
           <p>Geen WoningNet-, verhuurder- of meldportaalverbinding. ‘Gemeld’ betekent alleen dat jij dit zelf hebt aangegeven.</p>
           {overdue.length > 0 && <p className="aftercare-warning" role="status">{overdue.length} eigen streefdatum{overdue.length === 1 ? ' is' : 's zijn'} verstreken. Controleer wat echt is afgesproken.</p>}
+          <p>Beschikbare ruimte voor je eigen nazorgback-up: <strong>{Math.max(0, MAX_BYTES - aftercareBackupBytes)}</strong> van
+            {' '}{MAX_BYTES} bytes over. De app weigert toevoegen en bewerken dat een nieuwe JSON-back-up onmogelijk maakt.</p>
+          {aftercareBackupPercent >= 85 && <p className="aftercare-warning" role="status">
+            Je dossier is bijna vol. Download desgewenst eerst een eigen back-up en verkort oudere notities.
+            Er wordt niets automatisch verwijderd.</p>}
         </div>
         <ul className="aftercare-stats">
           <li><strong>{items.length}</strong> vastgelegd</li>
           <li><strong>{active.length}</strong> nog open</li>
           <li><strong>{overdue.length}</strong> eigen deadlines verstreken</li>
           <li><strong>{items.filter(item => item.status === 'afgerond').length}</strong> afgerond</li>
+          <li><strong>{aftercareBackupPercent}%</strong> gebruikte privé-JSON-ruimte</li>
         </ul>
       </section>
 
