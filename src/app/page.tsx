@@ -1066,6 +1066,10 @@ function PrivateMoveAftercare() {
   const [clearPending, setClearPending] = useState(false);
   const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
   const [message, setMessage] = useState('');
+  const [pendingJsonExport, setPendingJsonExport] = useState<{
+    source: string; contents: string; itemsCount: number; historyCount: number; bytes: number
+  } | null>(null);
+  const [jsonExportApproved, setJsonExportApproved] = useState(false);
   const [includePrivateTxtNotes, setIncludePrivateTxtNotes] = useState(false);
   const [pendingTextExport, setPendingTextExport] = useState<{
     source: string; preview: string; count: number
@@ -1204,6 +1208,11 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const jsonExportSignature = JSON.stringify({ items, history });
+  const jsonExportCurrent = pendingJsonExport !== null &&
+    pendingJsonExport.source === jsonExportSignature &&
+    pendingJsonExport.itemsCount === items.length &&
+    pendingJsonExport.historyCount === history.length;
   const csvExportSignature = JSON.stringify({ items, includePrivateCsvNotes });
   const csvExportCurrent = pendingCsvExport !== null &&
     pendingCsvExport.source === csvExportSignature &&
@@ -1590,12 +1599,36 @@ function PrivateMoveAftercare() {
   }
 
   function exportJson() {
+    if (items.length === 0 && history.length === 0) {
+      setPendingJsonExport(null);
+      setMessage('Voeg eerst eigen nazorggegevens toe.');
+      return;
+    }
     const json = JSON.stringify({ kind: KIND, schema: 2, items, history }, null, 2);
-    if (new TextEncoder().encode(json).length > MAX_BYTES) {
+    const bytes = new TextEncoder().encode(json).length;
+    if (bytes > MAX_BYTES) {
+      setPendingJsonExport(null);
+      setJsonExportApproved(false);
       setMessage('Export overschrijdt 16 KiB; verkort notities of verwijder afgeronde items.'); return;
     }
-    download('woonpoints-nazorg.json', json, 'application/json;charset=utf-8');
-    setMessage('Privé-JSON gemaakt. Let zelf op waar je het bestand bewaart.');
+    setPendingJsonExport({
+      source: jsonExportSignature, contents: json, itemsCount: items.length,
+      historyCount: history.length, bytes
+    });
+    setJsonExportApproved(false);
+    setMessage('De volledige herstelback-up staat klaar voor je eigen controle. Er is nog niets opgeslagen.');
+  }
+  function confirmJsonExport() {
+    if (!jsonExportCurrent || !jsonExportApproved || pendingJsonExport === null) {
+      setPendingJsonExport(null);
+      setJsonExportApproved(false);
+      setMessage('Back-up niet gedownload: gegevens of toestemming zijn veranderd. Bekijk opnieuw.');
+      return;
+    }
+    download('woonpoints-nazorg.json', pendingJsonExport.contents, 'application/json;charset=utf-8');
+    setPendingJsonExport(null);
+    setJsonExportApproved(false);
+    setMessage('Zelf bevestigde volledige privé-JSON gedownload. Externe opslag wordt door jou gekozen.');
   }
   function exportCsv() {
     if (!items.length) { setPendingCsvExport(null); return; }
@@ -2492,12 +2525,48 @@ function PrivateMoveAftercare() {
         </div>
         <div>
           <div className="aftercare-actions">
-            <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
+            <button disabled={!items.length && !history.length} onClick={exportJson}>
+              Controleer volledige herstel-JSON…
+            </button>
             <button className="secondary" disabled={!items.length} onClick={exportCsv}>
               Controleer volledige CSV van {items.length} punten…
             </button>
             <button className="secondary" disabled={!shown.length} onClick={exportText}>Controleer TXT van {shown.length} zichtbare punten…</button>
           </div>
+          {pendingJsonExport !== null && <div className="aftercare-confirm" role="group"
+            aria-label="Volledige privé-JSON-back-up vooraf controleren">
+            <h3>Controleer je volledige privé-herstelbestand</h3>
+            {jsonExportCurrent ? <>
+              <p>Dit bestand bewaart {pendingJsonExport.itemsCount} eigen punten,
+                {pendingJsonExport.historyCount} zelf genoteerde contactmomenten en eventuele
+                vrije privénotities als volledig herstelbestand ({pendingJsonExport.bytes} bytes).
+                Ook verborgen, afgeronde en gefilterde punten worden opgenomen.</p>
+              <details className="aftercare-history">
+                <summary>Bekijk de exacte JSON inclusief privéteksten</summary>
+                <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:320,
+                  overflowY:'auto',padding:12,background:'#fff',
+                  border:'1px solid #b6c7ba',borderRadius:8}}>{pendingJsonExport.contents}</pre>
+              </details>
+              <label className="aftercare-check" htmlFor="nazorg-json-export-approve">
+                <input type="checkbox" id="nazorg-json-export-approve"
+                  checked={jsonExportApproved}
+                  onChange={event => setJsonExportApproved(event.target.checked)}/>
+                Ik begrijp dat de volledige privénotities en contactgeschiedenis in mijn
+                gekozen bestand komen, mogelijk in een gesynchroniseerde map.
+              </label>
+            </> : <p className="aftercare-warning" role="status">
+              Je dossier is sinds dit voorbeeld gewijzigd. De eerdere goedkeuring is ongeldig.
+              Maak een nieuwe back-upvoorvertoning.
+            </p>}
+            <div className="aftercare-actions">
+              <button type="button" disabled={!jsonExportCurrent || !jsonExportApproved}
+                onClick={confirmJsonExport}>Ja, download exact deze privé-JSON</button>
+              <button type="button" className="secondary" onClick={() => {
+                setPendingJsonExport(null); setJsonExportApproved(false);
+                setMessage('Volledige JSON-export geannuleerd zonder download.');
+              }}>Annuleer JSON-export</button>
+            </div>
+          </div>}
           <p>JSON en CSV bevatten alle punten uit het eigen dossier, ongeacht de zichtbare
             filters. CSV bevat privénotities alleen na een aparte bewuste keuze; TXT bevat
             uitsluitend gefilterde zichtbare punten. Beide tekstdelen vereisen een volledig
