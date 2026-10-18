@@ -1,6 +1,9 @@
 # Eigen nazorg-acties en afspraaknotities
 
-De **Mijn nazorg-acties**-inbox toont open aandachtspunten uit de bestaande privé-nazorgmodule. Er wordt niets van een verhuurder of WoningNet gelezen. De rangorde wordt opnieuw berekend uit de huidige tijdelijke browsertabbladgegevens:
+De **Mijn nazorg-acties**-inbox toont open aandachtspunten uit de bestaande privé-nazorgmodule.
+
+De nieuwe **[Mijn privé-nazorgweekplan](PRIVATE_AFTERCARE_WEEK_PLAN.md)**-module zet de al bestaande eigen urgenties en afspraaknotities om in één bewust geselecteerd 7- of 30-dagenplan. Je kunt vanuit de planning 1–12 actuele punten direct in de handmatig te beoordelen eerste-meldings- of opvolgconcepteditor zetten. Een plan-TXT vereist volledige brongebonden preview en nieuwe toestemming, bevat nooit de vrije contacttekst, en verstuurt niets.
+ Er wordt niets van een verhuurder of WoningNet gelezen. De rangorde wordt opnieuw berekend uit de huidige tijdelijke browsertabbladgegevens:
 
 1. Verstreken eigen streefdatum.
 2. Door jezelf als gemeld gemarkeerd, zonder genoteerd eigen verzendmoment.
