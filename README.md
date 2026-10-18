@@ -773,3 +773,34 @@ achtergrondherinneringen. Een zelfgekozen bestandsprovider kan
 gedownloade bestanden buiten Woonpoints synchroniseren. Maak zelf
 een back-up voordat je het tabblad sluit; verlopen kijkmomenten
 kunnen niet als toekomstig plan worden hersteld.
+
+
+## Twee woningen visueel vergelijken met eigen foto's
+
+Naast de bestaande handmatige bezichtigings- en kostenvergelijkingen staat nu
+**Fotovergelijking**. Kies voor woning A en B maximaal drie eigen JPEG-/PNG-/
+WebP-foto's (maximaal 5 MiB per bestand en 20 MiB over beide woningen).
+Woonpoints accepteert uitsluitend bestanden met een passende herkenbare
+image-header; SVG, GIF, video, lege of te grote bestanden worden geweigerd.
+Je kunt per woning tussen foto's bladeren, losse foto's direct uit het
+browsertabblad verwijderen en maximaal 400 tekens eigen aantekeningen maken.
+Met **Wis beide albums en aantekeningen** wis je alles tegelijk.
+
+Dit is een **tijdelijke, lokale visuele vergelijking**. De browser maakt
+alleen private tijdelijke object-URL's voor geselecteerde bestanden;
+bij verwijderen, wissen en verlaten van het paneel worden deze vrijgegeven.
+Er worden geen afbeeldingen geüpload, automatisch opgeslagen, gedownload,
+vertaald of geanalyseerd. Alleen de eigen A/B-tekstobservaties kunnen via
+**Toon privé-TXT-voorbeeld…** en een aparte expliciete bevestiging als
+tekstbestand worden opgeslagen. De export bevat nooit beeldbytes,
+bestandsnamen of tijdelijke afbeeldingslinks. De tekst is op eigen invoer
+gebaseerd en kan persoonsgegevens bevatten als je die zelf noteert.
+De bestaande originele fotobestanden op je apparaat worden niet verwijderd.
+Sluiten/verversen van het browsertabblad verliest de invoer.
+
+Let bij eigen foto's op herkenbare personen, adressen, documenten, foto's
+van derden en andere privacy-/auteursrechten. Woonpoints claimt geen
+auteurschap, advertentieherkomst, WoningNet-bron, bouwkundige beoordeling,
+toewijzingskans, woninginspectie of officiële goedkeuring. Dit paneel
+verandert geen account, reacties, zoekpunten, accounttoestemming of
+`BOT_DRY_RUN=true` en staat volledig los van de live WoningNet-adapter.

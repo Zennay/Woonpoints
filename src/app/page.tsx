@@ -1,6 +1,6 @@
 import { PrivateReactionWorkflow, PrivateReactionPacing } from './position-stats';
 import PositionStats from './position-stats';
-import { ManualHousingDecisionWorkspace } from './position-stats';
+import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
@@ -38,6 +38,7 @@ export default function HomePage() {
             ['private-budget-title', 'Woonkosten'],
             ['private-longterm-title', 'Meerjarenkosten'],
             ['private-viewing-title', 'Bezichtiging'],
+            ['private-photo-comparison-heading', 'Fotovergelijking'],
             ['private-plan-title', 'Planner'],
             ['private-moving-heading', 'Verhuizen'],
             ['position-stats-heading', 'Posities'],
@@ -66,6 +67,7 @@ export default function HomePage() {
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace />
+      <PrivatePhotoComparison />
 
       <section className="panel">
         <div>
