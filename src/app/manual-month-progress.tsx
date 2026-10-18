@@ -4462,6 +4462,7 @@ export function PrivateMovingPackingInventory(){
   const [transport,setTransport]=useState<Record<string,PackingTransportState>>({});
   const [showManifestContents,setShowManifestContents]=useState(false);
   const [pendingManifest,setPendingManifest]=useState<string|null>(null);
+  const [pendingDeparture,setPendingDeparture]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
     const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
@@ -4521,6 +4522,44 @@ export function PrivateMovingPackingInventory(){
   const unlabelled=items.filter(item=>item.status!=='Uitgepakt'&&!item.box).length;
   const duplicateCodes=[...new Set(boxGroups.map(group=>group.box))]
     .filter(box=>new Set(boxGroups.filter(group=>group.box===box).map(group=>group.room)).size>1);
+  // Departure readiness is derived from current manual inventory and transport state.
+  // Never persist or represent this as verified delivery, a courier scan, or a permit.
+  const departureNotPacked=items.filter(item=>item.status==='Nog inpakken');
+  const departureUnlabelled=items.filter(item=>item.status!=='Uitgepakt'&&!item.box);
+  const departureWaiting=boxGroups.filter(group=>!transportEntries.some(row=>
+    row.room===group.room&&row.box===group.box&&
+    (row.stage==='geladen'||row.stage==='afgeleverd')));
+  const departurePriorityWaiting=departureWaiting.filter(group=>
+    group.items.some(item=>item.priority&&item.status!=='Uitgepakt'));
+  const departureReady=items.length>0&&departureNotPacked.length===0&&
+    departureUnlabelled.length===0&&departureWaiting.length===0&&duplicateCodes.length===0;
+  const departureSignature=JSON.stringify({items,transportEntries});
+  const departureReport=[
+    'WOONPOINTS — EIGEN VERHUISVERTREKCONTROLE',
+    'Alleen zelf genoteerde gegevens; geen vervoerder-, verhuurder- of WoningNet-bevestiging.',
+    'Status volgens huidige eigen invoer: '+(departureReady?'Geen open blokkades':'Nog open controlepunten'),
+    'Pakregels: '+items.length+' · Doosgroepen: '+boxGroups.length,
+    'Nog in te pakken regels: '+departureNotPacked.length,
+    'Regels zonder dooslabel (niet uitgepakt): '+departureUnlabelled.length,
+    'Doosgroepen nog niet als geladen of afgeleverd gemarkeerd: '+departureWaiting.length,
+    'Eerst benodigde doosgroepen nog niet als geladen genoteerd: '+departurePriorityWaiting.length,
+    'Dooscodes in meerdere kamers: '+duplicateCodes.length,
+    '',
+    'NOG IN TE PAKKEN (EIGEN REGELS)',
+    ...departureNotPacked.map(item=>item.room+' · '+item.quantity+' × '+item.label),
+    '',
+    'ZONDER DOOSLABEL (EIGEN REGELS)',
+    ...departureUnlabelled.map(item=>item.room+' · '+item.quantity+' × '+item.label),
+    '',
+    'NOG NIET ALS GELADEN GENOTEERDE DOOSGROEPEN',
+    ...departureWaiting.map(group=>group.room+' · doos '+group.box+
+      (group.items.some(item=>item.priority&&item.status!=='Uitgepakt')?' · EERST NODIG':'')),
+    '',
+    'DUBBELE DOOSCODES TUSSEN KAMERS',
+    ...duplicateCodes,
+    '',
+    'Dit bestand is een persoonlijke checklist. Controleer alle spullen zelf.'
+  ].join('\n')+'\n';
   function savePrivateLabels(){
     if(!boxGroups.length||pendingLabels!==labelSignature){
       setPendingLabels(null);
@@ -4534,7 +4573,7 @@ export function PrivateMovingPackingInventory(){
   }
   const resetPending=()=>{
     setPendingExport(null);setPendingRestore(null);setPendingRestoreSource(null);setPendingDelete(null);
-    setPendingLabels(null);setPendingManifest(null);
+    setPendingLabels(null);setPendingManifest(null);setPendingDeparture(null);
     setConfirmClear(false);setNotice('');
   };
   function stampTransport(group:PackingBoxGroup,stage:PackingTransportStage|null){
@@ -4557,6 +4596,17 @@ export function PrivateMovingPackingInventory(){
     resetPending();
     setNotice(stage===null?'Eigen transportmarkering teruggezet.':
       'Eigen doos gemarkeerd als '+stage+'. Dit is geen extern bewijs.');
+  }
+  function saveDeparture(){
+    if(pendingDeparture!==departureSignature){
+      setPendingDeparture(null);
+      setNotice('Pakregels, doosgroepen of vervoersmarkeringen zijn gewijzigd. Bekijk de vertrekcontrole opnieuw.');
+      return;
+    }
+    downloadPrivateFile('woonpoints-prive-vertrekcontrole.txt',
+      departureReport,'text/plain;charset=utf-8');
+    setPendingDeparture(null);
+    setNotice('Eigen vertrekcontrole als TXT aangeboden. Dit is geen officieel of extern bewijs.');
   }
   function saveManifest(){
     if(!boxGroups.length||pendingManifest!==manifestSignature){
@@ -4771,6 +4821,55 @@ export function PrivateMovingPackingInventory(){
         <div><dt>Door jezelf als afgeleverd gemarkeerd</dt><dd>{deliveredCount}</dd></div>
         <div><dt>Nog niet geladen</dt><dd>{boxGroups.length-loadedCount-deliveredCount}</dd></div>
       </dl>
+      <section aria-labelledby="private-packing-departure-heading"
+        style={{margin:'20px 0',padding:16,border:'1px solid #8ca996',borderRadius:8}}>
+        <h4 id="private-packing-departure-heading">Vóór vertrek: mijn laadcontrole</h4>
+        <p>Controleer je eigen paklijst en transportmarkeringen vóór de verhuisrit.
+          Dit overzicht wordt onmiddellijk opnieuw berekend na elke wijziging.
+          Het is geen fysieke scan, ontvangstbevestiging of garantie.</p>
+        <p role="status" aria-live="polite"><strong>{
+          items.length===0?'Begin met eigen pakregels.':
+          departureReady?'Geen open punten volgens je eigen invoer.':
+          'Nog niet klaar volgens je eigen invoer.'
+        }</strong></p>
+        <dl>
+          <div><dt>Nog in te pakken regels</dt><dd>{departureNotPacked.length}</dd></div>
+          <div><dt>Nog zonder dooscode</dt><dd>{departureUnlabelled.length}</dd></div>
+          <div><dt>Doosgroepen niet als geladen genoteerd</dt><dd>{departureWaiting.length}</dd></div>
+          <div><dt>Daarvan als eerste nodig</dt><dd>{departurePriorityWaiting.length}</dd></div>
+          <div><dt>Dubbele codes tussen kamers</dt><dd>{duplicateCodes.length}</dd></div>
+        </dl>
+        {departurePriorityWaiting.length>0&&<div>
+          <h5>Eerst nodig, maar nog niet als geladen genoteerd</h5>
+          <ul>{departurePriorityWaiting.map(group=><li key={packingTransportKey(group)}>
+            {group.room} · doos {group.box} · {group.items.filter(item=>item.priority).length} prioritaire regel(s)
+          </li>)}</ul>
+        </div>}
+        {duplicateCodes.length>0&&<p role="alert">
+          Een dooscode wordt in verschillende kamers gebruikt ({duplicateCodes.join(', ')}).
+          Geef dozen een unieke code voordat je op de laadlijst vertrouwt.
+        </p>}
+        {(departureNotPacked.length>0||departureUnlabelled.length>0)&&
+          <p><a href="#pack-item">Werk je eigen pakregels hierboven bij ↑</a>.</p>}
+        {departureWaiting.length>0&&<p><a href="#private-transport-heading">
+          Markeer geladen dozen pas nadat je ze echt hebt gecontroleerd ↑</a>.</p>}
+        <button type="button" onClick={()=>{setPendingDeparture(departureSignature);setNotice('');}}>
+          Bekijk volledige privé-vertrekcontrole
+        </button>
+        {pendingDeparture===departureSignature&&<div>
+          <p>Deze exacte inhoud kan labels en zelf ingevoerde voorwerpnamen bevatten.
+            Lees eerst wat je naar een eigen bestand gaat schrijven.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflow:'auto'}}>
+            {departureReport}
+          </pre>
+          <button type="button" onClick={saveDeparture}>
+            Download deze gecontroleerde TXT
+          </button>
+          <button type="button" onClick={()=>setPendingDeparture(null)}>Annuleren</button>
+        </div>}
+        {pendingDeparture!==null&&pendingDeparture!==departureSignature&&<p role="status">
+          Je lijst is gewijzigd. De vorige toestemming is vervallen; bekijk opnieuw.</p>}
+      </section>
       {unlabelled>0&&<p role="status">
         {unlabelled} eigen pakregel(s) zonder dooscode tellen niet mee
         in de vervoerscontrole. Geef ze eerst een eigen dooslabel.</p>}
