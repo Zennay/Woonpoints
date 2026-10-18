@@ -1632,3 +1632,21 @@ selecties kunnen niet geprint worden. De filters veranderen **nooit** de
 onderliggende labels, de volledige JSON-back-up of het volledige, apart
 privacy-goedgekeurde CSV-overzicht. Selectie en status zijn tijdelijk in het
 tabblad. Gebruik de complete back-up om werk later voort te zetten.
+
+
+### Echte dooscodes zonder ongevraagde CSV-notities (18 oktober 2026)
+
+De studio-export van `/#dozenlabels` is altijd **volledig** en staat los van
+de kamer/urgentie-afdrukfilter. Een paklijst-doos met eigen code `K-03`
+krijgt in de kolom `Doosnummer` daadwerkelijk `K-03` in plaats van de
+betekenisloze afdrukpositie `1`. De door de gebruiker ingevoerde vrije
+inhoudnotities staan standaard **uit** en worden alleen opgenomen als de
+gebruiker dat zelf aanzet; een identieke dooscode wordt dan niet nogmaals
+gekopieerd naar de inhoudskolom.
+
+Voor het bewaren verschijnt eerst de **volledige actuele CSV** in het eigen
+tabblad (de onzichtbare UTF-8 BOM wordt als zodanig toegelicht), pas een aparte
+bevestiging downloadt die exacte inhoud. Wijziging van labels of privacykeuze
+maakt de oude voorvertoning ongeldig. Geen automatisch netwerkverzoek,
+serveropslag, accountgegeven of toestemmingsoverdracht. Het doel is verlies van
+dooscodes voorkomen zonder ongezien privé-inhoudsnotities te delen.
