@@ -3887,7 +3887,12 @@ type PackingItem = {
   id:string;label:string;room:Room;quantity:number;box:string;
   priority:boolean;status:PackingState;
 };
-type PackingArchive = {format:'woonpoints-private-packing-list';version:1;items:PackingItem[]};
+type PackingTransportStage='geladen'|'afgeleverd';
+type PackingTransportRow={room:Room;box:string;stage:PackingTransportStage};
+type PackingTransportState={stage:PackingTransportStage;fingerprint:string};
+type PackingArchive =
+  | {format:'woonpoints-private-packing-list';version:1;items:PackingItem[]}
+  | {format:'woonpoints-private-packing-list';version:2;items:PackingItem[];transport:PackingTransportRow[]};
 type FormState = {label:string;room:Room;quantity:string;box:string;priority:boolean;status:PackingState};
 const blank = ():FormState=>({
   label:'',room:'Woonkamer',quantity:'1',box:'',priority:false,status:'Nog inpakken'
@@ -3910,12 +3915,30 @@ function validItem(raw:unknown):raw is PackingItem{
 function validArchive(raw:unknown):raw is PackingArchive{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
   const obj=raw as Record<string,unknown>;
-  if(Object.keys(obj).sort().join('|')!=='format|items|version'|| 
-    obj.format!=='woonpoints-private-packing-list'||obj.version!==1||
+  const isV2=obj.version===2;
+  if(Object.keys(obj).sort().join('|')!==(isV2?'format|items|transport|version':'format|items|version')||
+    obj.format!=='woonpoints-private-packing-list'||(obj.version!==1&&!isV2)||
     !Array.isArray(obj.items)||obj.items.length>80||
     !obj.items.every(validItem))return false;
-  const ids=obj.items.map((item:PackingItem)=>item.id);
-  return new Set(ids).size===ids.length;
+  const items=obj.items as PackingItem[];
+  if(new Set(items.map(item=>item.id)).size!==items.length)return false;
+  if(!isV2)return true;
+  if(!Array.isArray(obj.transport)||obj.transport.length>80)return false;
+  const boxes=new Set(packingBoxGroups(items).map(group=>JSON.stringify([group.room,group.box])));
+  const keys=new Set<string>();
+  for(const raw of obj.transport){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+    const row=raw as Record<string,unknown>;
+    if(Object.keys(row).sort().join('|')!=='box|room|stage'||
+      typeof row.room!=='string'||!ROOMS.includes(row.room as Room)||
+      typeof row.box!=='string'||!row.box||row.box.length>30||
+      CONTROL.test(row.box)||row.box!==row.box.trim()||
+      (row.stage!=='geladen'&&row.stage!=='afgeleverd'))return false;
+    const key=JSON.stringify([row.room,row.box]);
+    if(!boxes.has(key)||keys.has(key))return false;
+    keys.add(key);
+  }
+  return true;
 }
 function downloadPrivateFile(name:string,content:string,mime:string){
   const url=URL.createObjectURL(new Blob([content],{type:mime}));
@@ -3961,6 +3984,64 @@ function packingBoxGroups(items:PackingItem[]):PackingBoxGroup[]{
   }
   return groups.sort((a,b)=>a.room.localeCompare(b.room,'nl-NL')||
     a.box.localeCompare(b.box,'nl-NL'));
+}
+
+function packingTransportKey(group:PackingBoxGroup):string{
+  return JSON.stringify([group.room,group.box]);
+}
+function packingTransportFingerprint(group:PackingBoxGroup):string{
+  // Bound to exactly the current not-yet-unpacked contents: a stale stamp
+  // must never silently confirm different quantities, priorities or labels.
+  return JSON.stringify(group.items.map(item=>[
+    item.id,item.label,item.quantity,item.priority,item.status
+  ]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+}
+function packingCurrentTransport(
+  groups:PackingBoxGroup[],state:Record<string,PackingTransportState>
+):PackingTransportRow[]{
+  return groups.flatMap(group=>{
+    const current=state[packingTransportKey(group)];
+    return current&&current.fingerprint===packingTransportFingerprint(group)?
+      [{room:group.room,box:group.box,stage:current.stage}]:[];
+  });
+}
+function packingRestoreTransport(
+  items:PackingItem[],rows:PackingTransportRow[]
+):Record<string,PackingTransportState>{
+  const states:Record<string,PackingTransportState>={};
+  for(const group of packingBoxGroups(items)){
+    const row=rows.find(item=>item.room===group.room&&item.box===group.box);
+    if(row)states[packingTransportKey(group)]={
+      stage:row.stage,fingerprint:packingTransportFingerprint(group)
+    };
+  }
+  return states;
+}
+function packingTransportReport(
+  groups:PackingBoxGroup[],entries:PackingTransportRow[],
+  withContents:boolean
+):string{
+  const lines=['WOONPOINTS - EIGEN VERHUISTRANSPORTOVERZICHT',
+    'Handmatig ingevulde laad- en aflevermarkeringen; niet extern geverifieerd.',
+    'Totaal '+groups.length+' dozen; '+
+      entries.filter(row=>row.stage==='geladen').length+' als geladen en '+
+      entries.filter(row=>row.stage==='afgeleverd').length+' als afgeleverd gemarkeerd.',''];
+  for(const group of groups){
+    const stage=entries.find(row=>row.room===group.room&&row.box===group.box)?.stage||'nog laden';
+    const urgent=group.items.some(item=>item.priority);
+    lines.push('['+stage+'] '+group.room+' / doos '+group.box+
+      ' - '+group.items.length+' regels - '+
+      group.items.reduce((n,item)=>n+item.quantity,0)+' stuks'+
+      (urgent?' - EERST NODIG':''));
+    if(withContents)for(const item of group.items){
+      lines.push('  '+item.quantity+' x '+item.label+
+        (item.priority?' - eerst nodig':''));
+    }
+  }
+  lines.push('','Dozen zonder eigen dooscode en al uitgepakte regels staan hier niet in.',
+    'Geen laadbewijs, bezorgbewijs, verzekeringsinventaris of officiële verhuismelding.',
+    'Eigen labels kunnen privacygevoelig zijn. Bewaar en deel dit document bewust.');
+  return lines.join('\n')+'\n';
 }
 function packingHtmlText(value:string):string{
   return value.replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -4013,6 +4094,9 @@ export function PrivateMovingPackingInventory(){
   const [pendingRestore,setPendingRestore]=useState<PackingArchive|null>(null);
   const [showLabelContents,setShowLabelContents]=useState(false);
   const [pendingLabels,setPendingLabels]=useState<string|null>(null);
+  const [transport,setTransport]=useState<Record<string,PackingTransportState>>({});
+  const [showManifestContents,setShowManifestContents]=useState(false);
+  const [pendingManifest,setPendingManifest]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   useEffect(()=>{
     const publish=()=>window.dispatchEvent(new CustomEvent('woonpoints:moving-workspace:snapshot',{
@@ -4028,8 +4112,9 @@ export function PrivateMovingPackingInventory(){
       if(!validMovingWorkspaceArchive(imported)||imported.version!==3)return;
       setItems(imported.packing.items);setForm(blank());setEditing(null);
       setPendingDelete(null);setConfirmClear(false);setPendingExport(null);
-      setPendingRestore(null);setPendingLabels(null);
-      setNotice('Paklijst uit eigen v3-werkmap hersteld. Geen netwerkverzoek.');
+      setPendingRestore(null);setPendingLabels(null);setTransport({});
+      setPendingManifest(null);
+      setNotice('Paklijst uit eigen v3-werkmap hersteld. Transportmarkeringen zijn niet in v3 opgeslagen en zijn leeggemaakt.');
     }
     window.addEventListener('woonpoints:moving-workspace:restore',restore);
     return()=>window.removeEventListener('woonpoints:moving-workspace:restore',restore);
@@ -4048,6 +4133,11 @@ export function PrivateMovingPackingInventory(){
   [items,roomFilter,stateFilter]);
   const report=packingReport(items);
   const boxGroups=packingBoxGroups(items);
+  const transportEntries=packingCurrentTransport(boxGroups,transport);
+  const loadedCount=transportEntries.filter(row=>row.stage==='geladen').length;
+  const deliveredCount=transportEntries.filter(row=>row.stage==='afgeleverd').length;
+  const manifestSignature=JSON.stringify({signature,transportEntries,showManifestContents});
+  const manifest=packingTransportReport(boxGroups,transportEntries,showManifestContents);
   const labelSignature=JSON.stringify({signature,showLabelContents});
   const unlabelled=items.filter(item=>item.status!=='Uitgepakt'&&!item.box).length;
   const duplicateCodes=[...new Set(boxGroups.map(group=>group.box))]
@@ -4064,9 +4154,42 @@ export function PrivateMovingPackingInventory(){
     setNotice('Lokaal printbaar HTML-bestand aangeboden. Open het zelf om af te drukken.');
   }
   const resetPending=()=>{
-    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);setPendingLabels(null);
+    setPendingExport(null);setPendingRestore(null);setPendingDelete(null);
+    setPendingLabels(null);setPendingManifest(null);
     setConfirmClear(false);setNotice('');
   };
+  function stampTransport(group:PackingBoxGroup,stage:PackingTransportStage|null){
+    const key=packingTransportKey(group);
+    if(stage!==null&&group.items.some(item=>item.status==='Nog inpakken')){
+      setNotice('Deze doos bevat nog niet ingepakte regels. Rond die eerst af.');
+      return;
+    }
+    if(stage==='afgeleverd'&&!transportEntries.some(row=>
+      row.room===group.room&&row.box===group.box&&row.stage==='geladen')){
+      setNotice('Markeer een doos eerst zelf als geladen voordat je aflevering noteert.');
+      return;
+    }
+    setTransport(old=>{
+      const updated={...old};
+      if(stage===null)delete updated[key];
+      else updated[key]={stage,fingerprint:packingTransportFingerprint(group)};
+      return updated;
+    });
+    resetPending();
+    setNotice(stage===null?'Eigen transportmarkering teruggezet.':
+      'Eigen doos gemarkeerd als '+stage+'. Dit is geen extern bewijs.');
+  }
+  function saveManifest(){
+    if(!boxGroups.length||pendingManifest!==manifestSignature){
+      setPendingManifest(null);
+      setNotice('Doosinhoud, status of privacykeuze is gewijzigd. Bekijk de transportlijst opnieuw.');
+      return;
+    }
+    downloadPrivateFile('woonpoints-prive-verhuistransport.txt',
+      manifest,'text/plain;charset=utf-8');
+    setPendingManifest(null);
+    setNotice('Privé-transportlijst lokaal aangeboden. Geen vervoerder of account benaderd.');
+  }
   function saveItem(){
     const label=cleanText(form.label),box=cleanText(form.box),quantity=Number(form.quantity);
     if(!label||label.length>60||CONTROL.test(label)||box.length>30||CONTROL.test(box)||
@@ -4081,6 +4204,7 @@ export function PrivateMovingPackingInventory(){
     const updated:PackingItem={id:previous?.id||'item-'+Date.now()+'-'+(++sequence.current),
       label,box,quantity,room:form.room,priority:form.priority,status:form.status};
     setItems(old=>editing?old.map(item=>item.id===editing?updated:item):[...old,updated]);
+    setTransport({}); // A changed inventory must never carry forward a stale load receipt.
     setEditing(null);setForm(blank());resetPending();
     setNotice(editing?'Pakregel bijgewerkt.':'Pakregel toegevoegd.');
   }
@@ -4091,6 +4215,7 @@ export function PrivateMovingPackingInventory(){
   }
   function changeStatus(id:string,status:PackingState){
     setItems(old=>old.map(item=>item.id===id?{...item,status}:item));
+    setTransport({}); // Packing/unpacking invalidates every previous manual transport stamp.
     resetPending();
   }
   function exportNow(kind:'json'|'txt'){
@@ -4099,7 +4224,8 @@ export function PrivateMovingPackingInventory(){
       return;
     }
     if(kind==='json'){
-      const archive:PackingArchive={format:'woonpoints-private-packing-list',version:1,items};
+      const archive:PackingArchive={format:'woonpoints-private-packing-list',
+        version:2,items,transport:transportEntries};
       downloadPrivateFile('woonpoints-prive-paklijst.json',
         JSON.stringify(archive,null,2)+'\n','application/json;charset=utf-8');
     }else downloadPrivateFile('woonpoints-prive-paklijst.txt',report,'text/plain;charset=utf-8');
@@ -4108,7 +4234,7 @@ export function PrivateMovingPackingInventory(){
   async function readArchive(file:File|undefined){
     setPendingRestore(null);setPendingExport(null);
     if(!file)return;
-    if(file.size<1||file.size>32768){setNotice('Back-up geweigerd: kies een JSON van maximaal 32 KiB.');return;}
+    if(file.size<1||file.size>65536){setNotice('Back-up geweigerd: kies een JSON van maximaal 64 KiB.');return;}
     try{
       const raw:unknown=JSON.parse(await file.text());
       if(!validArchive(raw))throw new Error('invalid archive');
@@ -4207,14 +4333,82 @@ export function PrivateMovingPackingInventory(){
         <p>Verwijder je eigen regel <strong>{item.label}</strong>?</p>
         <button type="button" onClick={()=>{
           setItems(old=>old.filter(x=>x.id!==item.id));
+          setTransport({});
           if(editing===item.id){setEditing(null);setForm(blank());}
-          resetPending();setNotice('Pakregel verwijderd.');
+          resetPending();setNotice('Pakregel verwijderd. Transportmarkeringen opnieuw beginnen.');
         }}>Ja, verwijder deze regel</button>
         <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
       </div>}
     </li>)}</ol>
     {visible.length===0&&items.length>0&&<p>Geen regels binnen je filters.</p>}
 
+
+    <section aria-labelledby="private-transport-heading">
+      <h3 id="private-transport-heading">Verhuisrit: eigen laad- en afleveroverzicht</h3>
+      <p>Volg per zelf ingevulde doos of jij hem als geladen en later als
+        afgeleverd hebt gemarkeerd. Dat kan alleen als alle artikelen in
+        die doos al zijn ingepakt. Dit is een persoonlijke notitie,
+        geen scan, chauffeursbevestiging of officieel afleverbewijs.</p>
+      <dl>
+        <div><dt>Dozen met een label</dt><dd>{boxGroups.length}</dd></div>
+        <div><dt>Door jezelf als geladen gemarkeerd</dt><dd>{loadedCount}</dd></div>
+        <div><dt>Door jezelf als afgeleverd gemarkeerd</dt><dd>{deliveredCount}</dd></div>
+        <div><dt>Nog niet geladen</dt><dd>{boxGroups.length-loadedCount-deliveredCount}</dd></div>
+      </dl>
+      {unlabelled>0&&<p role="status">
+        {unlabelled} eigen pakregel(s) zonder dooscode tellen niet mee
+        in de vervoerscontrole. Geef ze eerst een eigen dooslabel.</p>}
+      {boxGroups.length===0&&<p>Maak eerst een eigen dooscode bij je pakregels.</p>}
+      <ol>{boxGroups.map(group=>{
+        const current=transportEntries.find(row=>row.room===group.room&&row.box===group.box);
+        const stage=current?.stage||'nog laden';
+        const waiting=group.items.some(item=>item.status==='Nog inpakken');
+        return <li key={packingTransportKey(group)}>
+          <strong>{group.room} · doos {group.box}</strong>
+          {' · '}{group.items.length} regels, {' '}
+          {group.items.reduce((n,item)=>n+item.quantity,0)} stuks
+          {group.items.some(item=>item.priority)?' · EERST NODIG':''}
+          <p>Eigen transportstatus: <strong>{stage}</strong>.
+            {waiting?' Nog niet alle inhoud is ingepakt.':''}</p>
+          {stage==='nog laden'&&<button type="button" disabled={waiting}
+            onClick={()=>stampTransport(group,'geladen')}>
+            Markeer zelf als geladen
+          </button>}
+          {stage==='geladen'&&<button type="button" disabled={waiting}
+            onClick={()=>stampTransport(group,'afgeleverd')}>
+            Markeer zelf als afgeleverd
+          </button>}
+          {stage!=='nog laden'&&<button type="button"
+            onClick={()=>stampTransport(group,null)}>
+            Herstel: nog niet geladen
+          </button>}
+        </li>;
+      })}</ol>
+      <label htmlFor="private-transport-show-contents">
+        <input id="private-transport-show-contents" type="checkbox"
+          checked={showManifestContents} onChange={event=>{
+            setShowManifestContents(event.target.checked);setPendingManifest(null);setNotice('');
+          }} />
+        Neem ook mijn eigen artikelomschrijvingen op in het vervoerbestand (standaard uit)
+      </label>
+      <button type="button" disabled={!boxGroups.length} onClick={()=>{
+        setPendingManifest(manifestSignature);setNotice('');
+      }}>Bekijk complete eigen vervoer-/afleverlijst…</button>
+      {pendingManifest===manifestSignature&&boxGroups.length>0&&
+        <div role="group" aria-label="Bevestig privé-vervoerbestand">
+          <p>Dit is je eigen momentopname van alle bekende dozen.
+            Bekijk de exacte tekst voordat je een eventueel privacygevoelig
+            lokaal TXT-bestand downloadt. Er wordt niets automatisch gedeeld.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'24rem',
+            overflowY:'auto'}}>{manifest}</pre>
+          <button type="button" onClick={saveManifest}>Bevestig privé-TXT-download</button>
+          <button type="button" onClick={()=>setPendingManifest(null)}>Annuleren</button>
+        </div>}
+      <p>Elke wijziging aan pakregels of hun inpakstatus trekt eerdere
+        laad-/aflevermarkeringen in. Je kunt ze daarna opnieuw zelf vastleggen.
+        De zelfstandige paklijst-back-up v2 bewaart deze markeringen;
+        oudere werkmap v3 en paklijst v1 bevatten ze niet.</p>
+    </section>
     <section aria-labelledby="private-box-labels-heading">
       <h3 id="private-box-labels-heading">Printbare eigen dozenlabels</h3>
       <p>Maak voor elke unieke combinatie van kamer en dooslabel een offline A4-vel
@@ -4271,12 +4465,13 @@ export function PrivateMovingPackingInventory(){
           Controleer de gegevens vóór bewaren of delen.</p>
         <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
           maxHeight:'25rem',overflowY:'auto'}}>{pendingExport.kind==='json'?
-          JSON.stringify({format:'woonpoints-private-packing-list',version:1,items},null,2):report}</pre>
+          JSON.stringify({format:'woonpoints-private-packing-list',
+            version:2,items,transport:transportEntries},null,2):report}</pre>
         <button type="button" onClick={()=>exportNow(pendingExport.kind)}>
           Bevestig privé-{pendingExport.kind==='json'?'JSON':'TXT'}-download</button>
         <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
       </div>}
-    <label htmlFor="pack-upload">Herstel eigen paklijst (JSON, maximaal 32 KiB)</label>
+    <label htmlFor="pack-upload">Herstel eigen paklijst v1 of v2 (JSON, maximaal 64 KiB)</label>
     <input id="pack-upload" type="file" accept=".json,application/json"
       onChange={event=>{
         const file=event.currentTarget.files?.[0];
@@ -4286,11 +4481,19 @@ export function PrivateMovingPackingInventory(){
       <p>Back-up bevat {pendingRestore.items.length} eigen regels in
         { ' '+new Set(pendingRestore.items.map(item=>item.room)).size} kamer(s).
         Bevestigen vervangt de huidige {items.length} regels, inclusief onbewaarde wijzigingen.
+        {pendingRestore.version===2?
+          ' Ook de eigen laad-/aflevermarkeringen uit deze back-up worden hersteld.':
+          ' Oudere v1 bevat geen laad-/aflevermarkeringen; deze worden leeggemaakt.'}
         Er wordt niets met WoningNet gecontroleerd.</p>
       <button type="button" onClick={()=>{
-        setItems(pendingRestore.items);setPendingRestore(null);setPendingExport(null);
+        setItems(pendingRestore.items);
+        setTransport(pendingRestore.version===2?
+          packingRestoreTransport(pendingRestore.items,pendingRestore.transport):{});
+        setPendingManifest(null);setPendingRestore(null);setPendingExport(null);
         setPendingDelete(null);setEditing(null);setForm(blank());
-        setNotice('Privé-paklijst hersteld. Geen externe gegevens gecontroleerd.');
+        setNotice(pendingRestore.version===2?
+          'Privé-paklijst en eigen transportstatus hersteld; geen externe controle.':
+          'Oudere privé-paklijst hersteld; transportstatus leeggemaakt.');
       }}>Ja, vervang volledige paklijst</button>
       <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
     </div>}
@@ -4298,7 +4501,8 @@ export function PrivateMovingPackingInventory(){
       Wis eigen paklijst…</button>:<div role="group" aria-label="Bevestig paklijst wissen">
       <p>Wis alle {items.length} eigen pakregels uit dit tabblad? Externe kopieën blijven bestaan.</p>
       <button type="button" onClick={()=>{
-        setItems([]);setEditing(null);setForm(blank());resetPending();setNotice('Paklijst gewist.');
+        setItems([]);setTransport({});setEditing(null);setForm(blank());
+        resetPending();setNotice('Paklijst en transportmarkeringen gewist.');
       }}>Ja, wis alle regels</button>
       <button type="button" onClick={()=>setConfirmClear(false)}>Annuleren</button>
     </div>}
