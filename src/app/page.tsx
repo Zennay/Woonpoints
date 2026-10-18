@@ -202,6 +202,8 @@ function PrivateDepositLedger() {
   const [eventAmount, setEventAmount] = useState('');
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<{data: DepositBackup; before: string} | null>(null);
+  const [txtPreview, setTxtPreview] = useState<{source: string; text: string} | null>(null);
+  const [txtConfirmed, setTxtConfirmed] = useState(false);
   const depositCents = parseEuro(deposit);
   const current: DepositBackup | null = depositCents === null ? null : {
     kind: KIND, schema: 1, depositCents, entries
@@ -247,7 +249,7 @@ function PrivateDepositLedger() {
     saveFile('woonpoints-prive-borgboek.json', contents, 'application/json;charset=utf-8');
     setNotice('Privé-back-up gedownload. Bewaar deze zelf op een veilige plek.');
   }
-  function downloadTxt() {
+  function previewTxt() {
     if (!current) { setNotice('Vul eerst een geldig oorspronkelijk borgbedrag in.'); return; }
     const lines = [
       'MIJN EIGEN BORGOVERZICHT — GEEN OFFICIEEL BEWIJS',
@@ -258,8 +260,18 @@ function PrivateDepositLedger() {
       'Dit overzicht zegt niets over de rechtsgeldigheid van inhoudingen of terugbetaling.',
       '', ...entries.map(e => e.date + ' | ' + e.kind + ' | ' + euro(e.amountCents) + ' | ' + e.label)
     ];
-    saveFile('woonpoints-prive-borgoverzicht.txt', lines.join('\n'), 'text/plain;charset=utf-8');
-    setNotice('Eigen TXT is gedownload; controleer de gegevens vóór delen.');
+    setTxtPreview({ source: JSON.stringify(current), text: lines.join('\n') });
+    setTxtConfirmed(false);
+    setNotice('Bekijk de exacte TXT-inhoud en geef afzonderlijk toestemming om die lokaal op te slaan.');
+  }
+  function downloadTxt() {
+    if (!current || !txtPreview || txtPreview.source !== JSON.stringify(current) || !txtConfirmed) {
+      setNotice('De voorvertoning is verlopen of niet goedgekeurd. Bekijk eerst de actuele inhoud.');
+      return;
+    }
+    saveFile('woonpoints-prive-borgoverzicht.txt', txtPreview.text, 'text/plain;charset=utf-8');
+    setTxtConfirmed(false);
+    setNotice('Zelf beoordeelde TXT is gedownload; controleer bestemming en ontvanger.');
   }
   async function chooseBackup(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -342,7 +354,21 @@ function PrivateDepositLedger() {
         <p>Geen automatische opslag: sluit je dit tabblad, dan verdwijnen deze eigen gegevens.
           JSON bevat ook de omschrijvingen; deel het bestand niet zonder controle.</p>
         <button type="button" onClick={downloadJson} disabled={!current}>Download volledige privé-JSON</button>{' '}
-        <button type="button" onClick={downloadTxt} disabled={!current}>Download leesbaar TXT</button>
+        <button type="button" onClick={previewTxt} disabled={!current}>Bekijk exact TXT-overzicht</button>
+        {txtPreview && <div role="group" aria-label="Privé-overzicht beoordelen">
+          <label htmlFor="deposit-txt-preview">Controleer de inhoud vóór delen (ook de zelf ingevoerde omschrijvingen)</label>
+          <textarea id="deposit-txt-preview" readOnly rows={10} value={txtPreview.text} />
+          {current && txtPreview.source === JSON.stringify(current) ?
+            <>
+              <label htmlFor="deposit-txt-approved">
+                <input id="deposit-txt-approved" type="checkbox" checked={txtConfirmed}
+                  onChange={e => setTxtConfirmed(e.target.checked)} />
+                Ik heb precies dit privé-overzicht gecontroleerd en kies bewust voor downloaden.
+              </label>
+              <button type="button" onClick={downloadTxt} disabled={!txtConfirmed}>Download beoordeeld TXT-bestand</button>
+            </> :
+            <p role="alert">Gegevens zijn gewijzigd sinds de voorvertoning. Maak een nieuwe voorvertoning.</p>}
+        </div>}
         <label htmlFor="deposit-import">Herstel een eerder gedownload privé-borgboek (max. 12 KiB)</label>
         <input id="deposit-import" type="file" accept=".json,application/json" onChange={chooseBackup} />
         {pending && <div role="group" aria-label="Bevestig herstel borgboek">
