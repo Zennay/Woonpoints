@@ -3899,6 +3899,132 @@ export function PrivateMovingChecklist({offer,onOfferHandled}: {
 
 
 /**
+ * Voluntary all-day review dates only. No calendar-provider API, notification
+ * permission, WoningNet action, account data or server connection.
+ */
+function PrivateMonthlyCheckCalendar(){
+  const [period,setPeriod]=useState<'1'|'3'>('3');
+  const [checkKind,setCheckKind]=useState<'both'|'middle'|'ending'>('both');
+  const [preview,setPreview]=useState<{
+    signature:string;summary:string;ics:string;count:number
+  }|null>(null);
+  const [approved,setApproved]=useState(false);
+  const [message,setMessage]=useState('');
+  const localNow=new Date();
+  const today=[localNow.getFullYear(),String(localNow.getMonth()+1).padStart(2,'0'),
+    String(localNow.getDate()).padStart(2,'0')].join('-');
+  const signature=period+'|'+checkKind+'|'+today;
+  const current=preview!==null&&preview.signature===signature;
+
+  function prepare(){
+    const now=new Date();
+    const localToday=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+      String(now.getDate()).padStart(2,'0')].join('-');
+    const monthCount=period==='1'?1:3;
+    const stamp=now.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const lines=[
+      'BEGIN:VCALENDAR','VERSION:2.0','CALSCALE:GREGORIAN',
+      'PRODID:-//Woonpoints//Private Monthly Checks//NL','METHOD:PUBLISH'
+    ];
+    const visible:string[]=[];
+    for(let monthOffset=0;monthOffset<monthCount;monthOffset++){
+      for(const [day,kind] of [[15,'Midden in de maand'],[25,'Richting maandeinde']] as const){
+        if(checkKind==='middle'&&day!==15)continue;
+        if(checkKind==='ending'&&day!==25)continue;
+        const date=new Date(now.getFullYear(),now.getMonth()+monthOffset,day,12);
+        const year=date.getFullYear();
+        const month=String(date.getMonth()+1).padStart(2,'0');
+        const dd=String(date.getDate()).padStart(2,'0');
+        const iso=year+'-'+month+'-'+dd;
+        if(iso<localToday)continue;
+        const end=new Date(year,date.getMonth(),day+1,12);
+        const endIso=String(end.getFullYear())+
+          String(end.getMonth()+1).padStart(2,'0')+String(end.getDate()).padStart(2,'0');
+        const summary=kind==='Midden in de maand'?
+          'Eigen Woonpoints voortgang bekijken':'Eigen Woonpoints maand afronden';
+        lines.push(
+          'BEGIN:VEVENT',
+          'UID:woonpoints-eigen-maandcheck-'+iso+'@woonpoints.invalid',
+          'DTSTAMP:'+stamp,
+          'DTSTART;VALUE=DATE:'+iso.replace(/-/g,''),
+          'DTEND;VALUE=DATE:'+endIso,
+          'SUMMARY:'+summary,
+          'DESCRIPTION:Vrijwillige persoonlijke controle. Controleer eventuele echte accountinformatie zelf. Geen automatische WoningNet reactie of officieel maanddoel.',
+          'STATUS:TENTATIVE',
+          'END:VEVENT'
+        );
+        visible.push(iso+' — '+summary);
+      }
+    }
+    if(visible.length===0){
+      setMessage('Geen resterende persoonlijke controledatums voor de geselecteerde periode.');
+      setPreview(null);setApproved(false);return;
+    }
+    lines.push('END:VCALENDAR');
+    setPreview({signature:period+'|'+checkKind+'|'+localToday,summary:visible.join('\n'),
+      ics:lines.join('\r\n')+'\r\n',count:visible.length});
+    setApproved(false);
+    setMessage('Bekijk eerst je eigen, voorlopige kalenderdatums.');
+  }
+  function download(){
+    if(!current||!approved||!preview)return;
+    const url=URL.createObjectURL(new Blob([preview.ics],{type:'text/calendar;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='woonpoints-vrijwillige-maandchecks.ics';
+    link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setMessage('Eigen ICS aangeboden. Je agenda-app bepaalt of en waar dit wordt opgeslagen.');
+  }
+  return <section style={{border:'1px solid #d0e0d4',borderRadius:12,padding:16,marginTop:18}}
+      aria-labelledby="private-month-check-calendar-title">
+    <h3 id="private-month-check-calendar-title">Vrijwillige maandchecks in je eigen agenda</h3>
+    <p>Maak zelf voorlopige controlemomenten op de 15e en 25e van de komende maand(en).
+      Datums in het verleden worden overgeslagen. Dit zijn geen WoningNet-deadlines,
+      echte afspraken of automatische herinneringen van Woonpoints.</p>
+    <label htmlFor="private-month-calendar-period">Periode</label>
+    <select id="private-month-calendar-period" value={period} onChange={event=>{
+      setPeriod(event.target.value as '1'|'3');setApproved(false);
+    }} style={{minHeight:44,margin:'0 10px',padding:8}}>
+      <option value="1">Alleen deze maand</option>
+      <option value="3">Deze en de volgende twee maanden</option>
+    </select>
+    <label htmlFor="private-month-calendar-kind">Controlemoment</label>
+    <select id="private-month-calendar-kind" value={checkKind} onChange={event=>{
+      setCheckKind(event.target.value as 'both'|'middle'|'ending');setApproved(false);
+    }} style={{minHeight:44,margin:'0 10px',padding:8}}>
+      <option value="both">15e en 25e</option>
+      <option value="middle">Alleen 15e</option>
+      <option value="ending">Alleen 25e</option>
+    </select>
+    <button type="button" onClick={prepare}>Bekijk voorgestelde agendadagen</button>
+    {preview&&<div role="group" aria-label="Eigen agendadagen bevestigen">
+      {!current&&<p role="status">De periode of lokale datum is gewijzigd;
+        maak eerst een nieuwe voorvertoning.</p>}
+      <p>Er staan {preview.count} vrijwillige controlemomenten in de export:</p>
+      <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{preview.summary}</pre>
+      <label htmlFor="private-month-calendar-approval" style={{display:'flex',gap:10,alignItems:'center'}}>
+        <input id="private-month-calendar-approval" type="checkbox"
+          checked={approved} disabled={!current}
+          onChange={event=>setApproved(event.target.checked)}/>
+        Ik heb deze persoonlijke datums gecontroleerd en wil zelf een agenda-ICS opslaan
+      </label>
+      <button type="button" disabled={!current||!approved} onClick={download}>
+        Download vrijwillige ICS
+      </button>
+      <button type="button" onClick={()=>{setPreview(null);setApproved(false);
+        setMessage('Voorstel gesloten; er is niets gedownload.');}}>
+        Annuleren
+      </button>
+    </div>}
+    {message&&<p role="status">{message}</p>}
+    <p>Er worden geen persoonlijke gegevens, wachtwoorden of reactiestatussen meegestuurd.
+      De gekozen kalender-app kan een bestand wel synchroniseren en zelf meldingen maken.</p>
+  </section>;
+}
+
+/**
  * No global event, cross-tab persistence or account bridge.
  * The only shared context is an explicitly proposed private aggregate.
  */
@@ -4090,6 +4216,7 @@ export function PrivateReactionWorkflow({children}:{children:ReactNode}) {
           <p>Een eigen 4/4 is nooit bewijs van vier geldige reacties. Een gekozen
             bestandsprovider kan de bewust gedownloade TXT buiten deze app synchroniseren.</p>
         </section>
+        <PrivateMonthlyCheckCalendar />
         <p><a href="#manual-progress-heading">Open mijn maandplanning</a>
           {' · '}<a href="#reaction-journal-title">Open mijn reactiedagboek</a>
           {' · '}<a href="#private-points-heading">Open mijn zoekpuntenhistorie</a></p>
