@@ -1257,3 +1257,35 @@ Dit bord is geen vertrektoestemming, leveranciers-/vervoerdersbewijs,
 actuele inventarisverificatie of garantie dat alle officiële verhuisacties
 zijn verricht. De acht-module JSON-back-up v5 en versiecompatibiliteit
 blijven ongewijzigd; geen nieuwe account- of productieactie.
+
+
+## Zelf adreswijzigingen en contracten bijhouden (geen echte melding)
+
+De nieuwe dashboardsectie **Adreswijzigingen die jij nog wilt regelen**
+bevat tien handmatige voorbeeldcategorieën: gemeente/BRP,
+postdoorsturen, bank, werkgever, zorgverzekeraar, huisarts,
+energie, internet, overige verzekeringen en abonnementen.
+Dit is uitdrukkelijk geen volledige lijst met wettelijke verplichtingen.
+
+- Markeer iedere categorie zelf als **Nog regelen**, **Zelf gemeld**
+  of **Niet van toepassing**. Voeg maximaal twaalf eigen extra taken
+  toe, noteer desgewenst een controledatum en een korte notitie.
+  Open, zelfgekozen datums in het verleden verschijnen als aandachtspunt.
+  Een status is nooit een officiële ontvangstbevestiging.
+- Download alleen bewust de volledige **JSON-back-up** of een leesbare
+  **TXT-checklist**, beide na exacte preview en tweede bevestiging.
+  JSON-import accepteert uitsluitend de gesloten versie-1-indeling
+  met oorspronkelijke tien voorbeeldcategorieën, unieke taak-ID's,
+  echte datums, begrensde aantallen en waarden (maximaal 16 KiB).
+  Import vervangt niets zonder afzonderlijke bevestiging.
+- Een los optioneel **.ics-agendabestand** toont vooraf uitsluitend
+  open zelfgedateerde taken (zonder privénotities), en verstuurt geen
+  reminders of uitnodigingen.
+- Geen echte adresinvoer nodig. Alle gegevens blijven in het tijdelijke
+  browsergeheugen, tenzij je zelf een bestand opslaat. Een gekozen
+  externe opslagdienst kan dat bestand later synchroniseren.
+  Er is geen BRP-melding, bank-/poliswijziging, WoningNet-actie,
+  leveranciersbericht of automatische betaling.
+
+Controleer adresverplichtingen en deadlines bij de betreffende
+instanties. De live account- en productieautorisatie blijven ongewijzigd.

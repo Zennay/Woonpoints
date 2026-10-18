@@ -5367,3 +5367,311 @@ export function PrivateMovingHelperRoster(){
       automatische opslag. Controleer afspraken altijd rechtstreeks met de betrokkenen.</p>
   </section>;
 }
+
+
+// Separate manual administration after a move. Never sends addresses to providers.
+type MoveAddressState='Nog regelen'|'Zelf gemeld'|'Niet van toepassing';
+type MoveAddressEntry={id:string;label:string;status:MoveAddressState;date:string;note:string};
+type MoveAddressArchive={format:'woonpoints-private-address-checklist';version:1;items:MoveAddressEntry[]};
+const MOVE_ADDRESS_DEFAULTS=[
+  ['gemeente','Gemeente of BRP'],
+  ['post','Post doorsturen'],
+  ['bank','Bank- en betaalgegevens'],
+  ['werk','Werkgever of opdrachtgever'],
+  ['zorg','Zorgverzekeraar'],
+  ['huisarts','Huisarts en zorgverleners'],
+  ['energie','Energiecontract'],
+  ['internet','Internet en televisie'],
+  ['verzekeringen','Overige verzekeringen'],
+  ['abonnementen','Abonnementen en bezorgingen']
+] as const;
+const MOVE_ADDRESS_STATES:MoveAddressState[]=['Nog regelen','Zelf gemeld','Niet van toepassing'];
+const moveAddressBlank=():MoveAddressEntry[]=>
+  MOVE_ADDRESS_DEFAULTS.map(([id,label])=>({
+    id,label,status:'Nog regelen',date:'',note:''
+  }));
+function moveAddressDate(raw:string):boolean{
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(raw))return false;
+  const [year,month,day]=raw.split('-').map(Number);
+  if(year<2000||year>2099||month<1||month>12)return false;
+  const date=new Date(Date.UTC(year,month-1,day));
+  return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&
+    date.getUTCDate()===day;
+}
+function moveAddressEntryValid(raw:unknown):raw is MoveAddressEntry{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const row=raw as Record<string,unknown>;
+  if(Object.keys(row).sort().join('|')!=='date|id|label|note|status'||
+    typeof row.id!=='string'||typeof row.label!=='string'||
+    typeof row.note!=='string'||typeof row.date!=='string')return false;
+  const standard=MOVE_ADDRESS_DEFAULTS.find(([id])=>id===row.id);
+  if(standard){
+    if(row.label!==standard[1])return false;
+  }else if(!/^custom-[0-9]+-[0-9]+$/.test(row.id))return false;
+  return row.label.length>0&&row.label.length<=65&&
+    row.label===row.label.trim()&&
+    row.note.length<=160&&row.note===row.note.trim()&&
+    !/[\u0000-\u001f\u007f]/.test(row.label+row.note)&&
+    MOVE_ADDRESS_STATES.includes(row.status as MoveAddressState)&&
+    (!row.date||moveAddressDate(row.date));
+}
+function moveAddressArchiveValid(raw:unknown):raw is MoveAddressArchive{
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const obj=raw as Record<string,unknown>;
+  if(Object.keys(obj).sort().join('|')!=='format|items|version'||
+    obj.format!=='woonpoints-private-address-checklist'||obj.version!==1||
+    !Array.isArray(obj.items)||obj.items.length>22||
+    !obj.items.every(moveAddressEntryValid))return false;
+  const items=obj.items as MoveAddressEntry[];
+  const ids=items.map(x=>x.id);
+  return new Set(ids).size===ids.length&&
+    MOVE_ADDRESS_DEFAULTS.every(([id])=>ids.includes(id))&&
+    items.filter(x=>x.id.startsWith('custom-')).length<=12;
+}
+function moveAddressIcs(items:MoveAddressEntry[]):string{
+  const now=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const text=(str:string)=>str.replace(/\\/g,'\\\\').replace(/\r|\n/g,' ')
+    .replace(/,/g,'\\,').replace(/;/g,'\\;');
+  const rows=items.map(row=>{
+    const [y,m,d]=row.date.split('-').map(Number);
+    const tomorrow=new Date(Date.UTC(y,m-1,d+1)).toISOString().slice(0,10).replace(/-/g,'');
+    return ['BEGIN:VEVENT','UID:woonpoints-address-'+row.id+'-'+row.date.replace(/-/g,'')+'@local',
+      'DTSTAMP:'+now,'DTSTART;VALUE=DATE:'+row.date.replace(/-/g,''),
+      'DTEND;VALUE=DATE:'+tomorrow,
+      'SUMMARY:'+text('Zelf controleren: '+row.label),
+      'DESCRIPTION:Handmatig herinneringspunt. Geen bewijs van officiële melding.',
+      'END:VEVENT'].join('\r\n');
+  });
+  return ['BEGIN:VCALENDAR','VERSION:2.0',
+    'PRODID:-//Woonpoints//Prive Adreswijzigingen//NL','CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',...rows,'END:VCALENDAR',''].join('\r\n');
+}
+function moveAddressDownload(name:string,content:string,type:string){
+  const url=URL.createObjectURL(new Blob([content],{type}));
+  const link=document.createElement('a');link.href=url;link.download=name;link.rel='noopener';
+  document.body.appendChild(link);link.click();link.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function moveAddressReport(items:MoveAddressEntry[]):string{
+  const out=['WOONPOINTS - EIGEN ADRESWIJZIGINGEN',
+    'Alleen zelf genoteerde meldingen, niet geverifieerd bij instanties.',''];
+  for(const row of items){
+    out.push('['+row.status+'] '+row.label+
+      (row.date?' | eigen controledatum '+row.date:' | zonder datum')+
+      (row.note?' | eigen notitie: '+row.note:''));
+  }
+  out.push('','Een vinkje verzendt niets en bewijst geen adreswijziging.',
+    'Controleer rechtstreeks bij de betreffende organisaties. Bewaar en deel alleen bewust.');
+  return out.join('\n')+'\n';
+}
+/** An opt-in, offline-only manual move address checklist. Not a BRP form. */
+export function PrivateAddressChangePlanner(){
+  const [items,setItems]=useState<MoveAddressEntry[]>(moveAddressBlank);
+  const [label,setLabel]=useState('');
+  const [filter,setFilter]=useState<MoveAddressState|'Alles'>('Alles');
+  const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [pendingClear,setPendingClear]=useState(false);
+  const [pendingExport,setPendingExport]=useState<'json'|'txt'|null>(null);
+  const [pendingCalendar,setPendingCalendar]=useState<string|null>(null);
+  const [pendingRestore,setPendingRestore]=useState<MoveAddressArchive|null>(null);
+  const [notice,setNotice]=useState('');
+  const sequence=useRef(0);
+  const signature=JSON.stringify(items);
+  const today=(()=>{
+    const now=new Date();
+    return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+
+      '-'+String(now.getDate()).padStart(2,'0');
+  })();
+  const outstanding=items.filter(x=>x.status==='Nog regelen');
+  const overdue=outstanding.filter(x=>x.date&&x.date<today);
+  const upcoming=outstanding.filter(x=>x.date&&x.date>=today);
+  const visible=items.filter(x=>filter==='Alles'||x.status===filter);
+  const report=moveAddressReport(items);
+  const calendarSignature=JSON.stringify(upcoming);
+  function resetPending(){
+    setPendingExport(null);setPendingCalendar(null);setPendingRestore(null);
+    setPendingDelete(null);setPendingClear(false);setNotice('');
+  }
+  function addCustom(){
+    const value=label.trim();
+    if(!value||value.length>65||/[\u0000-\u001f\u007f]/.test(value)||
+      items.some(x=>x.label.toLowerCase()===value.toLowerCase())){
+      setNotice('Gebruik een unieke eigen taaknaam van 1–65 tekens, zonder besturingstekens.');
+      return;
+    }
+    if(items.length>=22){setNotice('Er is ruimte voor maximaal 12 extra taken.');return;}
+    setItems(old=>[...old,{
+      id:'custom-'+Date.now()+'-'+(++sequence.current),label:value,
+      status:'Nog regelen',date:'',note:''
+    }]);
+    setLabel('');resetPending();setNotice('Eigen taak toegevoegd, zonder externe registratie.');
+  }
+  function change(id:string,patch:Partial<Pick<MoveAddressEntry,'status'|'date'|'note'>>){
+    setItems(old=>old.map(item=>{
+      if(item.id!==id)return item;
+      const updated={...item,...patch};
+      return moveAddressEntryValid(updated)?updated:item;
+    }));
+    resetPending();
+  }
+  async function importJson(file:File|undefined){
+    setPendingRestore(null);setPendingExport(null);setPendingCalendar(null);
+    if(!file)return;
+    if(file.size<1||file.size>16384){
+      setNotice('Privé-JSON geweigerd: kies een bestand van maximaal 16 KiB.');return;
+    }
+    try{
+      const raw:unknown=JSON.parse(await file.text());
+      if(!moveAddressArchiveValid(raw))throw new Error('invalid backup');
+      setPendingRestore(raw);
+      setNotice('Eigen checklist gelezen. De huidige invoer is nog niet vervangen.');
+    }catch{setNotice('Ongeldige versie, velden of waarden. Huidige invoer blijft behouden.');}
+  }
+  function exportNow(kind:'json'|'txt'){
+    if(pendingExport!==kind){setNotice('Controleer eerst de huidige voorvertoning.');return;}
+    if(kind==='json'){
+      const archive:MoveAddressArchive={format:'woonpoints-private-address-checklist',version:1,items};
+      moveAddressDownload('woonpoints-prive-adreswijzigingen.json',
+        JSON.stringify(archive,null,2)+'\n','application/json;charset=utf-8');
+    }else moveAddressDownload('woonpoints-prive-adreswijzigingen.txt',
+      report,'text/plain;charset=utf-8');
+    setPendingExport(null);
+    setNotice('Privé-bestand lokaal aangeboden; controleer eventuele synchronisatie.');
+  }
+  function exportCalendar(){
+    if(pendingCalendar!==calendarSignature||!upcoming.length){
+      setPendingCalendar(null);setNotice('De open data zijn gewijzigd. Bekijk ze opnieuw.');return;
+    }
+    moveAddressDownload('woonpoints-eigen-adreswijzigingen.ics',
+      moveAddressIcs(upcoming),'text/calendar;charset=utf-8');
+    setPendingCalendar(null);
+    setNotice('Eigen agenda aangeboden. Er is niets naar instanties verzonden.');
+  }
+  return <section className="panel" aria-labelledby="private-address-change-heading">
+    <p className="eyebrow">VERHUIZEN · PRIVÉ ADMINISTRATIE</p>
+    <h2 id="private-address-change-heading">Adreswijzigingen die jij nog wilt regelen</h2>
+    <p>Houd hier zelf bij welke instanties, contracten of abonnementen je
+      na een verhuizing wilt nalopen. De tien voorbeelden zijn geen
+      juridisch verplichte, complete checklist. Een status &lsquo;Zelf gemeld&rsquo;
+      is geen bevestiging van een instantie. Er wordt nooit een adres
+      of bericht naar derden verstuurd.</p>
+    <dl>
+      <div><dt>Eigen aandachtspunten</dt><dd>{items.length}</dd></div>
+      <div><dt>Nog regelen</dt><dd>{outstanding.length}</dd></div>
+      <div><dt>Zelf als gemeld gemarkeerd</dt><dd>{
+        items.filter(x=>x.status==='Zelf gemeld').length}</dd></div>
+      <div><dt>Zelfgekozen datum voorbij</dt><dd>{overdue.length}</dd></div>
+    </dl>
+    {overdue.length>0&&<div role="status">
+      <h3>Open eigen controledatums voorbij</h3>
+      <ul>{overdue.map(item=><li key={item.id}>
+        {item.date} · {item.label} · nog regelen
+      </li>)}</ul>
+    </div>}
+    <label htmlFor="private-address-filter">Toon eigen status</label>
+    <select id="private-address-filter" value={filter}
+      onChange={event=>setFilter(event.target.value as MoveAddressState|'Alles')}>
+      <option>Alles</option>
+      {MOVE_ADDRESS_STATES.map(value=><option key={value}>{value}</option>)}
+    </select>
+    <p>{visible.length} van {items.length} meldpunten zichtbaar.</p>
+    <ol>{visible.map(item=><li key={item.id}>
+      <strong>{item.label}</strong>
+      <label htmlFor={'private-address-status-'+item.id}>Eigen meldstatus</label>
+      <select id={'private-address-status-'+item.id} value={item.status}
+        onChange={event=>change(item.id,{
+          status:event.target.value as MoveAddressState
+        })}>
+        {MOVE_ADDRESS_STATES.map(value=><option key={value}>{value}</option>)}
+      </select>
+      <label htmlFor={'private-address-date-'+item.id}>Eigen controledatum (optioneel)</label>
+      <input id={'private-address-date-'+item.id} type="date" min="2000-01-01"
+        max="2099-12-31" value={item.date}
+        onChange={event=>change(item.id,{date:event.target.value})}/>
+      <label htmlFor={'private-address-note-'+item.id}>Korte privé-notitie
+        (vermijd je echte adres en klantnummers)</label>
+      <input id={'private-address-note-'+item.id} maxLength={160}
+        autoComplete="off" value={item.note}
+        onChange={event=>change(item.id,{note:event.target.value})}/>
+      {item.id.startsWith('custom-')&&<button type="button" onClick={()=>{
+        setPendingDelete(item.id);setNotice('');
+      }}>Verwijder eigen taak…</button>}
+      {pendingDelete===item.id&&<div role="group" aria-label="Bevestig privétaak verwijderen">
+        <p>Verwijder {item.label} uit je eigen checklist?</p>
+        <button type="button" onClick={()=>{
+          setItems(old=>old.filter(x=>x.id!==item.id));
+          resetPending();setNotice('Eigen taak verwijderd.');
+        }}>Ja, verwijder</button>
+        <button type="button" onClick={()=>setPendingDelete(null)}>Annuleren</button>
+      </div>}
+    </li>)}</ol>
+    <h3>Extra eigen meldpunt</h3>
+    <label htmlFor="private-address-extra">Bijvoorbeeld: sportvereniging</label>
+    <input id="private-address-extra" maxLength={65} autoComplete="off"
+      value={label} onChange={event=>setLabel(event.target.value)}/>
+    <button type="button" onClick={addCustom} disabled={items.length>=22}>
+      Voeg eigen taak toe ({items.length-10} / 12)</button>
+    <h3>Bewaar of herstel uitsluitend bewust</h3>
+    <p>JSON en TXT bevatten je eigen taken, meldstatussen, datums en
+      notities. Bekijk exact wat je bewaart. De optionele agenda bevat
+      alleen nog open, door jezelf gedateerde taken zonder notities.</p>
+    <button type="button" onClick={()=>{
+      setPendingExport('txt');setPendingCalendar(null);setNotice('');
+    }}>Bekijk privé-TXT…</button>
+    <button type="button" onClick={()=>{
+      setPendingExport('json');setPendingCalendar(null);setNotice('');
+    }}>Bekijk complete privé-JSON…</button>
+    {pendingExport&&<div role="group" aria-label="Bevestig privé-adreschecklist export">
+      <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+        maxHeight:'24rem',overflowY:'auto'}}>{pendingExport==='txt'?report:
+        JSON.stringify({format:'woonpoints-private-address-checklist',version:1,items},null,2)}</pre>
+      <button type="button" onClick={()=>exportNow(pendingExport)}>
+        Bevestig privé-{pendingExport.toUpperCase()}-download</button>
+      <button type="button" onClick={()=>setPendingExport(null)}>Annuleren</button>
+    </div>}
+    <button type="button" disabled={!upcoming.length} onClick={()=>{
+      setPendingCalendar(calendarSignature);setPendingExport(null);setNotice('');
+    }}>Bekijk eigen agenda voor {upcoming.length} open datums…</button>
+    {pendingCalendar===calendarSignature&&upcoming.length>0&&
+      <div role="group" aria-label="Bevestig privé-adresagenda">
+        <ul>{upcoming.map(item=><li key={item.id}>
+          {item.date} · {item.label}</li>)}</ul>
+        <p>Dit maakt uitsluitend een lokaal .ics-bestand aan.
+          Er worden geen organisaties aangeschreven of notificaties verzonden.</p>
+        <button type="button" onClick={exportCalendar}>Bevestig lokale agenda-download</button>
+        <button type="button" onClick={()=>setPendingCalendar(null)}>Annuleren</button>
+      </div>}
+    <label htmlFor="private-address-import">Herstel eigen JSON (maximaal 16 KiB)</label>
+    <input id="private-address-import" type="file" accept=".json,application/json"
+      onChange={event=>{
+        const file=event.currentTarget.files?.[0];event.currentTarget.value='';
+        void importJson(file);
+      }}/>
+    {pendingRestore&&<div role="group" aria-label="Bevestig huidige adreschecklist vervangen">
+      <p>Deze back-up bevat {pendingRestore.items.length} eigen meldpunten.
+        Bevestigen vervangt alle huidige {items.length} regels inclusief onbewaarde
+        wijzigingen. Annuleren houdt je huidige checklist intact.</p>
+      <button type="button" onClick={()=>{
+        setItems(pendingRestore.items);setPendingRestore(null);setPendingExport(null);
+        setPendingCalendar(null);setPendingDelete(null);
+        setNotice('Eigen checklist hersteld; geen instantie benaderd.');
+      }}>Ja, vervang complete eigen checklist</button>
+      <button type="button" onClick={()=>setPendingRestore(null)}>Annuleren</button>
+    </div>}
+    {!pendingClear?<button type="button" onClick={()=>setPendingClear(true)}>
+      Wis eigen wijzigingen en herstel voorbeeldlijst…</button>:
+      <div role="group" aria-label="Bevestig alle privé-adresgegevens wissen">
+        <p>Dit verwijdert eigen extra taken, datums, meldstatussen en notities
+          uit dit tabblad. Eerder opgeslagen bestanden blijven bestaan.</p>
+        <button type="button" onClick={()=>{
+          setItems(moveAddressBlank());setLabel('');resetPending();
+          setNotice('Alle lokale adreswijzigingsgegevens uit dit tabblad gewist.');
+        }}>Ja, wis privéwijzigingen</button>
+        <button type="button" onClick={()=>setPendingClear(false)}>Annuleren</button>
+      </div>}
+    {notice&&<p role="status">{notice}</p>}
+    <p>Deze checklist blijft uitsluitend in het geheugen van het tabblad
+      totdat je bewust een bestand bewaart. Dit is geen BRP-aangifte,
+      adresregistratie, poliswijziging of berichtendienst.</p>
+  </section>;
+}
