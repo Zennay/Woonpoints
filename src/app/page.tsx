@@ -255,7 +255,7 @@ export default function HomePage() {
   function previewNavPinsBackup(){
     const bytes=JSON.stringify({
       format:'woonpoints-favorites',version:1,pins:pinnedNavIds
-    },null,2)+'\\n';
+    },null,2);
     setPinBackupPreview({bytes,source:JSON.stringify(pinnedNavIds)});
     setPinMessage('Controleer de volledige inhoud voordat je de favorietenback-up opslaat.');
   }
