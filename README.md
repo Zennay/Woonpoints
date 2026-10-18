@@ -961,3 +961,33 @@ netto maandmarge en alleen na bewuste keuze de persoonlijke tijdweging.
 Verversen/wissen maakt de eigen invoer ongedaan. Er worden geen
 aanbiedingen, routes, externe OV-tarieven of werkgevergegevens opgehaald
 of bijgehouden en `BOT_DRY_RUN=true` blijft intact.
+
+### Inpakstatus per eigen meubel of verhuisdoos
+
+In de bestaande **Verhuisvolume**-inventaris staat nu een aparte
+**Inpakken bijhouden**-sectie. De gebruiker kan per itemregel zelf
+vastleggen hoeveel stuks werkelijk zijn ingepakt: bijvoorbeeld
+3 van 8 dozen, 0 van 1 tafel. Het totaal in eigen stuks, resterende
+stuks, ingepakt percentage en het uit de **zelf ingevoerde
+rechthoekige maten** benaderde ingepakte en nog openstaande volume
+worden opgeteld. Er is een aparte knop om precies alle stuks
+van één item te markeren, een eigen inpakstatus te wissen of
+een gecontroleerd concept-TXT van itemnamen en aantallen te tonen.
+
+De teller is zuiver **handmatig**, heeft geen enkele verbinding met
+werkelijk verplaatste goederen, beladingsgewicht, voertuigpasvorm
+of logistieke registratie. Onderdelen met gemengde maten moeten door
+de gebruiker als aparte inventarisregels worden ingevuld. Als
+het aantal van een item wordt gewijzigd, reset de ingepakte
+teller van die regel om oude onmogelijke hoeveelheden te voorkomen.
+Een definitief extern TXT-bestand verschijnt pas na
+uitdrukkelijke controle en bevestiging.
+
+**Privacy en compatibiliteit:** deze tijdelijk ingepakte aantallen
+worden bewust **niet opgenomen in de bestaande versie-1
+verhuisinventaris-JSON**. Die export blijft volledig terugleesbaar
+en het expliciete terugzetten van een inventaris begint met lege
+inpakmarkeringen. Een apart TXT-momentoverzicht is optioneel,
+kan bij een opslagprovider terechtkomen en is geen herstelbestand.
+Verversen/sluiten verwijdert de appvoortgang, en niets wordt
+naar WoningNet, een ander account of een worker geüpload.
