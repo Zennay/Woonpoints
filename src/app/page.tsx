@@ -141,6 +141,15 @@ type Item = {
   created: string;
 };
 type Draft = Pick<Item, 'title' | 'room' | 'priority' | 'due' | 'note'>;
+type ContactKind = 'eigen-notitie' | 'zelf-verstuurd' | 'reactie-genoteerd' | 'afspraak';
+type FollowUp = { id: string; issueId: string; kind: ContactKind; day: string; detail: string };
+type AftercareBackup = { items: Item[]; history: FollowUp[] };
+const CONTACT_TYPES: { id: ContactKind; title: string }[] = [
+  { id: 'eigen-notitie', title: 'Eigen voortgangsnotitie' },
+  { id: 'zelf-verstuurd', title: 'Ik heb zelf contact opgenomen' },
+  { id: 'reactie-genoteerd', title: 'Reactie door mij genoteerd' },
+  { id: 'afspraak', title: 'Afspraak volgens mijn eigen notitie' }
+];
 
 const EMPTY: Draft = { title: '', room: '', priority: 'normaal', due: '', note: '' };
 const LIMIT = 80;
@@ -174,18 +183,48 @@ const validItem = (v: unknown): v is Item => {
     validText(v.note, 0, 500) &&
     typeof v.created === 'string' && validDate(v.created);
 };
-const readBackup = (text: string): Item[] => {
+const validFollowUp = (v: unknown): v is FollowUp => {
+  if (!isRecord(v) || !exactKeys(v, ['id', 'issueId', 'kind', 'day', 'detail'])) return false;
+  return typeof v.id === 'string' && /^log-[0-9a-f-]{36}$/.test(v.id) &&
+    typeof v.issueId === 'string' && /^item-[0-9a-f-]{36}$/.test(v.issueId) &&
+    CONTACT_TYPES.some(type => type.id === v.kind) &&
+    typeof v.day === 'string' && validDate(v.day) &&
+    validText(v.detail, 1, 240);
+};
+const readBackup = (text: string): AftercareBackup => {
   if (new TextEncoder().encode(text).length > MAX_BYTES) throw Error('Bestand groter dan 16 KiB.');
   const data: unknown = JSON.parse(text);
-  if (!isRecord(data) || !exactKeys(data, ['kind', 'schema', 'items']) ||
-      data.kind !== KIND || data.schema !== 1 || !Array.isArray(data.items) ||
-      data.items.length > LIMIT || !data.items.every(validItem)) {
+  if (!isRecord(data) || data.kind !== KIND || !Array.isArray(data.items) ||
+      data.items.length > LIMIT || !data.items.every(validItem) ||
+      (data.schema !== 1 && data.schema !== 2)) {
     throw Error('Dit is geen ondersteund en geldig Woonpoints-nazorgbestand.');
   }
   const ids = data.items.map(item => (item as Item).id);
-  if (new Set(ids).size !== ids.length) throw Error('Dit bestand bevat dubbele items.');
-  return data.items as Item[];
+  if (new Set(ids).size !== ids.length) throw Error('Dit bestand bevat dubbele punten.');
+  if (data.schema === 1) {
+    if (!exactKeys(data, ['kind', 'schema', 'items'])) throw Error('Onbekende velden in oud nazorgbestand.');
+    return { items: data.items as Item[], history: [] };
+  }
+  if (!exactKeys(data, ['kind', 'schema', 'items', 'history']) ||
+      !Array.isArray(data.history) || data.history.length > 160 ||
+      !data.history.every(validFollowUp)) {
+    throw Error('Ongeldige contacthistorie of onbekende velden in nazorgbestand.');
+  }
+  const events = data.history as FollowUp[];
+  const allowed = new Set(ids);
+  const eventIds = new Set<string>();
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    if (!allowed.has(event.issueId) || eventIds.has(event.id)) {
+      throw Error('Contactmoment verwijst naar onbekend punt of is dubbel.');
+    }
+    eventIds.add(event.id);
+    counts.set(event.issueId, (counts.get(event.issueId) || 0) + 1);
+    if ((counts.get(event.issueId) || 0) > 8) throw Error('Te veel contactmomenten bij één punt.');
+  }
+  return { items: data.items as Item[], history: events };
 };
+
 function download(name: string, body: string, mime: string) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(new Blob([body], { type: mime }));
@@ -249,12 +288,18 @@ function calendarFor(items: Item[]): string {
 
 function PrivateMoveAftercare() {
   const [items, setItems] = useState<Item[]>([]);
+  const [history, setHistory] = useState<FollowUp[]>([]);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+  const [historyKind, setHistoryKind] = useState<ContactKind>('eigen-notitie');
+  const [historyDay, setHistoryDay] = useState(today());
+  const [historyDetail, setHistoryDetail] = useState('');
+  const [historyDeletePending, setHistoryDeletePending] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState<'actief' | 'alles' | 'afgerond'>('actief');
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearPending, setClearPending] = useState(false);
-  const [incoming, setIncoming] = useState<Item[] | null>(null);
+  const [incoming, setIncoming] = useState<AftercareBackup | null>(null);
   const [message, setMessage] = useState('');
   // A draft is a human-reviewed local export, never a sent or verified notice.
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
@@ -322,7 +367,7 @@ function PrivateMoveAftercare() {
       : 'Eigen status aangepast. Geen externe bevestiging.');
   }
   function exportJson() {
-    const json = JSON.stringify({ kind: KIND, schema: 1, items }, null, 2);
+    const json = JSON.stringify({ kind: KIND, schema: 2, items, history }, null, 2);
     if (new TextEncoder().encode(json).length > MAX_BYTES) {
       setMessage('Export overschrijdt 16 KiB; verkort notities of verwijder afgeronde items.'); return;
     }
@@ -418,7 +463,7 @@ function PrivateMoveAftercare() {
     try {
       const value = readBackup(await file.text());
       setIncoming(value);
-      setMessage(`Gecontroleerd bestand: ${value.length} aandachtspunten. Bevestig vervanging apart.`);
+      setMessage(`Gecontroleerd bestand: ${value.items.length} punten, ${value.history.length} contactmomenten. Bevestig vervanging apart.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Import kon niet worden gelezen.');
     }
@@ -544,7 +589,7 @@ function PrivateMoveAftercare() {
                 {pendingDelete === item.id && <div className="aftercare-confirm" role="group" aria-label="Verwijderen bevestigen">
                   <p>Dit aandachtspunt uit het tabblad verwijderen?</p>
                   <div className="aftercare-actions">
-                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
+                    <button onClick={() => { setItems(prev => prev.filter(entry => entry.id !== item.id)); setHistory(prev => prev.filter(entry => entry.issueId !== item.id)); setHistoryTarget(null); setHistoryDeletePending(null); setPendingDelete(null); if (editing === item.id) { setEditing(null); setDraft(EMPTY); } }}>Ja, verwijder</button>
                     <button className="secondary" onClick={() => setPendingDelete(null)}>Behoud</button>
                   </div>
                 </div>}
@@ -620,9 +665,9 @@ function PrivateMoveAftercare() {
           <label htmlFor="nazorg-import">Open eigen nazorg-JSON (max. 16 KiB)</label>
           <input id="nazorg-import" type="file" ref={uploadRef} accept=".json,application/json" onChange={importFile} />
           {incoming !== null && <div className="aftercare-confirm" role="group" aria-label="Import bevestigen">
-            <p>{incoming.length} geldige punten gevonden. Je huidige {items.length} punten worden pas na bevestiging vervangen.</p>
+            <p>{incoming.items.length} geldige punten en {incoming.history.length} contactmomenten gevonden. Je huidige {items.length} punten en {history.length} contactmomenten worden pas na bevestiging vervangen.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems(incoming); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setMessage('Import bevestigd. Alleen dit tabblad is gewijzigd.'); }}>Vervang huidige punten</button>
+              <button onClick={() => { setItems(incoming.items); setHistory(incoming.history); setHistoryTarget(null); setHistoryDeletePending(null); setIncoming(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setPendingDelete(null); setMessage('Import bevestigd. Alleen dit tabblad is gewijzigd.'); }}>Vervang huidige punten</button>
               <button className="secondary" onClick={() => { setIncoming(null); setMessage('Import geannuleerd; bestaande punten behouden.'); }}>Annuleer import</button>
             </div>
           </div>}
@@ -630,7 +675,7 @@ function PrivateMoveAftercare() {
           {clearPending && <div className="aftercare-confirm">
             <p>Alle huidige aandachtspunten definitief uit dit tabblad verwijderen? Een eerder gedownloade back-up blijft bestaan.</p>
             <div className="aftercare-actions">
-              <button onClick={() => { setItems([]); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
+              <button onClick={() => { setItems([]); setHistory([]); setHistoryTarget(null); setHistoryDeletePending(null); setDraft(EMPTY); setEditing(null); setClearPending(false); setIncoming(null); setMessage('Tabbladpunten gewist.'); }}>Ja, wis alles</button>
               <button className="secondary" onClick={() => setClearPending(false)}>Behoud punten</button>
             </div>
           </div>}
