@@ -1423,12 +1423,18 @@ function readPrivateBudgetBackup(text: string): PrivateBudgetBackup | null {
 }
 
 type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
+type PrivateLongTermOffer = {
+  sourceLabels: [string, string];
+  first: PrivateCostInputs;
+  second: PrivateCostInputs;
+};
 
 
 /** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
 export function ManualHousingDecisionWorkspace() {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
   const [planPrefill, setPlanPrefill] = useState<Home | null>(null);
+  const [longTermOffer, setLongTermOffer] = useState<PrivateLongTermOffer | null>(null);
   return (
     <>
       <ManualHousingShortlist onCostPrefill={(selected, preferences) =>
@@ -1437,13 +1443,19 @@ export function ManualHousingDecisionWorkspace() {
           preferences: {...preferences}
         })}
         onPlanPrefill={home => setPlanPrefill({...home})} />
-      <ManualHousingCostComparison handoff={handoff} />
+      <ManualHousingCostComparison handoff={handoff}
+        onLongTermOffer={offer => setLongTermOffer(offer)} />
       <ManualDeadlinePlanner prefill={planPrefill} onPrefillHandled={() => setPlanPrefill(null)} />
+      <PrivateLongTermHousingCosts offer={longTermOffer}
+        onOfferHandled={() => setLongTermOffer(null)} />
     </>
   );
 }
 
-export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | null} = {}) {
+export function ManualHousingCostComparison({handoff, onLongTermOffer}: {
+  handoff?: CostHandoff | null;
+  onLongTermOffer?: (offer: PrivateLongTermOffer) => void;
+} = {}) {
   const [a, setA] = useState<CostDraft>(() => blankCosts('Woning A'));
   const [b, setB] = useState<CostDraft>(() => blankCosts('Woning B'));
   const [show, setShow] = useState(false);
@@ -1796,6 +1808,34 @@ export function ManualHousingCostComparison({handoff}: {handoff?: CostHandoff | 
         <p>Rekensom: 12 × (huur + service + energie + vervoer) + eigen startkosten.
           Dit zegt niets over beschikbaarheid, toekomstige prijsstijging of recht op huurtoeslag.</p>
         <button type="button" onClick={saveNote}>Download eigen TXT-kostenvergelijking</button>
+        {onLongTermOffer && <div className="private-budget-provenance">
+          <h4>Bekijk deze twee kostenramingen over meerdere jaren</h4>
+          <p>Neem huur, jouw eigen service-, energie- en reiskostenschattingen en
+            eenmalige startkosten als momentopname mee. De volgende berekening
+            vraagt nog apart akkoord voordat daar bestaande cijfers worden
+            vervangen. De toekomstige huurverhoging wordt niet geraden: die
+            begint bij 0% en kun je zelf aanpassen.</p>
+          <button type="button" onClick={() => {
+            const transfer = (source: CostResult): PrivateCostInputs => ({
+              rent: source.rent.toFixed(2),
+              extras: (source.service + source.energy + source.travel).toFixed(2),
+              moving: source.start.toFixed(2),
+              growth: '0'
+            });
+            const first = transfer(left);
+            const second = transfer(right);
+            if (!readPrivateCostOption(first) || !readPrivateCostOption(second)) {
+              setNotice('Deze eigen bedragen passen niet binnen het meerjarenmodel. Pas ze eerst aan.');
+              return;
+            }
+            onLongTermOffer({
+              sourceLabels: [left.label, right.label],
+              first, second
+            });
+            setNotice('Momentopname aangeboden. Controleer en bevestig de bedragen in Meerjarenkosten.');
+            document.getElementById('private-longterm-title')?.scrollIntoView({block:'start'});
+          }}>Bied deze twee kostenramingen aan voor meerjarenvergelijking</button>
+        </div>}
         <section className="private-budget-provenance" aria-labelledby="private-runway-heading">
           <h4 id="private-runway-heading">Kan ik verhuizen en een tegenvaller opvangen?</h4>
           <p>Bereken voor dezelfde twee woningen hoe je zelf ingeschatte maandinkomen,
@@ -1966,7 +2006,10 @@ function projectPrivateHousingCosts(option: PrivateCostOption, years: number) {
 }
 
 /** Standalone private financial what-if model; does not represent future legal rent increases. */
-export function PrivateLongTermHousingCosts() {
+export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
+  offer?: PrivateLongTermOffer | null;
+  onOfferHandled?: () => void;
+} = {}) {
   const [first, setFirst] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
   const [second, setSecond] = useState<PrivateCostInputs>({...DEFAULT_COST_INPUTS});
   const [horizon, setHorizon] = useState('5');
@@ -2042,6 +2085,35 @@ export function PrivateLongTermHousingCosts() {
           Niets wordt opgeslagen, verstuurd of gekoppeld aan WoningNet.</p>
       </div>
       <div>
+        {offer && <div className="month-csv-confirm" role="group"
+          aria-label="Bevestig overname eigen kostenramingen naar meerjarenvergelijking">
+          <h3>Overnemen uit je eigen kostenvergelijking?</h3>
+          <p><strong>{offer.sourceLabels[0]}</strong> en <strong>{offer.sourceLabels[1]}</strong>
+            {' '}zijn alleen jouw eigen momentopnamen, geen gecontroleerde
+            huurprijzen. Overnemen vervangt beide huidige meerjarenscenario’s;
+            jouw zelfgekozen vergelijkingsduur blijft behouden.</p>
+          <p>Overgenomen worden uitsluitend de eigen huur, gecombineerde
+            service-/energie-/reiskosten en eenmalige startkosten.
+            De huurstijging begint in beide scenario’s bewust op 0%.
+            Je moet de toekomstige stijging daarna zelf aanpassen.</p>
+          <div className="month-history-actions">
+            <button type="button" onClick={() => {
+              if (!readPrivateCostOption(offer.first) || !readPrivateCostOption(offer.second)) {
+                setMessage('Overname geweigerd: ongeldige overgedragen bedragen.');
+                onOfferHandled?.();
+                return;
+              }
+              setFirst({...offer.first});
+              setSecond({...offer.second});
+              setMessage('Beide eigen bedragen bewust overgenomen. Huurstijging staat op 0%; pas die zelf aan.');
+              onOfferHandled?.();
+            }}>Ja, vervang beide meerjarenscenario’s</button>
+            <button type="button" onClick={() => {
+              onOfferHandled?.();
+              setMessage('Overname geannuleerd. Je meerjarenscenario’s zijn behouden.');
+            }}>Behoud huidige cijfers</button>
+          </div>
+        </div>}
         <div className="private-budget-grid">
           {([{title:'Woning A',value:first,update:changeFirst},
              {title:'Woning B',value:second,update:changeSecond}] as const).map(item => (
