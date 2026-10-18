@@ -4439,7 +4439,7 @@ export function PrivatePhotoComparison() {
       <p><strong>Privacy:</strong> kies bij voorkeur foto’s zonder personen,
         adres, documenten of zichtbare persoonlijke spullen. Je originele
         bestanden blijven op je apparaat. Woonpoints leest geen EXIF-gegevens,
-        uploadt niets, bewaart geen foto’s in localStorage en maakt geen export.</p>
+        uploadt niets, bewaart geen foto’s in de browseropslag en maakt geen export.</p>
       <p>Alleen handmatige visuele oriëntatie, geen officiële woningadvertentie,
         technische inspectie, taxatie, selectieadvies of WoningNet-broncontrole.</p>
     </div>
