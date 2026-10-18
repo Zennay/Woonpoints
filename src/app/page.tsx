@@ -593,9 +593,13 @@ const MOVING_FALLBACK_LIMIT=8192;
  * Never syncs, writes by default, or uses localStorage. JSON schema is always revalidated. */
 const PRIVATE_TAB_RECOVERY_REVOKE_EVENT='woonpoints:private-tab-recovery-revoke:v1';
 const PRIVATE_TAB_RECOVERY_STATUS_EVENT='woonpoints:private-tab-recovery-status:v1';
+const PRIVATE_MOVING_BUNDLE_RESTORE_EVENT='woonpoints:private-moving-bundle-restore:v1';
+type PrivateMovingSnapshotChange=(change:(previous:Record<string,string>)=>Record<string,string>)=>void;
+type PrivateMovingRestoreMessage={key:string;raw:string};
 function usePrivateTabRecovery<T>(
   storageKey:string,initial:()=>T,encode:(data:T)=>string,
-  decode:(raw:string)=>T|null,maxBytes:number
+  decode:(raw:string)=>T|null,maxBytes:number,
+  onBundleSnapshot?:PrivateMovingSnapshotChange
 ){
   const [value,setValue]=useState<T>(initial);
   const [enabled,setEnabled]=useState(false);
@@ -622,6 +626,28 @@ function usePrivateTabRecovery<T>(
     }
     setHydrated(true);
   },[storageKey,flagKey,decode,maxBytes]);
+  useEffect(()=>{
+    function applyBundle(event:Event){
+      const detail=(event as CustomEvent<PrivateMovingRestoreMessage>).detail;
+      if(!hydrated||!detail||detail.key!==storageKey||
+        typeof detail.raw!=='string')return;
+      try{
+        if(new TextEncoder().encode(detail.raw).length>maxBytes)return;
+        const next=decode(detail.raw);
+        if(next===null)return;
+        setValue(next);
+        setStorageMessage('Gegevens bijgewerkt uit expliciet bevestigde gecombineerde privéback-up.');
+      }catch{/* Import must never bypass module validation or corrupt live input. */}
+    }
+    window.addEventListener(PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,applyBundle);
+    return ()=>window.removeEventListener(PRIVATE_MOVING_BUNDLE_RESTORE_EVENT,applyBundle);
+  },[storageKey,decode,maxBytes,hydrated]);
+  useEffect(()=>{
+    if(!hydrated||!onBundleSnapshot)return;
+    const raw=encode(value);
+    onBundleSnapshot(previous=>previous[storageKey]===raw?previous:
+      {...previous,[storageKey]:raw});
+  },[storageKey,encode,value,hydrated,onBundleSnapshot]);
   useEffect(()=>{
     const revoke=()=>{
       setEnabled(false);
@@ -726,12 +752,15 @@ function movingFallbackDownload(name:string,body:string,mime:string){
     document.body.appendChild(link);link.click();link.remove();
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
-function PrivateMovingFallbackPlan({onPulse}:{onPulse?: (pulse:PrivateMovePulse)=>void}={}){
+function PrivateMovingFallbackPlan({onPulse,onBundleSnapshot}:{
+  onPulse?: (pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}){
   const {value:entries,setValue:setEntries,enabled:rememberTab,hydrated:tabReady,
     storageMessage:tabStorageMessage,enable:enableTabRestore,
     disable:disableTabRestore}=usePrivateTabRecovery<MovingFallbackEntry[]>(
       FALLBACK_TAB_STORAGE_KEY,defaultMovingFallbacks,
-      encodeFallbackTab,decodeFallbackTab,MOVING_FALLBACK_LIMIT);
+      encodeFallbackTab,decodeFallbackTab,MOVING_FALLBACK_LIMIT,onBundleSnapshot);
   const [preview,setPreview]=useState<'txt'|'json'|'ics'|null>(null);
   const [incoming,setIncoming]=useState<MovingFallbackEntry[]|null>(null);
   const [undo,setUndo]=useState<{before:MovingFallbackEntry[];after:string}|null>(null);
@@ -941,8 +970,9 @@ type PrivateMovePulse={done:number;total:number;attention:number;invalid:boolean
 type PrivateMovingReadinessRow={
   id:string;title:string;href:string;hint:string;pulse:PrivateMovePulse|null
 };
-function PrivateMovingReadinessBoard({rows}:{
-  rows:PrivateMovingReadinessRow[]
+function PrivateMovingReadinessBoard({rows,snapshots}:{
+  rows:PrivateMovingReadinessRow[];
+  snapshots:Record<string,string>
 }){
   const [confirmRevokeAll,setConfirmRevokeAll]=useState(false);
   const [revokeMessage,setRevokeMessage]=useState('');
@@ -1166,6 +1196,7 @@ function PrivateMovingReadinessBoard({rows}:{
   </section>;
 }
 export default function HomePage() {
+  const [movingBundleSnapshots,setMovingBundleSnapshots]=useState<Record<string,string>>({});
   const [journeyPulse,setJourneyPulse]=useState<PrivateMovePulse|null>(null);
   const [fallbackPulse,setFallbackPulse]=useState<PrivateMovePulse|null>(null);
   const [metersPulse,setMetersPulse]=useState<PrivateMovePulse|null>(null);
@@ -1584,8 +1615,10 @@ export default function HomePage() {
           en verdwijnt bij herladen. Navigeren en zoeken verstuurt niets naar een server.</p>
       </nav>
 
-      <PrivateMovingReadinessBoard rows={movingReadinessRows}/>
-      <PrivateHousingJourney onPulse={setJourneyPulse} />
+      <PrivateMovingReadinessBoard rows={movingReadinessRows}
+        snapshots={movingBundleSnapshots}/>
+      <PrivateHousingJourney onPulse={setJourneyPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
 
       <section className="status-section" aria-labelledby="projectstatus-heading">
         <h2 id="projectstatus-heading" className="sr-only">Projectstatus</h2>
@@ -1624,13 +1657,15 @@ export default function HomePage() {
       <PrivateMovingWorkspace />
       <PrivateMovingDayTimeline />
       <PrivateMovingPackingInventory />
-      <PrivateMovingFallbackPlan onPulse={setFallbackPulse} />
+      <PrivateMovingFallbackPlan onPulse={setFallbackPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateMovingHelperRoster />
       <PrivateAddressChangePlanner />
       <PrivateMovingHandover />
-      <PrivateMeterHandover onPulse={setMetersPulse} />
+      <PrivateMeterHandover onPulse={setMetersPulse}
+        onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateUtilityTransfer onLogContact={startUtilityContact}
-        onPulse={setUtilitiesPulse} />
+        onPulse={setUtilitiesPulse} onBundleSnapshot={setMovingBundleSnapshots} />
       <PrivateUtilityContactLog intent={contactIntent} />
       <PrivateMoveDocumentReadiness />
       <PrivateMovingQuoteComparison />
@@ -5679,12 +5714,16 @@ function encodeMeterTab(value:PrivateMeterTabData):string{
 function decodeMeterTab(raw:string):PrivateMeterTabData|null{
   try{return handoverRestore(raw);}catch{return null;}
 }
-function PrivateMeterHandover({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
+function PrivateMeterHandover({onPulse,onBundleSnapshot}:{
+  onPulse?:(pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}) {
   const {value:meterTab,setValue:setMeterTab,enabled:rememberMeters,
     hydrated:metersReady,storageMessage:metersStorageMessage,
     enable:enableMetersRestore,disable:disableMetersRestore}
     =usePrivateTabRecovery<PrivateMeterTabData>(
-      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096);
+      METER_TAB_STORAGE_KEY,initialMeterTab,encodeMeterTab,decodeMeterTab,4096,
+      onBundleSnapshot);
   const {readings,included}=meterTab;
   const setReadings=(change:Record<HandoverHomeKey,HandoverReading>|
     ((before:Record<HandoverHomeKey,HandoverReading>)=>Record<HandoverHomeKey,HandoverReading>))=>{
@@ -6174,15 +6213,16 @@ function decodeUtilityTab(raw:string):Record<PrivateUtilityKey,PrivateUtilitySte
   try{return privateUtilityRestore(raw);}catch{return null;}
 }
 function PrivateUtilityTransfer({
-  onLogContact,onPulse
+  onLogContact,onPulse,onBundleSnapshot
 }: { onLogContact?: (utility:PrivateUtilityKey)=>void;
-     onPulse?: (pulse:PrivateMovePulse)=>void }={}) {
+     onPulse?: (pulse:PrivateMovePulse)=>void;
+     onBundleSnapshot?:PrivateMovingSnapshotChange }={}) {
   const {value:entries,setValue:setEntries,enabled:rememberUtilities,
     hydrated:utilitiesReady,storageMessage:utilitiesStorageMessage,
     enable:enableUtilitiesRestore,disable:disableUtilitiesRestore}
     =usePrivateTabRecovery<Record<PrivateUtilityKey,PrivateUtilityStep>>(
       UTILITY_TAB_STORAGE_KEY,()=>PRIVATE_UTILITY_EMPTY,
-      encodeUtilityTab,decodeUtilityTab,4096);
+      encodeUtilityTab,decodeUtilityTab,4096,onBundleSnapshot);
   const [preview, setPreview] = useState<{
     source: string; text: string; kind: 'txt' | 'ics' | 'json'
   } | null>(null);
@@ -6884,12 +6924,15 @@ function decodeJourneyTab(raw:string):string[]|null{
 }
 
 
-function PrivateHousingJourney({onPulse}:{onPulse?:(pulse:PrivateMovePulse)=>void}={}) {
+function PrivateHousingJourney({onPulse,onBundleSnapshot}:{
+  onPulse?:(pulse:PrivateMovePulse)=>void;
+  onBundleSnapshot?:PrivateMovingSnapshotChange
+}={}) {
   const {value:checked,setValue:setChecked,enabled:rememberJourney,hydrated:journeyReady,
     storageMessage:journeyStorageMessage,enable:enableJourneyRestore,
     disable:disableJourneyRestore}=usePrivateTabRecovery<string[]>(
       JOURNEY_TAB_STORAGE_KEY,()=>[],encodeJourneyTab,decodeJourneyTab,
-      JOURNEY_BACKUP_LIMIT);
+      JOURNEY_BACKUP_LIMIT,onBundleSnapshot);
   const [selectedPhase,setSelectedPhase] = useState<JourneyPhase>('zoeken');
   const [onlyOpen,setOnlyOpen] = useState(false);
   const [pendingImport,setPendingImport] = useState<string[] | null>(null);
