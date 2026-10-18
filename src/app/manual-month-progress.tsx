@@ -3453,16 +3453,16 @@ function restoredMovingWorkspaceV6(
     ...current,
     quotes:imported.quotes,expenses:imported.expenses,split:imported.split
   };
-  if(imported.version>=2){
+  if(imported.version!==1){
     next.timeline=imported.timeline;
     next.handover=imported.handover;
     next.documents=imported.documents;
   }
-  if(imported.version>=3){
+  if(imported.version!==1&&imported.version!==2){
     next.packing=imported.version===3?
       {items:imported.packing.items,transport:[]}:imported.packing;
   }
-  if(imported.version>=5)next.helpers=imported.helpers;
+  if(imported.version===5||imported.version===6)next.helpers=imported.helpers;
   if(imported.version===6)next.address=imported.address;
   return next;
 }
