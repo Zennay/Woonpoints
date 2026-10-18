@@ -286,7 +286,11 @@ function download(name: string, body: string, mime: string) {
 }
 const csvCell = (value: string) => {
   const plain = value.replace(/[\r\n\t]+/g, ' ').trim();
-  const safe = /^[=+@-]/.test(plain) ? "'" + plain : plain;
+  // Check a normalized copy for concealed formula prefixes, but retain the
+  // operator's exact printable text in the resulting literal CSV field.
+  const normalized = plain.normalize('NFKC');
+  const formulaLike = /^[\p{White_Space}\p{Cf}\p{Cc}\p{M}]*[=+@-]/u.test(normalized);
+  const safe = formulaLike ? "'" + plain : plain;
   return '"' + safe.replace(/"/g, '""') + '"';
 };
 
@@ -1066,6 +1070,10 @@ function PrivateMoveAftercare() {
   const [pendingTextExport, setPendingTextExport] = useState<{
     source: string; preview: string; count: number
   } | null>(null);
+  const [includePrivateCsvNotes, setIncludePrivateCsvNotes] = useState(false);
+  const [pendingCsvExport, setPendingCsvExport] = useState<{
+    source: string; preview: string; count: number
+  } | null>(null);
   // A draft is a human-reviewed local export, never a sent or verified notice.
   const [chosenIssueIds, setChosenIssueIds] = useState<string[]>([]);
   const [includeDetails, setIncludeDetails] = useState(false);
@@ -1196,6 +1204,10 @@ function PrivateMoveAftercare() {
     .sort((a, b) => (a.status === 'afgerond' ? 1 : 0) - (b.status === 'afgerond' ? 1 : 0) ||
       (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'nl-NL')),
     [items, filter, issuePriority, issueRoom, issueQuery]);
+  const csvExportSignature = JSON.stringify({ items, includePrivateCsvNotes });
+  const csvExportCurrent = pendingCsvExport !== null &&
+    pendingCsvExport.source === csvExportSignature &&
+    pendingCsvExport.count === items.length;
   const textExportSignature = JSON.stringify({
     items, shown, filter, issuePriority, issueRoom, issueQuery, includePrivateTxtNotes
   });
@@ -1586,11 +1598,30 @@ function PrivateMoveAftercare() {
     setMessage('Privé-JSON gemaakt. Let zelf op waar je het bestand bewaart.');
   }
   function exportCsv() {
+    if (!items.length) { setPendingCsvExport(null); return; }
     const header = ['ruimte', 'punt', 'prioriteit', 'status', 'eigen_deadline', 'gemaakt_op', 'notitie'];
-    const rows = items.map(item => [item.room, item.title, item.priority, item.status, item.due, item.created, item.note]);
-    download('woonpoints-nazorg.csv', [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n',
-      'text/csv;charset=utf-8');
-    setMessage('Privé-CSV gemaakt. Dit is geen verstuurde gebrekenmelding.');
+    // Preserve seven fixed columns and all dossier rows. Notes require opt-in.
+    const rows = items.map(item => [item.room, item.title, item.priority, item.status,
+      item.due, item.created, includePrivateCsvNotes ? item.note : '']);
+    const preview = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    if (preview.length > 100000) {
+      setPendingCsvExport(null);
+      setMessage('CSV-export is te groot; verkort eerst eigen dossierregels.');
+      return;
+    }
+    setPendingCsvExport({source: csvExportSignature, preview, count: items.length});
+    setMessage('Volledige eigen CSV klaargezet. Controleer elke regel en bevestig apart vóór download.');
+  }
+  function confirmCsvExport() {
+    if (pendingCsvExport === null || !csvExportCurrent) {
+      setPendingCsvExport(null);
+      setMessage('CSV geweigerd: privékeuze of dossier is veranderd; controleer een nieuw voorbeeld.');
+      return;
+    }
+    download('woonpoints-nazorg.csv', pendingCsvExport.preview, 'text/csv;charset=utf-8');
+    setPendingCsvExport(null);
+    setMessage('Exact gecontroleerde privé-CSV van ' + items.length +
+      ' punten gedownload, zonder externe verzending.');
   }
 
   function exportCalendar() {
@@ -2462,12 +2493,47 @@ function PrivateMoveAftercare() {
         <div>
           <div className="aftercare-actions">
             <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
-            <button className="secondary" disabled={!items.length} onClick={exportCsv}>Download CSV</button>
+            <button className="secondary" disabled={!items.length} onClick={exportCsv}>
+              Controleer volledige CSV van {items.length} punten…
+            </button>
             <button className="secondary" disabled={!shown.length} onClick={exportText}>Controleer TXT van {shown.length} zichtbare punten…</button>
           </div>
-          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen een TXT-overzicht
-            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters, na
-            voorafgaande volledige preview en aparte bevestiging.</p>
+          <p>JSON en CSV bevatten alle punten uit het eigen dossier, ongeacht de zichtbare
+            filters. CSV bevat privénotities alleen na een aparte bewuste keuze; TXT bevat
+            uitsluitend gefilterde zichtbare punten. Beide tekstdelen vereisen een volledig
+            voorbeeld en tweede toestemming vóór een bestand wordt gedownload.</p>
+          <label className="aftercare-check" htmlFor="nazorg-csv-private-notes">
+            <input id="nazorg-csv-private-notes" type="checkbox"
+              checked={includePrivateCsvNotes}
+              onChange={event => {
+                setIncludePrivateCsvNotes(event.target.checked);
+                setPendingCsvExport(null);
+              }}/>
+            Voeg mijn privénotities bewust toe aan de volledige CSV (standaard uit)
+          </label>
+          {pendingCsvExport !== null && <div className="aftercare-confirm" role="group"
+            aria-label="CSV controleren vóór bewaren">
+            <h3>Controleer alle CSV-regels vóór downloaden</h3>
+            {csvExportCurrent ? <p>{pendingCsvExport.count} eigen dossierpunten, ook buiten
+              actieve filters. Privénotities zijn {includePrivateCsvNotes ?
+                'bewust opgenomen' : 'bewust weggelaten'}. Dit bevat geen
+              geverifieerde melding of WoningNet-bewijs.</p> :
+              <p className="aftercare-warning" role="status">
+                Het eigen dossier of de privéoptie is gewijzigd; de vorige toestemming
+                is ongeldig. Maak een nieuw voorbeeld.
+              </p>}
+            {csvExportCurrent && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:360,overflowY:'auto',padding:12,background:'#fff',
+              border:'1px solid #b6c7ba',borderRadius:8}}>{pendingCsvExport.preview}</pre>}
+            <div className="aftercare-actions">
+              <button type="button" disabled={!csvExportCurrent}
+                onClick={confirmCsvExport}>Ja, download exact deze CSV</button>
+              <button type="button" className="secondary"
+                onClick={() => {setPendingCsvExport(null);setMessage('CSV-download geannuleerd.');}}>
+                Annuleer CSV
+              </button>
+            </div>
+          </div>}
           <label className="aftercare-check" htmlFor="nazorg-txt-private-notes">
             <input id="nazorg-txt-private-notes" type="checkbox"
               checked={includePrivateTxtNotes}
