@@ -1186,6 +1186,10 @@ export function PrivateMovingVolume() {
   const nextId=useRef(4);
   const [margin,setMargin]=useState('15');
   const [capacity,setCapacity]=useState('10');
+  const budgetDefaults={plannedTrips:'2',euroPerTrip:'90',laborHours:'8',
+    helperHourlyEuro:'0',materialsEuro:'75',otherEuro:'100',reservePct:'15'};
+  const [budget,setBudget]=useState(budgetDefaults);
+  const [budgetReport,setBudgetReport]=useState<{text:string,signature:string}|null>(null);
   const [message,setMessage]=useState('');
   const [preview,setPreview]=useState<string|null>(null);
   const [pendingArchive,setPendingArchive]=useState<{
@@ -1214,6 +1218,26 @@ export function PrivateMovingVolume() {
   const safeTotal=valid&&loadEstimate<=200;
   const currentSignature=JSON.stringify({rows:items.map(({id,...rest})=>rest),margin,capacity});
   const trips=safeTotal&&loadEstimate>0?Math.ceil(loadEstimate/vanCapacity!):0;
+  const costValues={
+    plannedTrips:parse(budget.plannedTrips,0,300,true),
+    euroPerTrip:parse(budget.euroPerTrip,0,2000),
+    laborHours:parse(budget.laborHours,0,200),
+    helperHourlyEuro:parse(budget.helperHourlyEuro,0,200),
+    materialsEuro:parse(budget.materialsEuro,0,20000),
+    otherEuro:parse(budget.otherEuro,0,30000),
+    reservePct:parse(budget.reservePct,0,50)
+  };
+  const costValid=safeTotal&&Object.values(costValues).every(v=>v!==null)&&
+    costValues.plannedTrips!==null&&costValues.plannedTrips>=trips;
+  const vehicleExpense=(costValues.plannedTrips??0)*(costValues.euroPerTrip??0);
+  const helpersExpense=(costValues.laborHours??0)*(costValues.helperHourlyEuro??0);
+  const preReserveCost=vehicleExpense+helpersExpense+
+    (costValues.materialsEuro??0)+(costValues.otherEuro??0);
+  const reserveExpense=preReserveCost*(costValues.reservePct??0)/100;
+  const finalMovingCost=preReserveCost+reserveExpense;
+  const budgetSignature=JSON.stringify({
+    items:items.map(({id,...item})=>item), margin,capacity,budget
+  });
   const fmt=(n:number)=>new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(n);
   const change=(id:number,key:keyof Omit<Item,'id'>,value:string)=>{
     setItems(previous=>previous.map(row=>row.id===id?{...row,[key]:value}:row));
@@ -1293,6 +1317,47 @@ export function PrivateMovingVolume() {
     setMargin(pendingArchive.margin);setCapacity(pendingArchive.capacity);
     setPreview(null);setPendingArchive(null);
     setMessage('Eigen inventaris bewust in dit tabblad hersteld. Niets is extern verstuurd.');
+  }
+
+
+  function prepareMovingBudget(){
+    if(!costValid){setMessage('Corrigeer eerst het verhuisvolume, jouw ritten en kosten.');return;}
+    const lines=[
+      'WOONPOINTS · EIGEN VERHUISKOSTENSCENARIO',
+      'Geen verhuizersofferte, voertuiggarantie, verzekeringsadvies of werkelijk rittenbewijs.',
+      'Beperkt volume inclusief eigen reserve: '+fmt(loadEstimate)+' m3',
+      'Volumematige minimumritten: '+trips,
+      'Zelf gekozen te begroten ritten: '+budget.plannedTrips,
+      'Zelf geraamde prijs per rit: €'+fmt(costValues.euroPerTrip!),
+      'Ritkosten: €'+fmt(vehicleExpense),
+      'Zelf gekozen hulpuren: '+budget.laborHours,
+      'Zelf ingeschat bedrag per hulpuur: €'+fmt(costValues.helperHourlyEuro!),
+      'Hulpkosten: €'+fmt(helpersExpense),
+      'Dozen/inpakmateriaal: €'+fmt(costValues.materialsEuro!),
+      'Overige eigen verhuiskosten: €'+fmt(costValues.otherEuro!),
+      'Subtotaal: €'+fmt(preReserveCost),
+      'Zelf ingestelde onvoorziene reserve: '+budget.reservePct+'% (= €'+fmt(reserveExpense)+')',
+      'EIGEN BEGROTING: €'+fmt(finalMovingCost),
+      'Eén extra rit zonder extra personeel/materiaal: + €'+fmt(costValues.euroPerTrip!),
+      '',
+      'Al deze bedragen zijn handmatige scenario-invoer, geen marktprijs of garantie.',
+      'De werkelijke voertuig-/gewichtslimiet, toegang, reistijd en verzekeringen zijn niet gemodelleerd.'
+    ];
+    setBudgetReport({text:lines.join('\n')+'\n',signature:budgetSignature});
+    setMessage('Controleer jouw verhuiskostenconcept. Alleen een tweede klik maakt een TXT.');
+  }
+  function saveMovingBudget(){
+    if(!budgetReport||budgetReport.signature!==budgetSignature||!costValid){
+      setBudgetReport(null);setMessage('Begroting is veranderd of ongeldig. Maak eerst opnieuw een concept.');
+      return;
+    }
+    const url=URL.createObjectURL(new Blob([budgetReport.text],{type:'text/plain;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;
+    link.download='woonpoints-eigen-verhuisbudget.txt';link.rel='noopener';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setBudgetReport(null);
+    setMessage('Alleen jouw budget-TXT aangeboden. Een opslagprovider kan het bestand synchroniseren.');
   }
 
   function makePreview(){
