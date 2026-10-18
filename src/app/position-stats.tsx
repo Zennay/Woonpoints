@@ -960,6 +960,7 @@ export function ManualDeadlinePlanner() {
   const [editing, setEditing] = useState<number | null>(null);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const [pendingImport, setPendingImport] = useState<PrivatePlanItem[] | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState('');
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -1031,7 +1032,10 @@ export function ManualDeadlinePlanner() {
       const object = decoded as {version?: unknown; entries?: unknown};
       if (object.version !== 1 || !Array.isArray(object.entries) ||
           object.entries.length > MAX_PRIVATE_PLANS || !object.entries.every(validPrivatePlan)) throw new Error('invalid');
-      setPendingImport(object.entries.map(item => ({...item, label: item.label.trim()})));
+      // Never retain unknown JSON properties (which could include private metadata).
+      setPendingImport(object.entries.map((item: PrivatePlanItem) => ({
+        label: item.label.trim(), when: item.when, kind: item.kind, status: item.status
+      })));
       setNotice('Bestand gecontroleerd. Bevestig apart voordat de huidige tabbladplanning wordt vervangen.');
     } catch {
       setNotice('Geen geldig Woonpoints-planningsbestand; de huidige invoer is ongewijzigd.');
@@ -1174,10 +1178,18 @@ export function ManualDeadlinePlanner() {
             setPendingImport(null); setNotice('Import geannuleerd; huidige planning blijft staan.');
           }}>Behoud huidige planning</button>
         </div>}
-        <button type="button" className="secondary" disabled={!entries.length} onClick={() => {
-          setEntries([]); setEditing(null); setDraft({...emptyPrivatePlan}); setDeleteIndex(null);
-          setPendingImport(null); setNotice('Alle tabbladnotities gewist. Eventueel geëxporteerde bestanden blijven bestaan.');
-        }}>Wis tabbladplanning</button>
+        {confirmClear ? <div className="private-plan-confirm">
+          <p>Wil je alle {entries.length} acties verwijderen? Niet-opgeslagen notities zijn daarna weg.</p>
+          <button type="button" onClick={() => {
+            setEntries([]); setEditing(null); setDraft({...emptyPrivatePlan}); setDeleteIndex(null);
+            setPendingImport(null); setConfirmClear(false);
+            setNotice('Alle tabbladnotities gewist. Eventueel geëxporteerde bestanden blijven bestaan.');
+          }}>Ja, wis alles</button>
+          <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>
+            Annuleren
+          </button>
+        </div> : <button type="button" className="secondary" disabled={!entries.length}
+          onClick={() => setConfirmClear(true)}>Wis tabbladplanning…</button>}
       </div>
       <p role="status" aria-live="polite">{notice}</p>
     </section>
