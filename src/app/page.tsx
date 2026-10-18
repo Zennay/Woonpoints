@@ -1,6 +1,6 @@
 import ManualMonthProgress from './manual-month-progress';
 import PositionStats from './position-stats';
-import ManualPositionHistory from './manual-position-history';
+import { ManualPositionHistory } from './position-stats';
 
 const cards = [
   ['Maanddoel', 'Onbekend', 'Doel: 4 geldige reacties; geen geverifieerde accountgegevens'],
