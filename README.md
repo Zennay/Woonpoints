@@ -884,7 +884,16 @@ massa-/aslast, vergunning-, rijbewijs- of veiligheidsregels.
 
 De calculator weigert ongeldige afmetingen/aantallen en volumes buiten
 de begrenzing. Via een **bewust bekeken concept** kan de gebruiker
-uitsluitend de eigen itemlijst en som als TXT downloaden; de knop biedt
+uitsluitend de eigen itemlijst en som als TXT downloaden;
+Daarnaast kan een volledige inventaris inclusief eigen afmetingen,
+hoeveelheden, reserveruimte en capaciteit na expliciete klik als
+kleine versie-1 **privé-JSON (max. 8 KiB)** worden opgeslagen. Terugzetten
+vereist het ongewijzigde Woonpoints-exportformaat, sluit ongeldige
+waarden/duplicaatvelden/extra sleutels uit en stelt een aparte
+**bevestiging voordat huidige gegevens worden vervangen**. Een gewijzigd
+huidig formulier maakt een eerder gekozen herstelvoorstel ongeldig.
+Bij afwijzing blijft alle huidige invoer behouden; import/export heeft
+geen invloed op andere Woonpoints-onderdelen of eerdere downloads. de knop biedt
 geen automatische agenda-, account- of backendactie. Persoonlijke
 itemnamen kunnen privé zijn: controleer de export zelf voor opslaan.
 
