@@ -1018,3 +1018,29 @@ moet je bewust aanvinken.
 Deze functie bevestigt geen woningtoewijzing, getekend contract, geregistreerde
 WoningNet-reactie, daadwerkelijke betaling of wettelijk geldige termijn.
 Het bestaande `BOT_DRY_RUN=true`- en toestemmingsbeleid blijft ongewijzigd.
+
+
+## Nieuwe zelfstandige privé-paklijst per kamer
+
+Op het dashboard staat **Paklijst per kamer** met een directe navigatielink.
+Je kunt maximaal 80 eigen regels toevoegen (maximaal 99 stuks per regel),
+een kamer en eventueel een dooslabel kiezen en ieder item op **Nog inpakken**,
+**Ingepakt** of **Uitgepakt** zetten. Wijzigingen en verwijderen blijven
+handmatige acties. Het overzicht toont aantallen per kamer en een losse lijst
+van spullen die je hebt aangemerkt als **eerst nodig**.
+
+- De lijst is uitsluitend React-tabbladgeheugen: geen database, browseropslag,
+  accountkoppeling, tracker of automatische synchronisatie.
+- Je kunt de complete lijst na een exacte preview afzonderlijk als versie-1
+  JSON bewaren, of een menselijk leesbare kamer- en statuspaklijst als TXT.
+- JSON-import heeft een limiet van 32 KiB en een gesloten schema met strikte
+  velden, datatypen, aantallen, ID's en toegestane kamers/statussen.
+  Een import overschrijft pas na een afzonderlijke bevestiging de huidige
+  (mogelijk onbewaarde) regels. Ongeldige import verandert niets.
+- Verwijderen van één regel en wissen van de volledige lijst vragen expliciete
+  bevestiging. Lokale exports worden niet automatisch bijgewerkt of gewist.
+
+Deze hulpmiddelen zijn geen geverifieerde huisraad-/verzekeringsinventaris.
+Voer liever geen adressen, toegangscodes of persoonsgegevens in labels in.
+Opslag of delen via de door jou gekozen bestandslocatie kan buiten de app
+synchroniseren. De WoningNet-, dry-run- en autorisatiegates blijven intact.
