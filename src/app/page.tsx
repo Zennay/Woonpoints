@@ -4441,6 +4441,43 @@ const PRIVATE_UTILITIES: {
 const PRIVATE_UTILITY_EMPTY = Object.fromEntries(
   PRIVATE_UTILITIES.map(item => [item.id, { state: 'todo', date: '' }])
 ) as Record<PrivateUtilityKey, PrivateUtilityStep>;
+
+/** Explicit local JSON backup. Never load or persist credentials/account data. */
+function privateUtilityBackup(entries: Record<PrivateUtilityKey, PrivateUtilityStep>): string {
+  return JSON.stringify({ kind: 'woonpoints-private-utility-checklist',
+    version: 1, entries }, null, 2) + '\n';
+}
+function privateUtilityRestore(text: string): Record<PrivateUtilityKey, PrivateUtilityStep> {
+  if (new TextEncoder().encode(text).length > 4096) throw Error('Private backup too large');
+  const source: unknown = JSON.parse(text);
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const exact = (value: Record<string, unknown>, expected: string[]) =>
+    Object.keys(value).sort().join('|') === [...expected].sort().join('|');
+  if (!record(source) || !exact(source, ['kind', 'version', 'entries']) ||
+      source.kind !== 'woonpoints-private-utility-checklist' || source.version !== 1 ||
+      !record(source.entries) ||
+      !exact(source.entries, PRIVATE_UTILITIES.map(item => item.id))) {
+    throw Error('Not a supported private utility backup');
+  }
+  const entries = {} as Record<PrivateUtilityKey, PrivateUtilityStep>;
+  for (const item of PRIVATE_UTILITIES) {
+    const value = source.entries[item.id];
+    if (!record(value) || !exact(value, ['state', 'date']) ||
+        !['todo', 'requested', 'confirmed', 'not-applicable'].includes(
+          typeof value.state === 'string' ? value.state : '') ||
+        typeof value.date !== 'string' ||
+        (value.date !== '' && !handoverValidDay(value.date))) {
+      throw Error('Invalid private utility entry');
+    }
+    entries[item.id] = { state: value.state as PrivateUtilityState, date: value.date };
+  }
+  // Admit exactly the bytes produced by our own versioned exporter.
+  // This rejects conflicting duplicate JSON keys and unknown field variants.
+  if (privateUtilityBackup(entries) !== text) throw Error('Not a canonical private backup');
+  return entries;
+}
+
 function privateUtilityTomorrow(day: string): string {
   const next = new Date(day + 'T12:00:00Z');
   next.setUTCDate(next.getUTCDate() + 1);
@@ -4497,12 +4534,21 @@ function PrivateUtilityTransfer() {
   const [entries, setEntries] = useState<Record<PrivateUtilityKey, PrivateUtilityStep>>(
     PRIVATE_UTILITY_EMPTY);
   const [preview, setPreview] = useState<{
-    source: string; text: string; kind: 'txt' | 'ics'
+    source: string; text: string; kind: 'txt' | 'ics' | 'json'
   } | null>(null);
   const [approved, setApproved] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<{
+    baseline: string; entries: Record<PrivateUtilityKey, PrivateUtilityStep>
+  } | null>(null);
+  const [restoreApproved, setRestoreApproved] = useState(false);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    restored: string; previous: Record<PrivateUtilityKey, PrivateUtilityStep>
+  } | null>(null);
   const [feedback, setFeedback] = useState('');
   const source = JSON.stringify(entries);
   const current = preview !== null && preview.source === source;
+  const restoreCurrent = pendingRestore !== null && pendingRestore.baseline === source;
+  const undoCurrent = restoreUndo !== null && restoreUndo.restored === source;
   const now = new Date();
   const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
     String(now.getDate()).padStart(2, '0')].join('-');
@@ -4522,21 +4568,53 @@ function PrivateUtilityTransfer() {
     }));
     setApproved(false); setFeedback('');
   }
-  function openPreview(kind: 'txt' | 'ics') {
+  function openPreview(kind: 'txt' | 'ics' | 'json') {
     if (invalid || (kind === 'ics' && !upcoming.length)) return;
-    setPreview({ source, kind, text: kind === 'txt'
-      ? privateUtilityReport(entries) : privateUtilityCalendar(entries, today) });
+    setPreview({ source, kind, text: kind === 'txt' ? privateUtilityReport(entries) :
+      kind === 'ics' ? privateUtilityCalendar(entries, today) : privateUtilityBackup(entries) });
     setApproved(false); setFeedback('');
+  }
+  async function chooseRestore(file: File | undefined) {
+    if (!file) return;
+    const baseline = source;
+    setPendingRestore(null); setRestoreApproved(false); setFeedback('');
+    if (file.size > 4096) {
+      setFeedback('Back-up geweigerd: bestand groter dan 4 KiB.');
+      return;
+    }
+    try {
+      const restored = privateUtilityRestore(await file.text());
+      setPendingRestore({ baseline, entries: restored });
+    } catch {
+      setFeedback('Back-up geweigerd: geen exact geldig Woonpoints-verhuischecklistbestand.');
+    }
+  }
+  function confirmRestore() {
+    if (!restoreCurrent || !restoreApproved || pendingRestore === null) return;
+    const next = pendingRestore.entries;
+    setRestoreUndo({ restored: JSON.stringify(next), previous: entries });
+    setEntries(next); setPreview(null); setApproved(false);
+    setPendingRestore(null); setRestoreApproved(false);
+    setFeedback('Checklist hersteld. Vorige tabbladinvoer is éénmalig herstelbaar zolang niets wijzigt.');
+  }
+  function undoRestore() {
+    if (!undoCurrent || restoreUndo === null) return;
+    setEntries(restoreUndo.previous); setRestoreUndo(null);
+    setPendingRestore(null); setRestoreApproved(false);
+    setPreview(null); setApproved(false);
+    setFeedback('Je vorige eigen tabbladinvoer is hersteld.');
   }
   function download() {
     if (!current || preview === null || !approved) return;
     const blob = new Blob([preview.text], { type: preview.kind === 'ics'
-      ? 'text/calendar;charset=utf-8' : 'text/plain;charset=utf-8' });
+      ? 'text/calendar;charset=utf-8' : preview.kind === 'json'
+      ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' });
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = objectUrl;
     link.download = preview.kind === 'ics' ?
-      'woonpoints-eigen-overstapherinneringen.ics' : 'woonpoints-eigen-overstapchecklist.txt';
+      'woonpoints-eigen-overstapherinneringen.ics' : preview.kind === 'json'
+      ? 'woonpoints-private-verhuischecklist.json' : 'woonpoints-eigen-overstapchecklist.txt';
     document.body.appendChild(link);
     link.click(); link.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
@@ -4547,6 +4625,7 @@ function PrivateUtilityTransfer() {
     setEntries(Object.fromEntries(PRIVATE_UTILITIES.map(item =>
       [item.id, { state: 'todo', date: '' }])) as Record<PrivateUtilityKey, PrivateUtilityStep>);
     setPreview(null); setApproved(false);
+    setPendingRestore(null); setRestoreApproved(false); setRestoreUndo(null);
     setFeedback('Alleen deze tabbladchecklist is gewist.');
   }
   return <section className="panel" aria-labelledby="private-utility-transfer-heading"
@@ -4593,6 +4672,8 @@ function PrivateUtilityTransfer() {
         onClick={() => openPreview('txt')}>Bekijk volledig privé-overzicht (TXT)</button>
       <button type="button" className="secondary" disabled={invalid || !upcoming.length}
         onClick={() => openPreview('ics')}>Bekijk mijn agendaherinneringen (ICS)</button>
+      <button type="button" className="secondary" disabled={invalid}
+        onClick={() => openPreview('json')}>Bekijk volledige herstelback-up (JSON)</button>
       <button type="button" className="secondary" onClick={clear}>Wis mijn checklist</button>
     </div>
     {preview !== null && <div style={{ padding: 16, border: '1px solid #91a99a',
@@ -4612,8 +4693,40 @@ function PrivateUtilityTransfer() {
           style={{ marginTop: 12 }}>Download precies deze gecontroleerde {preview.kind.toUpperCase()}</button>
       </>}
     </div>}
+    <fieldset style={{ border: '1px solid #c4d6c9', borderRadius: 12,
+      padding: 16, marginTop: 18 }}>
+      <legend><strong>Mijn eerder opgeslagen checklist terugzetten</strong></legend>
+      <p>Kies je eigen Woonpoints-JSON-bestand (maximaal 4 KiB).
+        De huidige checklist wordt pas vervangen na de volledige voorbeeldweergave en
+        een afzonderlijke bevestiging.</p>
+      <input type="file" accept=".json,application/json"
+        aria-label="Kies mijn eigen verhuischecklist-JSON"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void chooseRestore(file);
+        }} />
+      {pendingRestore !== null && <>
+        {!restoreCurrent ? <p role="alert">De huidige checklist is gewijzigd.
+          Kies het bestand opnieuw.</p> : <>
+          <p>Vervanging van <strong>alle zes stappen</strong> en hun datums.</p>
+          <pre style={{ maxHeight: 260, overflowY: 'auto', whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere' }}>{privateUtilityReport(pendingRestore.entries)}</pre>
+          <label style={{ display: 'flex', alignItems: 'start', gap: 9 }}>
+            <input type="checkbox" checked={restoreApproved}
+              onChange={event => setRestoreApproved(event.target.checked)} />
+            Ik heb de zes stappen gecontroleerd en wil mijn huidige tabbladinvoer vervangen.
+          </label>
+          <button type="button" disabled={!restoreApproved}
+            onClick={confirmRestore}>Vervang mijn checklist met deze back-up</button>
+        </>}
+      </>}
+      {undoCurrent && <button type="button" className="secondary"
+        onClick={undoRestore}>Herstel eenmalig mijn vorige tabbladinvoer</button>}
+    </fieldset>
     <p role="status" aria-live="polite">{feedback}</p>
     <p>Deze checklist blijft alleen in het tabblad en verdwijnt na verversen of sluiten.
+      Een TXT-, JSON- of ICS-download ontstaat alleen op jouw verzoek.
       Je agenda-app kan een bewust gedownload ICS-bestand synchroniseren; Woonpoints
       maakt nooit zelf afspraken, verzendt geen berichten en wijzigt geen contracten.
       Controleer officiële termijnen, voorwaarden en bevestigingen altijd zelf.</p>
