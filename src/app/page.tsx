@@ -2493,12 +2493,47 @@ function PrivateMoveAftercare() {
         <div>
           <div className="aftercare-actions">
             <button disabled={!items.length} onClick={exportJson}>Download JSON-back-up</button>
-            <button className="secondary" disabled={!items.length} onClick={exportCsv}>Download CSV</button>
+            <button className="secondary" disabled={!items.length} onClick={exportCsv}>
+              Controleer volledige CSV van {items.length} punten…
+            </button>
             <button className="secondary" disabled={!shown.length} onClick={exportText}>Controleer TXT van {shown.length} zichtbare punten…</button>
           </div>
-          <p>JSON en CSV bevatten altijd het volledige eigen dossier. Alleen een TXT-overzicht
-            volgt de huidige status-, zoek-, ruimte- en prioriteitsfilters, na
-            voorafgaande volledige preview en aparte bevestiging.</p>
+          <p>JSON en CSV bevatten alle punten uit het eigen dossier, ongeacht de zichtbare
+            filters. CSV bevat privénotities alleen na een aparte bewuste keuze; TXT bevat
+            uitsluitend gefilterde zichtbare punten. Beide tekstdelen vereisen een volledig
+            voorbeeld en tweede toestemming vóór een bestand wordt gedownload.</p>
+          <label className="aftercare-check" htmlFor="nazorg-csv-private-notes">
+            <input id="nazorg-csv-private-notes" type="checkbox"
+              checked={includePrivateCsvNotes}
+              onChange={event => {
+                setIncludePrivateCsvNotes(event.target.checked);
+                setPendingCsvExport(null);
+              }}/>
+            Voeg mijn privénotities bewust toe aan de volledige CSV (standaard uit)
+          </label>
+          {pendingCsvExport !== null && <div className="aftercare-confirm" role="group"
+            aria-label="CSV controleren vóór bewaren">
+            <h3>Controleer alle CSV-regels vóór downloaden</h3>
+            {csvExportCurrent ? <p>{pendingCsvExport.count} eigen dossierpunten, ook buiten
+              actieve filters. Privénotities zijn {includePrivateCsvNotes ?
+                'bewust opgenomen' : 'bewust weggelaten'}. Dit bevat geen
+              geverifieerde melding of WoningNet-bewijs.</p> :
+              <p className="aftercare-warning" role="status">
+                Het eigen dossier of de privéoptie is gewijzigd; de vorige toestemming
+                is ongeldig. Maak een nieuw voorbeeld.
+              </p>}
+            {csvExportCurrent && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+              maxHeight:360,overflowY:'auto',padding:12,background:'#fff',
+              border:'1px solid #b6c7ba',borderRadius:8}}>{pendingCsvExport.preview}</pre>}
+            <div className="aftercare-actions">
+              <button type="button" disabled={!csvExportCurrent}
+                onClick={confirmCsvExport}>Ja, download exact deze CSV</button>
+              <button type="button" className="secondary"
+                onClick={() => {setPendingCsvExport(null);setMessage('CSV-download geannuleerd.');}}>
+                Annuleer CSV
+              </button>
+            </div>
+          </div>}
           <label className="aftercare-check" htmlFor="nazorg-txt-private-notes">
             <input id="nazorg-txt-private-notes" type="checkbox"
               checked={includePrivateTxtNotes}
