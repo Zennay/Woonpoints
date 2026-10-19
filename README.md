@@ -1,5 +1,16 @@
 # Woonpoints
 
+## Nieuw: controlepunten meenemen naar mijn huurvoorstel
+
+De woningaanbodcheck kan voor één eigen werkblad nu **vaste algemene
+controlevragen** klaarzetten voor het bestaande scherm *Huurvoorstellen*.
+De gebruiker ziet die eerst bij het huurformulier en besluit daarna
+afzonderlijk of de vragen mogen worden **toegevoegd aan het tijdelijke
+vragenveld**. Eigen bestaande tekst wordt niet overschreven; maximaal
+400 tekens worden toegelaten. Er wordt geen bedrag, afzender, woninglabel,
+antwoord of identiteitsgegeven overgedragen en er wordt geen huurvoorstel,
+contract of WoningNet-actie automatisch opgeslagen, verzonden of geaccepteerd.
+
 ## Nieuw: complete woningaanbodwerkmap zelf veilig bewaren en terugzetten
 
 De [aanbodcheck](/#private-offer-safety-heading) biedt nu een vrijwillige
