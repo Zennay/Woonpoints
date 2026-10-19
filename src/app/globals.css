@@ -803,6 +803,7 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .private-rental-budget-label { display:flex; flex-direction:column; align-items:stretch; gap:5px; font-weight:650; margin:12px 0; }
 .private-rental-budget-label small { font-size:12px; color:#526357; font-weight:400; }
 .private-rental-budget-label input { padding:10px 12px; min-width:0; width:100%; border:1px solid #65826d; background:#fff; color:#1b3823; border-radius:9px; font:inherit; }
+.private-rental-budget-label select { padding:10px 12px; min-width:0; width:100%; border:1px solid #65826d; background:#fff; color:#1b3823; border-radius:9px; font:inherit; }
 .private-rental-budget-label input:focus-visible,
 .private-rental-budget button:focus-visible { outline:3px solid #145b78; outline-offset:3px; }
 .private-rental-budget button { background:#285a3d; color:#fff; border:1px solid #285a3d; border-radius:8px; font:inherit; font-weight:650; padding:10px 14px; cursor:pointer; margin:5px 4px 5px 0; }
@@ -814,6 +815,9 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .private-rental-budget th { background:#eef5f0; }
 .private-rental-budget tbody tr:nth-child(2n) { background:#f7faf8; }
 .private-rental-budget-actions { display:flex; flex-wrap:wrap; margin:13px 0; }
+.private-rental-budget-what-if { margin:25px 0; padding:18px; border:1px solid #9ab29f; background:#f2f8f3; border-radius:12px; }
+.private-rental-budget-what-if h3 { margin:2px 0 9px; }
+.private-rental-budget-what-if .private-rental-budget-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr)); gap:12px; margin:10px 0 16px; }
 .private-rental-budget-preview { background:#eef5f0; border:1px solid #789785; border-radius:10px; padding:12px 18px; margin:14px 0; }
 .private-rental-budget-preview pre { background:#fff; white-space:pre-wrap; overflow-wrap:anywhere; max-height:320px; overflow:auto; padding:14px; font-size:13px; }
 @media(max-width:640px) {.private-rental-budget-grid {grid-template-columns:minmax(0,1fr)}}

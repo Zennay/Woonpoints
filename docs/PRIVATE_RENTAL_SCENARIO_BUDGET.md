@@ -99,3 +99,30 @@ component in de bestaande dashboardmodule landde. De normale
 Woonpoints-GitHub-workflows controleren de integratie opnieuw op de
 definitieve PR-head; deze documentatie is geen claim dat een aparte
 QA-test of production release succesvol is uitgevoerd.
+
+## Wat-als: hoger maandbedrag en eigen bufferdoel
+
+Het extra paneel **Wat-als: onverwachte lasten en mijn eigen reserve**
+past dezelfde basiswoningen niet automatisch aan. Je voert één eigen
+hypothetische extra maandlast van € 0–1.000 in, kiest een fictieve
+toename van alleen de post energie/water/internet (0, 10, 20 of 30%)
+en een gewenste reserve van 1, 2, 3 of 6 maanden van de nieuwe
+maandlasten. De cijfers zijn simulaties: het zijn geen energietarieven,
+statistische voorspellingen, aanbevelingen of wettelijke normen.
+
+Per woning toont het paneel de extra lasten, nieuwe maandlast,
+eigen-budgetmarge, persoonlijke bufferberekening, eerste-maand
+kasbehoefte inclusief gereserveerde borg en de gesimuleerde kosten
+over twaalf gelijke maanden exclusief terug te krijgen borg.
+De buffer is **geen betaling of spaarsaldo** en wordt niet opgeteld
+bij de eerstejaarsuitgaven.
+
+**Bekijk basis + wat-als als privé-TXT** toont beide tabellen
+naast de eigen simulatiekeuzes in dezelfde vrijwillige preview.
+Elke aanpassing aan de scenario's, maandgrens of wat-als-invoer
+maakt het eerdere TXT-voorbeeld ongeldig. De versie 1 JSON-back-up
+blijft bewust het eerdere, compatibele basisschema van eigen
+woningen en budget bevatten; hypothetische stresstestinstellingen
+worden daarin niet meegenomen. Ook deze simulatie blijft
+uitsluitend in de huidige browser-tabbladstatus, zonder server,
+accountkoppeling, WoningNet-verzoek of opslag door Woonpoints.

@@ -2540,7 +2540,27 @@ function makeResults(scenarios:RentalScenario[],budget:string):Result[]|null{
   }
   return results;
 }
-function reportText(results:Result[],monthlyBudget:number):string{
+type RentalShock={
+  id:string;scenario:string;month:number;delta:number;margin:number;
+  reserve:number;annual:number;firstMonthCash:number
+};
+function stressScenarios(results:Result[],extra:string,energyPercent:number,
+  reserveMonths:number,limit:number):RentalShock[]|null{
+  const extraCents=cents(extra);
+  if(extraCents===null||extraCents>100_000||![0,10,20,30].includes(energyPercent)||
+     ![1,2,3,6].includes(reserveMonths))return null;
+  return results.map(r=>{
+    const utilities=cents(r.scenario.utilities);
+    if(utilities===null)return null;
+    const increase=extraCents+Math.round(utilities*energyPercent/100);
+    const month=r.month+increase;
+    return {id:r.scenario.id,scenario:r.scenario.title,month,delta:increase,margin:limit-month,
+      reserve:month*reserveMonths,annual:12*month+cents(r.scenario.moving)!,
+      firstMonthCash:month+cents(r.scenario.moving)!+r.reservedDeposit};
+  }).filter((r):r is RentalShock=>r!==null);
+}
+function reportText(results:Result[],monthlyBudget:number,stress:RentalShock[],
+  extra:string,energyPercent:number,reserveMonths:number):string{
   const lines=[
     'WOONPOINTS · MIJN PRIVE HUURSCENARIOS',
     'Alle bedragen zelf ingevuld en niet onafhankelijk geverifieerd.',
@@ -2556,8 +2576,22 @@ function reportText(results:Result[],monthlyBudget:number):string{
       'Geld apart gehouden voor borg: '+euro.format(reservedDeposit/100),
       'Eerstejaars kasbehoefte inclusief gereserveerde borg: '+euro.format(firstYearCash/100),'');
   }
+  lines.push('WAT-ALS SIMULATIE, NIET EEN VOORSPELLING',
+    'Zelf toegevoegd per maand: '+euro.format((cents(extra)??0)/100),
+    'Hypothetische stijging van alleen energie/water/internet: '+energyPercent+'%',
+    'Zelf gekozen reserve: '+reserveMonths+' maanden van doorgerekende maandlasten','');
+  for(const r of stress){
+    lines.push(r.scenario,
+      'Maandlasten onder eigen wat-als: '+euro.format(r.month/100),
+      'Extra maandlast: '+euro.format(r.delta/100),
+      'Ruimte t.o.v. eigen maandgrens: '+euro.format(r.margin/100),
+      'Zelf berekende kosten voor 12 maanden + verhuizing: '+euro.format(r.annual/100),
+      'Eigen reserve bij '+reserveMonths+' maanden: '+euro.format(r.reserve/100),
+      'Eerste-maand kasbehoefte inclusief borg: '+euro.format(r.firstMonthCash/100),'');
+  }
+  lines.push('Een reserve is geen betaling, borgteruggave of daadwerkelijk spaarsaldo.','');
   lines.push('Let op: geen inflatie, belastingen, toeslagen, borgteruggave, inkomenseisen of',
-    'variabele energieprijzen berekend. Werkelijke lasten kunnen afwijken.',
+    'werkelijke toekomstige energietarieven voorspeld. Lasten kunnen afwijken.',
     'Door jou bewust gedownload; lokale/cloudgesynchroniseerde bestandslocaties',
     'vallen buiten Woonpoints. Browserinvoer wordt niet door de app opgeslagen.');
   return lines.join('\n')+'\n';
@@ -2574,6 +2608,9 @@ function PrivateRentalScenarioBudget({
 }={}){
   const [scenarios,setScenarios]=useState<RentalScenario[]>(initial);
   const [budget,setBudget]=useState('');
+  const [extraMonthly,setExtraMonthly]=useState('0');
+  const [energyPercent,setEnergyPercent]=useState(0);
+  const [reserveMonths,setReserveMonths]=useState(2);
   const [preview,setPreview]=useState<{fingerprint:string;text:string}|null>(null);
   const [backupPreview,setBackupPreview]=useState<{fingerprint:string;text:string}|null>(null);
   const [incoming,setIncoming]=useState<{data:RentalBackup;raw:string}|null>(null);
@@ -2581,9 +2618,13 @@ function PrivateRentalScenarioBudget({
   const fileGeneration=useRef(0);
   const [clearRequested,setClearRequested]=useState(false);
   const [status,setStatus]=useState('');
-  const fingerprint=JSON.stringify([scenarios,budget]);
+  const sourceFingerprint=JSON.stringify([scenarios,budget]);
+  const fingerprint=JSON.stringify([scenarios,budget,extraMonthly,energyPercent,reserveMonths]);
   const results=useMemo(()=>makeResults(scenarios,budget),[scenarios,budget]);
   const monthlyBudget=cents(budget);
+  const stress=useMemo(()=>(results&&monthlyBudget!==null?
+    stressScenarios(results,extraMonthly,energyPercent,reserveMonths,monthlyBudget):null),
+    [results,monthlyBudget,extraMonthly,energyPercent,reserveMonths]);
   function invalidateEdits(){
     fileGeneration.current++;
     setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
@@ -2599,6 +2640,10 @@ function PrivateRentalScenarioBudget({
   function updateBudget(raw:string){
     if(raw!==''&&(!valuePattern.test(raw)||raw.length>9))return;
     setBudget(raw);invalidateEdits();
+  }
+  function updateWhatIfExtra(value:string){
+    if(value!==''&&(!valuePattern.test(value)||value.length>9))return;
+    setExtraMonthly(value);setPreview(null);setStatus('');
   }
   function applyOfferProposal(){
     if(!proposal)return;
@@ -2617,8 +2662,9 @@ function PrivateRentalScenarioBudget({
     onProposalHandled?.();
   }
   function openPreview(){
-    if(!results||monthlyBudget===null)return;
-    setPreview({fingerprint,text:reportText(results,monthlyBudget)});
+    if(!results||monthlyBudget===null||!stress)return;
+    setPreview({fingerprint,text:reportText(results,monthlyBudget,stress,
+      extraMonthly,energyPercent,reserveMonths)});
     setStatus('Lees de hele tekst en kies pas daarna bewust voor downloaden.');
   }
   async function loadBackup(event:ChangeEvent<HTMLInputElement>){
@@ -2661,7 +2707,7 @@ function PrivateRentalScenarioBudget({
       setStatus('Back-up niet gereed: maak bedragen en woonlabels compleet, zonder halve decimalen.');
       return;
     }
-    setBackupPreview({fingerprint,text});
+    setBackupPreview({fingerprint:sourceFingerprint,text});
     setPreview(null);setStatus('Bekijk de volledige privé-JSON en kies daarna zelf voor downloaden.');
   }
   function downloadFile(filename:string,text:string,type:string){
@@ -2743,15 +2789,60 @@ function PrivateRentalScenarioBudget({
             </tr>)}</tbody>
           </table>
         </div>}
-      <p>De berekening neemt iedere maand dezelfde bedragen aan. Geen huurtoeslag, inflatie, borgteruggave, jaarlijkse wijzigingen, regelgeving of toekomstige energieprijzen meegerekend.</p>
+      <p>De basisberekening neemt iedere maand dezelfde bedragen aan. Geen huurtoeslag, inflatie, borgteruggave, jaarlijkse wijzigingen, regelgeving of toekomstige energieprijzen meegerekend.</p>
+      <div className="private-rental-budget-what-if">
+        <h3>Wat-als: onverwachte lasten en mijn eigen reserve</h3>
+        <p>Stel zelf een denkbeeldige tegenvaller in. Alleen de zelf opgegeven energie/water/internetpost stijgt met het gekozen percentage. Dit is geen tariefvoorspelling of advies over hoeveel je moet sparen.</p>
+        <div className="private-rental-budget-grid">
+          <label className="private-rental-budget-label">Extra maandelijkse tegenvaller (max € 1.000)
+            <input inputMode="decimal" autoComplete="off" value={extraMonthly} maxLength={9}
+              onChange={e=>updateWhatIfExtra(e.target.value)} />
+          </label>
+          <label className="private-rental-budget-label">Denkbeeldige stijging energie/water/internet
+            <select value={energyPercent} onChange={e=>{
+              setEnergyPercent(Number(e.target.value));setPreview(null);setStatus('');
+            }}>
+              {[0,10,20,30].map(p=><option key={p} value={p}>{p}%</option>)}
+            </select>
+          </label>
+          <label className="private-rental-budget-label">Mijn gewenste woonlastenreserve
+            <select value={reserveMonths} onChange={e=>{
+              setReserveMonths(Number(e.target.value));setPreview(null);setStatus('');
+            }}>
+              {[1,2,3,6].map(n=><option key={n} value={n}>{n} {n===1?'maand':'maanden'}</option>)}
+            </select>
+          </label>
+        </div>
+        {!stress?<p role="status">Vul een extra maandbedrag van maximaal € 1.000 volledig in om de wat-als-berekening te zien.</p>:
+        <div className="private-rental-budget-scroll">
+          <table>
+            <caption>Persoonlijke stresstest op basis van zelfgekozen aannames, niet geverifieerd</caption>
+            <thead><tr><th scope="col">Eigen woning</th><th scope="col">Nieuwe maandlasten</th>
+              <th scope="col">Extra per maand</th><th scope="col">Ruimte onder maandgrens</th>
+              <th scope="col">Eigen bufferdoel</th><th scope="col">Eerste maand incl. borg</th>
+              <th scope="col">12 maanden incl. verhuizing, excl. borg</th></tr></thead>
+            <tbody>{stress.map(r=><tr key={r.id}>
+              <th scope="row">{r.scenario}</th>
+              <td>{euro.format(r.month/100)}</td>
+              <td>{euro.format(r.delta/100)}</td>
+              <td>{euro.format(r.margin/100)}{r.margin<0?' (boven eigen grens)':''}</td>
+              <td>{euro.format(r.reserve/100)}</td>
+              <td>{euro.format(r.firstMonthCash/100)}</td>
+              <td>{euro.format(r.annual/100)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+        <p>Het bufferdoel staat los van de borg, en een berekende buffer is geen bewijs dat je dit geld hebt. Deze instellingen zijn alleen een tijdelijke simulatie en maken geen deel uit van de versie 1 JSON-back-up van de basiswoningen.</p>
+      </div>
       <div className="private-rental-budget-actions">
-        <button type="button" disabled={!results} onClick={openPreview}>Bekijk mijn privé-TXT vóór downloaden</button>
+        <button type="button" disabled={!results||!stress} onClick={openPreview}>Bekijk basis + wat-als als privé-TXT</button>
         <button type="button" onClick={()=>{setClearRequested(true);setPreview(null);setBackupPreview(null);}}>Wis alle eigen scenario's…</button>
       </div>
       {clearRequested&&<div role="group" aria-label="Scenario's wissen">
         <p>Alle ingevulde scenario's en de maandgrens uit dit tabblad wissen?</p>
         <button type="button" onClick={()=>{
           fileGeneration.current++;setScenarios(initial());setBudget('');
+          setExtraMonthly('0');setEnergyPercent(0);setReserveMonths(2);
           setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
           setClearRequested(false);setStatus('Invoer uit dit tabblad gewist.');
         }}>Ja, wis mijn invoer</button>{' '}
@@ -2768,7 +2859,7 @@ function PrivateRentalScenarioBudget({
           Een geïmporteerd bestand wordt pas overgenomen na een aparte, zichtbare bevestiging.
           Zonder eigen download blijft alles in dit tabblad.</p>
         <button type="button" onClick={previewBackup}>Bekijk mijn JSON vóór bewaren</button>
-        {backupPreview?.fingerprint===fingerprint&&<div className="private-rental-budget-preview">
+        {backupPreview?.fingerprint===sourceFingerprint&&<div className="private-rental-budget-preview">
           <p>Deze JSON bevat alle zelfgekozen labels en geldbedragen. Controleer het bestand vóór download.</p>
           <pre>{backupPreview.text}</pre>
           <button type="button" onClick={()=>downloadFile('woonpoints-prive-huurscenarios.json',backupPreview.text,'application/json;charset=utf-8')}>
