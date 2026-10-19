@@ -7,9 +7,25 @@ Open **Mijn woningmatch** via de navigatie of rechtstreeks via `/#private-woning
 - Leg **twee tot vijf** zelf gekozen woningen naast elkaar zonder een WoningNet-account, API, browserbot of advertentiescraper.
 - Bepaal vier persoonlijke criteria: maximale **totale** maandlasten, minimale m², minimaal aantal slaapkamers, maximale enkele-reisminuten.
 - Vul per woning een eigen label (liever geen exact adres), kale huur, ingeschatte overige maandlasten, m², slaapkamers, reistijd en optionele korte notitie in.
-- Bekijk per woning welke zelf opgegeven voorwaarden **wel/niet** worden gehaald. De scores gebruiken expliciete vaste gewichten: geld 4, oppervlak 3, kamers 2, reistijd 2. Er wordt eerst gerangschikt op het volledig halen van alle criteria, vervolgens op de gewogen score.
+- Bekijk per woning welke zelf opgegeven voorwaarden **wel/niet** worden gehaald. Kies nu ook je eigen **prioriteit per criterium (1–5)**, met startwaarden geld 4, oppervlak 3, kamers 2, reistijd 2. Er wordt eerst gerangschikt op het volledig halen van **alle vier harde voorwaarden**, vervolgens op de gewogen score. Zelfs gewicht 1 kan een gemiste harde grens nooit verborgen of automatisch toegestaan maken.
 - Alle velden zijn vereist voor een vergelijking. Lege en ongeldige waarden worden dus niet als `0`, als bekende advertentiegegevens of als een geslaagde match voorgesteld.
 - Open een **volledige TXT-preview** met exacte eigen criteria, per-woning uitleg en optionele notities, vink afzonderlijk aan dat je de inhoud wilt downloaden. Iedere bewerking maakt de preview ongeldig.
+
+## Nieuw: persoonlijke matchprioriteiten
+
+Bij je vier eigen harde voorwaarden kun je afzonderlijk kiezen hoe zwaar geld, ruimte,
+slaapkamers en reistijd wegen. De vijf mogelijke prioriteiten zijn strikt begrensd en
+veranderen direct de relatieve percentages en volgorde. Alle vier harde grenzen
+blijven onveranderd geldig: een woning die niet voldoet, wordt nooit als volledig
+passend gepresenteerd door bijvoorbeeld een laag gewicht aan budget toe te kennen.
+Met **Herstel startweging** keer je terug naar 4/3/2/2.
+
+De volledige optionele TXT vermeldt nu óók de vier persoonlijk gekozen prioriteiten
+en het gewicht per wel/niet gehaald criterium. Zowel de TXT-preview als een nog niet
+bevestigde import-preview vervalt conservatief bij iedere prioriteitswijziging,
+zodat een oude beoordeling niet als je nieuwe beslissing kan worden gedownload.
+Dit blijft een lokale rekenkundige voorkeur, **geen** officieel woningalgoritme,
+voorraadstatus, geschiktheids- of toewijzingskans.
 
 ## Nieuw: eigen woningopties in één keer plakken
 
