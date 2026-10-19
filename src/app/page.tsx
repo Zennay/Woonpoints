@@ -17,6 +17,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'reaction-journal-title',title:'Reactiedagboek',category:'reacties'},
   {id:'housing-shortlist-heading',title:'Woningen vergelijken',category:'woning'},
   {id:'private-offer-desk-heading',title:'Huurvoorstellen',category:'woning'},
+  {id:'private-energy-quotes-heading',title:'Energietarieven vergelijken',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
   {id:'private-commute-heading',title:'Woon-werk',category:'woning'},
   {id:'private-longterm-title',title:'Meerjarenkosten',category:'woning'},
@@ -2020,6 +2021,267 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
 return PrivateOfferDesk;
 })();
 
+
+/** Private owner-typed energy plans; no vendor API, matching, account or background work. */
+type EnergyQuote={
+  id:string;label:string;electric10000:number;gas10000:number;standingCents:number
+};
+type EnergyQuoteForm={label:string;electric:string;gas:string;standing:string};
+const newEnergyQuote=():EnergyQuoteForm=>({label:'',electric:'',gas:'0',standing:'0'});
+const energyRate=(raw:string,max:number):number|null=>{
+  const clean=raw.trim();
+  if(!/^(?:0|[1-9][0-9]{0,2})(?:[,.][0-9]{1,4})?$/.test(clean))return null;
+  const [whole,fraction='']=clean.replace(',','.').split('.');
+  const unit=Number(whole)*10000+Number(fraction.padEnd(4,'0'));
+  return Number.isSafeInteger(unit)&&unit>=0&&unit<=max*10000?unit:null;
+};
+const energyMoney=(raw:string):number|null=>{
+  const clean=raw.trim();
+  if(!/^(?:0|[1-9][0-9]{0,3})(?:[,.][0-9]{1,2})?$/.test(clean))return null;
+  const [whole,fraction='']=clean.replace(',','.').split('.');
+  const cents=Number(whole)*100+Number(fraction.padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents>=0&&cents<=100000?cents:null;
+};
+const energyUnits=(raw:string,max:number):number|null=>
+  /^(?:0|[1-9][0-9]{0,5})$/.test(raw.trim())&&
+    Number(raw.trim())<=max?Number(raw.trim()):null;
+const energyEuro=(cents:number)=>new Intl.NumberFormat('nl-NL',{
+  style:'currency',currency:'EUR'
+}).format(cents/100);
+const energyQuoteTotal=(row:EnergyQuote,kwh:number,gas:number)=>{
+  const electricity=Math.round(kwh*row.electric10000/100);
+  const gasCents=Math.round(gas*row.gas10000/100);
+  const fixed=row.standingCents*12;
+  return {electricity,gasCents,fixed,total:electricity+gasCents+fixed};
+};
+let energyQuoteSequence=0;
+function PrivateEnergyQuoteComparison(){
+  const [kwh,setKwh]=useState('');
+  const [gas,setGas]=useState('0');
+  const [growth,setGrowth]=useState(0);
+  const [form,setForm]=useState<EnergyQuoteForm>(newEnergyQuote);
+  const [editing,setEditing]=useState<string|null>(null);
+  const [quotes,setQuotes]=useState<EnergyQuote[]>([]);
+  const [removeId,setRemoveId]=useState<string|null>(null);
+  const [wipeConfirm,setWipeConfirm]=useState(false);
+  const [exportView,setExportView]=useState<{signature:string;text:string}|null>(null);
+  const [message,setMessage]=useState('');
+  const annualKwh=energyUnits(kwh,50000);
+  const annualGas=energyUnits(gas,10000);
+  const validUsage=annualKwh!==null&&annualGas!==null&&(annualKwh>0||annualGas>0);
+  const adjustedKwh=validUsage?Math.round(annualKwh!*(100+growth)/100):0;
+  const adjustedGas=validUsage?Math.round(annualGas!*(100+growth)/100):0;
+  const estimates=validUsage?quotes.map(row=>({
+    row,annual:energyQuoteTotal(row,annualKwh!,annualGas!),
+    stress:energyQuoteTotal(row,adjustedKwh,adjustedGas)
+  })).sort((a,b)=>a.annual.total-b.annual.total||a.row.label.localeCompare(b.row.label,'nl')):[];
+  const signature=JSON.stringify({kwh,gas,growth,quotes});
+  function editValue(field:keyof EnergyQuoteForm,value:string){
+    setForm(previous=>({...previous,[field]:value}));setMessage('');
+    setExportView(null);
+  }
+  function addOrChange(e:FormEvent<HTMLFormElement>){
+    e.preventDefault();
+    const electric=energyRate(form.electric,20);
+    const gasPrice=energyRate(form.gas,20);
+    const standing=energyMoney(form.standing);
+    const label=form.label.trim();
+    if(!label||label.length>60||/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(label)||
+       electric===null||gasPrice===null||standing===null){
+      setMessage('Controleer je label en tarieven: max € 20 per kWh/m³ met vier decimalen en max € 1.000 vaste kosten per maand.');
+      return;
+    }
+    if(!editing&&quotes.length>=4){
+      setMessage('Er passen maximaal vier eigen tarieven in één vergelijking.');return;
+    }
+    const current=quotes.find(row=>row.id===editing);
+    const offer:EnergyQuote={id:current?.id??'e-'+Date.now().toString(36)+'-'+(++energyQuoteSequence),
+      label,electric10000:electric,gas10000:gasPrice,standingCents:standing};
+    setQuotes(rows=>current?rows.map(row=>row.id===current.id?offer:row):[...rows,offer]);
+    setEditing(null);setForm(newEnergyQuote());setRemoveId(null);setWipeConfirm(false);
+    setExportView(null);setMessage(current?'Mijn tariefnotitie bijgewerkt.':'Eigen tariefnotitie toegevoegd.');
+  }
+  function startEdit(row:EnergyQuote){
+    const rate=(value:number)=>(value/10000).toFixed(4).replace('.',',');
+    setForm({label:row.label,electric:rate(row.electric10000),
+      gas:rate(row.gas10000),standing:(row.standingCents/100).toFixed(2).replace('.',',')});
+    setEditing(row.id);setExportView(null);setWipeConfirm(false);setRemoveId(null);
+    setMessage('Eigen tarief openen om te wijzigen; eerdere bedragen blijven tot je opslaat.');
+  }
+  function summary():string{
+    const lines=[
+      'WOONPOINTS · MIJN HANDMATIGE ENERGIEVERGELIJKING',
+      'Alle tarieven en het jaarverbruik zijn eigen niet-gecontroleerde invoer.',
+      'Geschat jaarverbruik: '+annualKwh+' kWh stroom; '+annualGas+' m³ gas.',
+      'Verbruiksscenario: '+growth+'% extra verbruik.',
+      'Indicatieve kosten inclusief zelf ingevulde vaste bedragen, geen live leveranciersaanbod.',
+      ''
+    ];
+    estimates.forEach(({row,annual,stress})=>{
+      lines.push('Eigen tarief: '+row.label,
+        'Stroomtarief: € '+(row.electric10000/10000).toFixed(4)+' per kWh',
+        'Gastarief: € '+(row.gas10000/10000).toFixed(4)+' per m³',
+        'Maandelijkse vaste kosten: '+energyEuro(row.standingCents),
+        'Stroom/jaar: '+energyEuro(annual.electricity),
+        'Gas/jaar: '+energyEuro(annual.gasCents),
+        'Vaste lasten/jaar: '+energyEuro(annual.fixed),
+        'Totaal eigen basisschatting/jaar: '+energyEuro(annual.total),
+        'Totaal bij extra verbruik/jaar: '+energyEuro(stress.total),
+        'Gemiddeld per maand basisschatting: '+energyEuro(Math.round(annual.total/12)),
+        ''
+      );
+    });
+    lines.push('Geen berekening van teruglevering, kortingen, heffingen/netbeheer buiten de opgegeven prijzen, dynamische uurprijzen, BTW-verschillen of contractvoorwaarden.',
+      'Controleer de echte volledige tarieven en voorwaarden bij de betreffende leverancier.',
+      'Er is geen contract afgesloten, aanvraag verzonden, rekening opgehaald of account gekoppeld.');
+    return lines.join('\n');
+  }
+  function download(){
+    if(!exportView||exportView.signature!==signature||!estimates.length||!validUsage){
+      setMessage('De gegevens zijn gewijzigd. Bekijk opnieuw je actuele vergelijking.');return;
+    }
+    const url=URL.createObjectURL(new Blob([exportView.text+'\n'],{
+      type:'text/plain;charset=utf-8'
+    }));
+    try{
+      const link=document.createElement('a');
+      link.href=url;link.download='woonpoints-mijn-energievergelijking.txt';
+      document.body.appendChild(link);link.click();link.remove();
+      setMessage('Eigen vergelijking als tekstbestand aangeboden aan je browser.');
+      setExportView(null);
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
+  const labelStyle={display:'grid',gap:6,fontWeight:700,fontSize:13} as const;
+  return <section className="panel woon-energy" id="private-energy-quotes-heading"
+    aria-labelledby="woon-energy-title">
+    <div className="woon-energy-intro">
+      <p className="eyebrow">WOONKOSTEN · EIGEN ENERGIEAANNAMES</p>
+      <h2 id="woon-energy-title">Wat kosten mijn zelf gevonden energietarieven?</h2>
+      <p>Vergelijk maximaal vier zelf ingevoerde stroom- en gastarieven bij
+        je eigen jaarverbruik. Geen energieprijzen opgehaald, geen aanbod geverifieerd,
+        geen leverancierskoppeling of automatische contractactie.</p>
+      <p>Je kunt de maandraming daarna <a href="#private-offer-desk-heading">
+        zelf overnemen in je huurvoorstel</a>, eventueel met internet en andere
+        nutsvoorzieningen erbij.</p>
+    </div>
+    <div className="woon-energy-columns">
+      <div>
+        <h3>Mijn geschat jaarverbruik</h3>
+        <div className="woon-energy-inputs">
+          <label style={labelStyle}>Stroomverbruik in kWh/jaar (0–50.000)
+            <input inputMode="numeric" value={kwh} onChange={e=>{
+              setKwh(e.target.value);setExportView(null);
+            }} placeholder="Zelf opzoeken, bijv. 2500"/></label>
+          <label style={labelStyle}>Gasverbruik in m³/jaar (0–10.000)
+            <input inputMode="numeric" value={gas} onChange={e=>{
+              setGas(e.target.value);setExportView(null);
+            }} placeholder="0 als je geen gas verbruikt"/></label>
+          <label style={labelStyle}>Wat-als: extra energieverbruik
+            <select value={growth} onChange={e=>{setGrowth(Number(e.target.value));setExportView(null);}}>
+              <option value={0}>0% · huidig geschat</option>
+              <option value={10}>+10% · iets meer</option>
+              <option value={20}>+20% · duidelijke stijging</option>
+            </select></label>
+        </div>
+        {!validUsage&&<p role="status" className="woon-energy-hint">
+          Vul je eigen stroom- en gasverbruik in (minimaal één groter dan nul),
+          anders tonen we geen berekende kosten.</p>}
+        <h3>{editing?'Mijn tarief aanpassen':'Eigen tarief toevoegen'}</h3>
+        <form className="woon-energy-form" onSubmit={addOrChange}>
+          <label style={labelStyle}>Eigen tarieflabel
+            <input maxLength={60} required value={form.label}
+              placeholder="Bijv. zelf gevonden aanbod A"
+              onChange={e=>editValue('label',e.target.value)}/></label>
+          <label style={labelStyle}>Mijn opgegeven prijs stroom, €/kWh (max. 4 decimalen)
+            <input inputMode="decimal" required value={form.electric} placeholder="0,3000"
+              onChange={e=>editValue('electric',e.target.value)}/></label>
+          <label style={labelStyle}>Mijn opgegeven prijs gas, €/m³ (0 indien niet van toepassing)
+            <input inputMode="decimal" required value={form.gas}
+              onChange={e=>editValue('gas',e.target.value)}/></label>
+          <label style={labelStyle}>Mijn opgegeven vaste kosten per maand, €
+            <input inputMode="decimal" required value={form.standing}
+              onChange={e=>editValue('standing',e.target.value)}/></label>
+          <div className="woon-energy-buttons">
+            <button type="submit">{editing?'Bewaar mijn tarief':'Voeg eigen tarief toe'}</button>
+            {editing&&<button type="button" onClick={()=>{setEditing(null);setForm(newEnergyQuote());
+              setMessage('Bewerken geannuleerd.');}}>Annuleer bewerking</button>}
+          </div>
+        </form>
+      </div>
+      <div className="woon-energy-results">
+        <h3>Mijn indicatieve vergelijking ({quotes.length}/4)</h3>
+        {!quotes.length?<p>Vul links je eigen tarieven in. Er zijn geen
+          vooraf geselecteerde commerciële aanbieders of externe datastromen.</p>:
+        !validUsage?<p>Eerst het verbruik invoeren om de eigen tarieven
+          objectief met dezelfde aannames te vergelijken.</p>:
+        <ol>{estimates.map(({row,annual,stress},index)=><li key={row.id}>
+          <div className="woon-energy-head">
+            <strong>{row.label}</strong>
+            {index===0&&estimates.length>1&&<span>Laagste van eigen invoer</span>}
+          </div>
+          <p><strong>{energyEuro(annual.total)}</strong> per jaar · ongeveer
+            {' '}<strong>{energyEuro(Math.round(annual.total/12))}</strong> per maand</p>
+          <dl>
+            <div><dt>Stroom</dt><dd>{energyEuro(annual.electricity)}</dd></div>
+            <div><dt>Gas</dt><dd>{energyEuro(annual.gasCents)}</dd></div>
+            <div><dt>Vast</dt><dd>{energyEuro(annual.fixed)}</dd></div>
+            <div><dt>Extra verbruik {growth}%</dt><dd>{energyEuro(stress.total)}</dd></div>
+          </dl>
+          {index>0&&<p>Verschil met goedkoopste eigen invoer:
+            {' '}{energyEuro(annual.total-estimates[0].annual.total)} per jaar.</p>}
+          <div className="woon-energy-buttons">
+            <button type="button" onClick={()=>startEdit(row)}>Bewerk tarief</button>
+            <button type="button" onClick={()=>setRemoveId(row.id)}>Verwijder…</button>
+          </div>
+          {removeId===row.id&&<div className="woon-energy-confirm">
+            <p>Alleen deze handmatige vergelijking verwijderen?</p>
+            <button type="button" onClick={()=>{setQuotes(items=>items.filter(x=>x.id!==row.id));
+              if(editing===row.id){setEditing(null);setForm(newEnergyQuote());}
+              setRemoveId(null);setExportView(null);setMessage('Eigen tarief verwijderd.');}}>
+              Ja, verwijder alleen dit tarief</button>
+            <button type="button" onClick={()=>setRemoveId(null)}>Annuleer</button>
+          </div>}
+        </li>)}</ol>}
+        {quotes.length>0&&<div className="woon-energy-buttons">
+          <button type="button" disabled={!validUsage||!estimates.length}
+            onClick={()=>{setExportView({signature,text:summary()});
+              setMessage('Bekijk het volledige overzicht; downloaden blijft een aparte keuze.');}}>
+            Bekijk kostenvergelijking als TXT…
+          </button>
+          <button type="button" onClick={()=>setWipeConfirm(true)}>Wis alle eigen tarieven…</button>
+        </div>}
+        {exportView&&<div className="woon-energy-preview">
+          <p>Alleen jouw eigen gegevens staan in dit bestand. Een zelf gekozen
+            bestandsprovider kan het later wel synchroniseren.</p>
+          <pre>{exportView.text}</pre>
+          <div className="woon-energy-buttons">
+            <button type="button" disabled={exportView.signature!==signature} onClick={download}>
+              Download deze gecontroleerde TXT</button>
+            <button type="button" onClick={()=>setExportView(null)}>Annuleer</button>
+          </div>
+        </div>}
+        {wipeConfirm&&<div className="woon-energy-confirm">
+          <p>Verwijder alle {quotes.length} tariefnotities uit dit tabblad?
+            Je verbruik en reeds gedownloade bestanden veranderen niet.</p>
+          <button type="button" onClick={()=>{setQuotes([]);setEditing(null);setForm(newEnergyQuote());
+            setRemoveId(null);setExportView(null);setWipeConfirm(false);
+            setMessage('Eigen tariefnotities gewist.');}}>Ja, wis alle tarieven</button>
+          <button type="button" onClick={()=>setWipeConfirm(false)}>Behoud tarieven</button>
+        </div>}
+      </div>
+    </div>
+    <p className="woon-energy-hint">Alle bedragen zijn handmatig en uitsluitend
+      indicatief. Jaarbedrag = eigen stroomverbruik × eigen stroomprijs +
+      eigen gasverbruik × eigen gasprijs + 12 × zelf opgegeven vaste maandkosten.
+      Onbekende belastingen, netbeheerkosten, voorschotten, teruglevering,
+      saldering, kortingen, indexatie en variabele/uurprijzen zijn niet berekend.
+      Overgang naar een ander contract, levering of officiële vergelijking
+      vindt nooit plaats. Alles blijft alleen in het geheugen van dit tabblad,
+      tenzij je zelf een tekstbestand bewaart.</p>
+    {message&&<p role="status" aria-live="polite" className="woon-energy-status">{message}</p>}
+  </section>;
+}
+
 export default function HomePage() {
   const [movingBundleSnapshots,setMovingBundleSnapshots]=useState<Record<string,string>>({});
   const [journeyPulse,setJourneyPulse]=useState<PrivateMovePulse|null>(null);
@@ -2479,6 +2741,7 @@ export default function HomePage() {
       <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
       <PrivateRentalOfferDesk prefill={rentalPrefill}
         onPrefillHandled={()=>setRentalPrefill(null)} />
+      <PrivateEnergyQuoteComparison />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />

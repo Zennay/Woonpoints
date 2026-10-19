@@ -1,5 +1,15 @@
 # Woonpoints
 
+## Nieuw: eigen energietarieven vergelijken (zonder leverancierkoppeling)
+
+Voer zelf het geschatte jaarverbruik en tot vier eigen stroom-, gas- en vaste tarieven in.
+Woonpoints laat dan de indicatieve jaar- en maandlasten zien, inclusief een wat-als
+met 10% of 20% extra verbruik. Je kunt het volledige resultaat vooraf bekijken
+en bewust als privé-TXT downloaden. Alle bedragen zijn **eigen, niet geverifieerde
+invoer**; geen commerciële prijzen, contractaanvraag, accountkoppeling of
+opslag door Woonpoints. [Handleiding](docs/PRIVATE_ENERGY_QUOTE_COMPARISON.md).
+
+
 
 ## Nieuw: veelgebruikte onderdelen vastzetten
 

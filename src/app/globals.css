@@ -739,3 +739,56 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 @media(max-width:850px){.rental-stress-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.rental-stress-inputs,.rental-stress-results dl{grid-template-columns:1fr}
 .rental-stress{padding-top:18px;margin-top:18px}}
+
+
+/* Private manual energy quote comparer: no provider API or automatic tariff claims. */
+.woon-energy{display:block;min-width:0;margin-top:25px;padding:27px}
+.woon-energy-intro>p:not(.eyebrow){line-height:1.6;color:#526359}
+.woon-energy-intro h2{font-size:clamp(25px,3vw,34px);margin:6px 0}
+.woon-energy-intro a{color:#276846;font-weight:700;text-underline-offset:3px}
+.woon-energy-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:23px;margin-top:23px}
+.woon-energy-columns>div{min-width:0;border:1px solid #dfe6e0;background:#fcfdfc;padding:20px;border-radius:13px}
+.woon-energy-columns h3{font-size:18px;color:#21432b;margin:8px 0 16px}
+.woon-energy-inputs,.woon-energy-form{display:grid;gap:13px;margin-bottom:22px}
+.woon-energy-inputs input,.woon-energy-inputs select,.woon-energy-form input{
+  border:1.5px solid #92ac98;border-radius:8px;background:white;color:#183c25;
+  padding:11px;font:inherit;font-size:14px;min-height:44px;width:100%;max-width:100%
+}
+.woon-energy-inputs input:focus-visible,.woon-energy-inputs select:focus-visible,
+.woon-energy-form input:focus-visible,.woon-energy button:focus-visible{
+  outline:3px solid #b1dab6;outline-offset:2px
+}
+.woon-energy-buttons{display:flex;gap:9px;flex-wrap:wrap;margin:13px 0 0}
+.woon-energy button{min-height:44px;background:#355e42;color:#fff;
+  padding:11px 13px;border:1px solid #355e42;border-radius:8px;
+  font:inherit;font-weight:750;font-size:13px;cursor:pointer}
+.woon-energy button:hover:not(:disabled){background:#22442f}
+.woon-energy button:disabled{opacity:.5;cursor:not-allowed}
+.woon-energy button+button{background:#fff;color:#355e42}
+.woon-energy button+button:hover{background:#eff6f0}
+.woon-energy-results ol{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.woon-energy-results li{background:white;padding:14px;border:1px solid #e0e9e2;
+  border-radius:11px;overflow-wrap:anywhere}
+.woon-energy-results p{font-size:14px;line-height:1.5;color:#506355}
+.woon-energy-results li p strong{font-size:16px;color:#245134}
+.woon-energy-head{display:flex;justify-content:space-between;gap:9px;align-items:center;
+  flex-wrap:wrap;color:#16482a}
+.woon-energy-head span{font-size:11px;padding:5px 8px;border-radius:6px;
+  color:#165b32;background:#e4f4e8}
+.woon-energy-results dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.woon-energy-results dl div{background:#f2f6f3;border-radius:8px;padding:10px}
+.woon-energy-results dt{font-size:12px;color:#637467}
+.woon-energy-results dd{font-size:16px;font-weight:800;color:#23422c;margin:5px 0 0}
+.woon-energy-confirm{background:#fff3df;border:1px solid #d4ae70;
+  border-radius:9px;padding:14px;margin:14px 0}
+.woon-energy-preview{border:1px solid #b5d2bd;padding:14px;margin:15px 0;border-radius:10px}
+.woon-energy-preview p{font-size:13px;color:#4f6758;line-height:1.55}
+.woon-energy-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;
+  max-height:270px;background:#f0f5f1;border-radius:8px;padding:12px;
+  font:12px/1.6 ui-monospace,Consolas,monospace}
+.woon-energy-hint{font-size:13px;color:#667568;line-height:1.7;margin:18px 0}
+.woon-energy-status{border-left:4px solid #396948;background:#edf6ef;
+  padding:11px 14px;font-size:13px;color:#275034;line-height:1.55}
+@media(max-width:840px){.woon-energy-columns{grid-template-columns:1fr}}
+@media(max-width:540px){.woon-energy{padding:18px}.woon-energy-columns>div{padding:15px}
+.woon-energy-results dl{grid-template-columns:1fr}}
