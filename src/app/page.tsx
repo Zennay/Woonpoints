@@ -4,6 +4,7 @@ import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview } from './position-stats';
 import PositionStats from './position-stats';
+import PrivateRentalOfferDesk from './private-offer-desk';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
 
@@ -16,6 +17,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-points-heading',title:'Zoekpunten',category:'reacties'},
   {id:'reaction-journal-title',title:'Reactiedagboek',category:'reacties'},
   {id:'housing-shortlist-heading',title:'Woningen vergelijken',category:'woning'},
+  {id:'private-offer-desk-heading',title:'Huurvoorstellen',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
   {id:'private-commute-heading',title:'Woon-werk',category:'woning'},
   {id:'private-longterm-title',title:'Meerjarenkosten',category:'woning'},
@@ -1827,6 +1829,7 @@ export default function HomePage() {
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace />
+      <PrivateRentalOfferDesk />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
