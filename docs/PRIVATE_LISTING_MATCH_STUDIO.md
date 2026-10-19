@@ -299,3 +299,32 @@ in plaats van `=Woning A`. De app zet geen verborgen quote of apostrof
 voor een waarde: dat zou de strikte 7-koloms heen-en-teruggarantie
 veranderen. De overige bestands-, preview-, privacy- en
 toestemmingscontroles blijven ongewijzigd.
+
+
+## Eigen wat-als-scenario afzonderlijk exporteren
+
+De hypothetische vergelijker kan nu **een apart lokaal TXT-document**
+maken met jouw oorspronkelijke én aangepaste vier grenswaarden,
+ongewijzigde relatieve weging, oorspronkelijke versus hypothetische
+rangschikking van de eigen woningopties, harde 4/4-resultaten en de
+resterende meetbare afwijking bij niet-gehaalde grenzen.
+
+Kies eerst in **Wat verandert er als mijn grenzen anders zijn?**
+de hypothetische bedragen, meters, kamers en reisminuten.
+Kies vervolgens **Bekijk mijn volledige hypothetische privé-TXT**.
+De tekst begint expliciet met **geen woningadvies, toewijzingskans of
+officiële beslissing** en bevat alleen eigen invoer. Eerst na het
+bekijken van **alle** tekst en het apart aanvinken van een
+bewaarverklaring wordt de knop voor de lokale download actief.
+
+Elke verandering in een hypothetische grens maakt de eerdere
+preview en instemming ongeldig, ook als je later weer dezelfde
+grenswaarde invult. Opnieuw beginnen of sluiten maakt de
+vorige goedkeuring ook ongeldig. Als een oorspronkelijk gegeven of
+weging verandert, kan het oude scenario niet meer gebruikt worden
+zonder opnieuw te beginnen. Ongeldige grenzen geven helemaal geen
+downloadbaar hypothetisch resultaat. Het oorspronkelijke reguliere
+TXT-rapport, de volledige JSON-back-up, eigen criteria en alle
+kosten-/huurvoorstellen blijven **ongewijzigd**. Er is geen
+automatische bestandsschrijf-, netwerk- of accountactie en
+geen overdracht van de hypothetische scenario-uitkomst aan derden.
