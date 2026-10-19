@@ -6,6 +6,7 @@ import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteCompariso
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
+import { PrivateContractVersionComparison } from './private-contract-version-comparison';
 
 type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
 const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
@@ -20,6 +21,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-offer-desk-heading',title:'Huurvoorstellen',category:'woning'},
   {id:'private-offer-safety-heading',title:'Aanbodcheck',category:'woning'},
   {id:'private-contract-review-heading',title:'Huurcontract nalopen',category:'woning'},
+  {id:'private-contract-version-diff-heading',title:'Twee contractversies',category:'woning'},
   {id:'private-energy-quotes-heading',title:'Energietarieven vergelijken',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
   {id:'rental-scenarios-heading',title:'Huurscenario’s vergelijken',category:'woning'},
@@ -71,6 +73,7 @@ const homeNavAliases:Record<string,string[]>={
   'housing-shortlist-heading':['woning kiezen','selectie'],
   'private-woningmatch-heading':['zelf woning vergelijken','matchscore','huurcriterium','match studio'],
   'private-contract-review-heading':['contract controleren','huurovereenkomst','voorwaarden','borg terug','contract tekenen'],
+  'private-contract-version-diff-heading':['contractwijzigingen','conceptcontract','contractversie vergelijken','oude nieuwe overeenkomst'],
   'private-budget-title':['woonlasten','huur vergelijken'],
   'rental-scenarios-heading':['huurscenario','budget woning','borg reserveren','eerstejaarskosten','verhuizen kosten'],
   'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
@@ -3540,6 +3543,7 @@ export default function HomePage() {
         onClearRentalProposal={()=>setRentalDecisionProposal(null)}
         onClearRentalDecision={invalidateRentalDecision} />
       <PrivateContractReview acceptedRentalDecision={acceptedRentalDecision} />
+      <PrivateContractVersionComparison />
     </main>
   );
 }
