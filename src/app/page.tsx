@@ -10613,7 +10613,17 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
 
 
 // Self-contained, non-authorizing client-only comparison inside the approved app source.
-type WoonMatchListing = { id: number; name: string; monthlyRent: string; utilities: string; area: string; bedrooms: string; commute: string; note: string };
+type WoonMatchAllocation = 'unknown' | 'lottery' | 'queue';
+type WoonMatchPreference = 'any' | 'lottery' | 'queue';
+const WOON_MATCH_METHOD_LABELS: Record<WoonMatchAllocation,string> = {
+  unknown: 'Onbekend / nog controleren', lottery: 'Loting (eigen invoer)', queue: 'Inschrijfduur (eigen invoer)'
+};
+const WOON_MATCH_PREFERENCE_LABELS: Record<WoonMatchPreference,string> = {
+  any: 'Geen methodevoorkeur', lottery: 'Voorkeur voor loting', queue: 'Voorkeur voor inschrijfduur'
+};
+const woonMatchMethodRank = (method: WoonMatchAllocation, preference: WoonMatchPreference): number =>
+  preference === 'any' ? 0 : method === preference ? 2 : method === 'unknown' ? 1 : 0;
+type WoonMatchListing = { id: number; name: string; monthlyRent: string; utilities: string; area: string; bedrooms: string; commute: string; note: string; allocation: WoonMatchAllocation };
 type WoonMatchCriteria = { budget: string; area: string; bedrooms: string; commute: string };
 type WoonMatchWeights = Record<keyof WoonMatchCriteria, number>;
 const WOON_MATCH_DEFAULT_WEIGHTS: WoonMatchWeights = { budget: 4, area: 3, bedrooms: 2, commute: 2 };
@@ -10624,7 +10634,7 @@ const WOON_MATCH_PRIORITY_LABELS: Array<{ key: keyof WoonMatchCriteria; label: s
 type WoonMatchRule = { label: string; weight: number; observed: number | null; required: number | null; met: boolean | null; detail: string };
 type WoonMatchOutcome = { listing: WoonMatchListing; monthly: number | null; rules: WoonMatchRule[]; complete: boolean; pass: boolean; met: number; known: number; score: number | null };
 
-const WoonMatchBlank = (id: number): WoonMatchListing => ({ id, name: '', monthlyRent: '', utilities: '', area: '', bedrooms: '', commute: '', note: '' });
+const WoonMatchBlank = (id: number): WoonMatchListing => ({ id, name: '', monthlyRent: '', utilities: '', area: '', bedrooms: '', commute: '', note: '', allocation: 'unknown' });
 const WoonMatchInputStyle: React.CSSProperties = { width: '100%', minWidth: 0, padding: '9px', border: '1px solid #a8bdb8', borderRadius: 6, background: '#fff', color: '#173731', boxSizing: 'border-box' };
 const WoonMatchPanelStyle: React.CSSProperties = { border: '1px solid #cedfda', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 18 };
 const WoonMatchNumeric = (input: string, cap: number): number | null => {
@@ -10702,7 +10712,7 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
       !/^\d+$/.test(bedrooms) || !/^\d+$/.test(commute)) {
       return { rows: [], error: 'Rij ' + (index + 1) + ': ongeldige bedragen, m², gehele slaapkamers of gehele reistijd.' };
     }
-    rows.push({ name, monthlyRent, utilities, area, bedrooms, commute, note });
+    rows.push({ name, monthlyRent, utilities, area, bedrooms, commute, note, allocation: 'unknown' });
   }
   return { rows, error: '' };
 }
@@ -10776,6 +10786,7 @@ function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; 
 function PrivateListingMatchStudio() {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
   const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
+  const [preference, setPreference] = useState<WoonMatchPreference>('any');
   const [listings, setListings] = useState<WoonMatchListing[]>([WoonMatchBlank(1), WoonMatchBlank(2)]);
   const nextId = useRef(3);
   const backupRead = useRef(0);
@@ -10796,13 +10807,13 @@ function PrivateListingMatchStudio() {
     setUndoRestore(null);
     setCriteria(prev => ({ ...prev, [key]: value }));
   };
-  const changeListing = (id: number, key: keyof Omit<WoonMatchListing, 'id'>, value: string) => {
+  const changeListing = <K extends keyof Omit<WoonMatchListing, 'id'>>(id: number, key: K, value: Omit<WoonMatchListing, 'id'>[K]) => {
     setUndoRestore(null);
     setUndoCsv(null);
     setListings(prev => prev.map(row => row.id === id ? { ...row, [key]: value } : row));
   };
 
-  const currentSource = JSON.stringify({ schema: 1, criteria, weights, listings });
+  const currentSource = JSON.stringify({ schema: 2, criteria, weights, preference, listings });
   const portableBackup: WoonMatchPortable = {
     format: 'woonpoints.private-match.v1', criteria, weights,
     listings: listings.map(({ id, ...fields }) => fields)
@@ -10828,7 +10839,9 @@ function PrivateListingMatchStudio() {
   ].filter(Boolean)) as string[];
   const canCompare = criteriaErrors.length === 0 && fieldErrors.length === 0;
   const ordered = [...outcomes].sort((a, b) =>
-    Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) || a.listing.id - b.listing.id);
+    Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) ||
+    woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
+    a.listing.id - b.listing.id);
   const previewValid = showPreview?.source === currentSource && canCompare;
   const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
   const previewPastedCsv = () => {
@@ -10938,11 +10951,16 @@ function PrivateListingMatchStudio() {
       'Minimaal slaapkamers: ' + criteria.bedrooms + '; maximaal enkele-reisminuten: ' + criteria.commute,
       'Zelf gekozen relatieve wegingspunten (1=licht, 5=zwaar): ' +
         WOON_MATCH_PRIORITY_LABELS.map(entry => entry.label + ' ' + weights[entry.key]).join('; '),
+      'Persoonlijke toewijzingsmethodevoorkeur: ' + WOON_MATCH_PREFERENCE_LABELS[preference] +
+        ' (geen officiële aanbiedings- of toewijzingskans)',
       '', 'ZELF INGEVOERDE OPTIES (GEEN GECONTROLEERDE ADVERTENTIES)'
     ];
     ordered.forEach((item, index) => {
       lines.push('', String(index + 1) + '. ' + item.listing.name);
       lines.push('Indicatieve eigen totale maandkosten: ' + (item.monthly === null ? 'Onbekend' : WoonMatchMoney(item.monthly)));
+      lines.push('Zelf ingevulde toewijzingsmethode: ' + WOON_MATCH_METHOD_LABELS[item.listing.allocation] +
+        (preference === 'any' ? '' : ' · ' + (item.listing.allocation === 'unknown' ? 'methode niet geverifieerd' :
+          item.listing.allocation === preference ? 'past bij eigen methodevoorkeur' : 'andere methode dan eigen voorkeur')));
       lines.push('Eigen voorwaarden: ' + (item.pass ? 'Alle vier gehaald' : 'Een of meer niet gehaald') +
         ' · gewogen indicatie ' + (item.score === null ? 'onvolledig' : item.score + '%') + ' (geen toewijzingskans)');
       item.rules.forEach(rule => lines.push(' - ' + rule.label + ': ' + (rule.met === null ? 'onbekend' : rule.met ? 'voldoet' : 'voldoet niet') +
@@ -11004,6 +11022,18 @@ function PrivateListingMatchStudio() {
             Herstel startweging
           </button>
         </fieldset>
+        <label style={{ display: 'block', marginTop: 16, fontWeight: 700 }}>
+          Mijn persoonlijke voorkeur voor toewijzingsmethode
+          <select style={{ ...WoonMatchInputStyle, marginTop: 6 }} value={preference}
+            onChange={event => { setUndoRestore(null); setPreference(event.target.value as WoonMatchPreference); }}>
+            <option value="any">Geen methodevoorkeur</option>
+            <option value="lottery">Loting</option>
+            <option value="queue">Inschrijfduur</option>
+          </select>
+        </label>
+        <p style={{ fontSize: 14 }}>Alleen je eigen inschatting: Woonpoints haalt geen WoningNet-advertenties,
+          scores of officiële toewijzingskansen op. Methodevoorkeur is alleen een zichtbare sortering
+          bij een <strong>gelijke eigen criteriascore</strong> en kan geen onvoldoende harde grens verbergen.</p>
         <p style={{ marginBottom: 0, fontSize: 14 }}>De expliciete gewichten bepalen alleen de indicatieve
           percentages en de volgorde van woningen die niet aan alle voorwaarden voldoen.
           Niets hiervan is een voorspelling van woningtoewijzing.</p>
@@ -11024,6 +11054,14 @@ function PrivateListingMatchStudio() {
               <WoonMatchField label="Woonoppervlak (m²)" value={row.area} setValue={v => changeListing(row.id, 'area', v)} placeholder="62" />
               <WoonMatchField label="Slaapkamers" value={row.bedrooms} setValue={v => changeListing(row.id, 'bedrooms', v)} placeholder="2" />
               <WoonMatchField label="Reistijd enkele reis (min)" value={row.commute} setValue={v => changeListing(row.id, 'commute', v)} placeholder="32" />
+              <label style={{ fontSize: 14, fontWeight: 650 }}>Zelf genoteerde methode
+                <select style={{ ...WoonMatchInputStyle, marginTop: 6 }} value={row.allocation}
+                  onChange={event => changeListing(row.id, 'allocation', event.target.value as WoonMatchAllocation)}>
+                  <option value="unknown">Onbekend / nog controleren</option>
+                  <option value="lottery">Loting — eigen notitie</option>
+                  <option value="queue">Inschrijfduur — eigen notitie</option>
+                </select>
+              </label>
             </div>
             <div style={{ marginTop: 12 }}>
               <WoonMatchField label="Eigen notitie (maximaal 200 tekens; geen privé-adres)" value={row.note} setValue={v => changeListing(row.id, 'note', v)} maxLength={200} placeholder="Bijvoorbeeld: eerst bellen voor bezichtiging" />
@@ -11054,6 +11092,8 @@ function PrivateListingMatchStudio() {
         {pendingCsv && !pendingCsvValid && <p role="status">De preview is vervallen omdat de invoer of woninglijst veranderde.</p>}
         {pendingCsv && pendingCsvValid && <>
           <h3>Voorbeeld — vervangt je huidige {listings.length} opties uitsluitend na bevestiging</h3>
+          <p>Vanuit deze zeven-koloms tekst kan geen betrouwbare toewijzingsmethode worden afgeleid.
+            Voor alle geplakte woningen wordt die daarom op <strong>Onbekend</strong> gezet.</p>
           <ol>{pendingCsv.rows.map((row, index) => <li key={index}>
             {row.name} · kale huur € {row.monthlyRent}, overige maandlasten € {row.utilities},
             {' '}{row.area} m², {row.bedrooms} slaapkamers, {row.commute} minuten;
@@ -11080,13 +11120,19 @@ function PrivateListingMatchStudio() {
           </div>
         ) : (
           <div aria-live="polite">
-            <p>Gerangschikt op het behalen van <strong>alle vier</strong> eigen voorwaarden, daarna op gewogen criteria.
-              Ook een hoog percentage kan nog een belangrijke eigen grens missen.</p>
+            <p>Gerangschikt op het behalen van <strong>alle vier</strong> eigen voorwaarden, daarna op gewogen criteria
+              en pas bij gelijke score op je <strong>eigen methodevoorkeur</strong>.
+              Onbekende toewijzingsmethode blijft expliciet onbekend; dit is geen woningtoewijzingskans.</p>
             {ordered.map((outcome, index) => (
               <article key={outcome.listing.id} style={{ borderTop: '1px solid #ccdcd7', padding: '12px 0' }}>
                 <h3 style={{ marginBottom: 4 }}>{index + 1}. {outcome.listing.name}</h3>
                 <strong>{outcome.pass ? 'Alle 4 eigen grenzen gehaald' : outcome.met + ' van 4 grenzen gehaald'}</strong>
                 <p style={{ marginTop: 4 }}>Gewogen criteriascore: {outcome.score}% · Geschatte maandlasten: {outcome.monthly === null ? 'Onbekend' : WoonMatchMoney(outcome.monthly)}</p>
+                <p>Zelf ingevulde methode: <strong>{WOON_MATCH_METHOD_LABELS[outcome.listing.allocation]}</strong>.
+                  {preference === 'any' ? ' Geen specifieke methodevoorkeur.' :
+                    outcome.listing.allocation === 'unknown' ? ' Methode nog niet vastgesteld.' :
+                    outcome.listing.allocation === preference ? ' Past bij je methodevoorkeur.' : ' Wijkt af van je methodevoorkeur.'}
+                </p>
                 <ul>{outcome.rules.map(rule => <li key={rule.label}>
                   {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight})
                 </li>)}</ul>
