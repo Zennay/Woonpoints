@@ -11896,6 +11896,42 @@ function parseContractMoney(input: string): number | null {
 }
 const contractEuro = (cents: number): string =>
   new Intl.NumberFormat('nl-NL', {style:'currency',currency:'EUR'}).format(cents / 100);
+/** Portable, opt-in document: never includes offer credentials or third-party responses. */
+type PrivateContractBackup = {
+  format:'woonpoints-private-contract';version:1;
+  values:Record<string,ContractTopicChoice>;
+  notes:Record<string,string>;
+  rent:string;service:string;deposit:string;signingDate:string;followUpDate:string;
+};
+function validPrivateContractBackup(input:unknown): input is PrivateContractBackup {
+  if(!input||typeof input!=='object'||Array.isArray(input))return false;
+  const o=input as Record<string,unknown>;
+  const keys=['format','version','values','notes','rent','service','deposit','signingDate','followUpDate'];
+  if(Object.keys(o).sort().join('|')!==keys.sort().join('|')||
+     o.format!=='woonpoints-private-contract'||o.version!==1||
+     !o.values||typeof o.values!=='object'||Array.isArray(o.values)||
+     !o.notes||typeof o.notes!=='object'||Array.isArray(o.notes))return false;
+  const status=o.values as Record<string,unknown>, notes=o.notes as Record<string,unknown>;
+  const ids=PRIVATE_CONTRACT_TOPICS.map(([id])=>id);
+  if(Object.keys(status).sort().join('|')!==[...ids].sort().join('|')||
+     Object.keys(notes).sort().join('|')!==[...ids].sort().join('|'))return false;
+  if(ids.some(id=>!['open','gevonden','vraag'].includes(status[id] as string)||
+     typeof notes[id]!=='string'||(notes[id] as string).length>180||
+     /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(notes[id] as string)))return false;
+  for(const name of ['rent','service','deposit'] as const){
+    if(typeof o[name]!=='string'||o[name].length>10||
+      (o[name].trim()!==''&&parseContractMoney(o[name])===null))return false;
+  }
+  for(const name of ['signingDate','followUpDate'] as const){
+    const value=o[name];
+    if(typeof value!=='string')return false;
+    if(value==='')continue;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    if(y<2000||y>2100||new Date(Date.UTC(y,m-1,d)).toISOString().slice(0,10)!==value)return false;
+  }
+  return true;
+}
 function PrivateContractReview({acceptedRentalDecision}: {
   acceptedRentalDecision?: {caseId:number;offer:PrivateRentalDecisionSnapshot}|null
 } = {}) {
@@ -11909,6 +11945,11 @@ function PrivateContractReview({acceptedRentalDecision}: {
   const [followUpDate, setFollowUpDate] = useState('');
   const [calendarPreview, setCalendarPreview] = useState<{source:string;content:string}|null>(null);
   const [calendarAccepted, setCalendarAccepted] = useState(false);
+  const [backupPreview, setBackupPreview] = useState<{source:string;json:string}|null>(null);
+  const [backupAccepted, setBackupAccepted] = useState(false);
+  const [importCandidate, setImportCandidate] = useState<{data:PrivateContractBackup;json:string}|null>(null);
+  const [importAccepted, setImportAccepted] = useState(false);
+  const [importUndo, setImportUndo] = useState<{before:PrivateContractBackup;after:string}|null>(null);
   const [preview, setPreview] = useState<{source: string;text: string}|null>(null);
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -11920,12 +11961,21 @@ function PrivateContractReview({acceptedRentalDecision}: {
   const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate,acceptedRentalDecision});
   const acceptedOffer = acceptedRentalDecision?.offer ?? null;
   const showOfferComparison = acceptedOffer!==null && comparedSource===source;
+  const backupData:PrivateContractBackup={
+    format:'woonpoints-private-contract',version:1,
+    values:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,values[id]||'open'])),
+    notes:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,notes[id]||''])),
+    rent,service,deposit,signingDate,followUpDate
+  };
+  const backupFingerprint=JSON.stringify(backupData);
   const totalMonthly = amounts[0]!==null&&amounts[1]!==null ? amounts[0]+amounts[1] : null;
   const initialCash = totalMonthly!==null&&amounts[2]!==null ? totalMonthly+amounts[2] : null;
   const firstYearRent = totalMonthly!==null ? totalMonthly*12 : null;
   const change = () => {
     setPreview(null);setApproved(false);setCalendarPreview(null);
-    setCalendarAccepted(false);setComparedSource(null);setFeedback('');
+    setCalendarAccepted(false);setBackupPreview(null);setBackupAccepted(false);
+    setImportCandidate(null);setImportAccepted(false);setImportUndo(null);
+    setComparedSource(null);setFeedback('');
   };
   const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
   const formGrid = {display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14} as const;
@@ -11975,6 +12025,79 @@ function PrivateContractReview({acceptedRentalDecision}: {
     setPreview({source,text:lines.join('\n')+'\n'});
     setApproved(false);
     setFeedback('Rapport voorbereid. Lees de volledige tekst hieronder en bevestig zelf de download.');
+  }
+  function loadContractBackup(data:PrivateContractBackup) {
+    setValues({...data.values});setNotes({...data.notes});
+    setRent(data.rent);setService(data.service);setDeposit(data.deposit);
+    setSigningDate(data.signingDate);setFollowUpDate(data.followUpDate);
+    setPreview(null);setApproved(false);setCalendarPreview(null);
+    setCalendarAccepted(false);setBackupPreview(null);setBackupAccepted(false);
+    setImportCandidate(null);setImportAccepted(false);
+  }
+  function prepareContractBackup() {
+    if(!validPrivateContractBackup(backupData)){setFeedback('De huidige invoer kan niet veilig worden opgeslagen. Controleer bedragen, datums en notities.');return;}
+    const json=JSON.stringify(backupData,null,2)+'\n';
+    if(new TextEncoder().encode(json).length>10000){setFeedback('De eigen back-up is te groot. Kort notities in.');return;}
+    setBackupPreview({source:backupFingerprint,json});
+    setBackupAccepted(false);
+    setFeedback('Bekijk eerst alle persoonlijke tekst in deze back-up. Er is niets opgeslagen of geüpload.');
+  }
+  function downloadContractBackup() {
+    if(!backupPreview||backupPreview.source!==backupFingerprint||!backupAccepted){
+      setBackupPreview(null);setBackupAccepted(false);
+      setFeedback('De back-up is gewijzigd of niet bevestigd. Bekijk eerst een nieuwe preview.');return;
+    }
+    const url=URL.createObjectURL(new Blob([backupPreview.json],{type:'application/json;charset=utf-8'}));
+    try{
+      const link=document.createElement('a');link.href=url;
+      link.download='mijn-huurcontractcontrole-backup.json';
+      document.body.appendChild(link);link.click();link.remove();
+      setBackupAccepted(false);
+      setFeedback('Eigen back-up aangeboden aan je browser. Controleer waar je het bestand bewaart.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
+  async function readContractBackup(file:File|undefined) {
+    setImportCandidate(null);setImportAccepted(false);setFeedback('');
+    if(!file||file.size<1||file.size>10000){
+      setFeedback('Kies een niet-leeg JSON-bestand van maximaal 10 KB.');return;
+    }
+    try{
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+      if(new TextEncoder().encode(raw).length!==bytes.length)throw Error('encoding');
+      const parsed:unknown=JSON.parse(raw);
+      if(!validPrivateContractBackup(parsed))throw Error('schema');
+      setImportCandidate({data:parsed,json:JSON.stringify(parsed,null,2)+'\n'});
+      setFeedback('Back-up gelezen zonder wijziging. Controleer de volledige inhoud vóór vervangen.');
+    }catch{
+      setImportCandidate(null);
+      setFeedback('Dit bestand is geen geldige volledige Woonpoints-contractback-up. Er is niets vervangen.');
+    }
+  }
+  function confirmContractImport(){
+    if(!importAccepted||!importCandidate)return;
+    const previous=backupData;
+    const candidate=importCandidate.data;
+    if(!validPrivateContractBackup(candidate))return;
+    const normalizedAfter:PrivateContractBackup={
+      format:'woonpoints-private-contract',version:1,
+      values:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.values[id]])),
+      notes:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.notes[id]])),
+      rent:candidate.rent,service:candidate.service,deposit:candidate.deposit,
+      signingDate:candidate.signingDate,followUpDate:candidate.followUpDate
+    };
+    loadContractBackup(candidate);
+    setImportUndo({before:previous,after:JSON.stringify(normalizedAfter)});
+    setFeedback('Eigen gegevens na bevestiging vervangen. Eenmalig terugzetten blijft mogelijk tot de volgende wijziging.');
+  }
+  function undoContractImport(){
+    if(!importUndo)return;
+    if(importUndo.after!==backupFingerprint){
+      setImportUndo(null);setFeedback('De huidige invoer is veranderd; terugzetten is vervallen.');return;
+    }
+    if(!window.confirm('De eigen contractgegevens van vóór de laatste import terugzetten?'))return;
+    loadContractBackup(importUndo.before);setImportUndo(null);
+    setFeedback('De eerdere tabbladgegevens zijn teruggezet. Maak exports opnieuw.');
   }
   function prepareCalendar() {
     const [y,m,d] = followUpDate.split('-').map(Number);
@@ -12153,6 +12276,46 @@ function PrivateContractReview({acceptedRentalDecision}: {
       </div>}
     </div>
     {feedback&&<p role="status" aria-live="polite">{feedback}</p>}
+    <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+      <h3>Mijn controle later verderzetten: privé-back-up</h3>
+      <p>Bewaar alleen op eigen verzoek een JSON-bestand met je tien antwoorden, eigen notities,
+        bedragen en datums. Er is geen automatisch opslaan. Het bestand kan persoonlijke informatie
+        bevatten; import en export blijven volledig onder jouw controle.</p>
+      <button type="button" onClick={prepareContractBackup}>Bekijk alle gegevens voor back-up</button>
+      {backupPreview&&backupPreview.source===backupFingerprint&&<div style={{marginTop:12}}>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:280,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{backupPreview.json}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={backupAccepted} onChange={e=>setBackupAccepted(e.target.checked)}/>
+          <span>Ik heb alle gegevens bekeken en kies zelf waar ik het privébestand bewaar.</span>
+        </label>
+        <button type="button" disabled={!backupAccepted} onClick={downloadContractBackup}>Download mijn bevestigde JSON</button>
+      </div>}
+      <label style={{display:'grid',gap:6,marginTop:18,maxWidth:500}}>
+        <strong>Mijn eerdere JSON-back-up openen (maximaal 10 KB)</strong>
+        <input type="file" accept=".json,application/json"
+          onChange={async e=>{
+            const chosen=e.target.files?.[0];e.target.value='';
+            await readContractBackup(chosen);
+          }}/>
+      </label>
+      {importCandidate&&<div style={{marginTop:12}}>
+        <p><strong>Vervangingspreview:</strong> de volledige nieuwe invoer staat hieronder.
+          Je huidige gegevens blijven staan totdat je afzonderlijk bevestigt.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:280,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{importCandidate.json}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={importAccepted} onChange={e=>setImportAccepted(e.target.checked)}/>
+          <span>Ik heb de complete vervangende invoer bekeken en wil mijn huidige contractcontrole vervangen.</span>
+        </label>
+        <button type="button" disabled={!importAccepted} onClick={confirmContractImport}>Vervang mijn tijdelijke gegevens</button>
+        <button type="button" onClick={()=>{setImportCandidate(null);setImportAccepted(false);}}>Annuleer import</button>
+      </div>}
+      {importUndo&&<button type="button" style={{marginTop:12}}
+        disabled={importUndo.after!==backupFingerprint} onClick={undoContractImport}>
+        Vorige tabbladgegevens eenmalig herstellen
+      </button>}
+    </div>
     <p><small>Er is geen opslag in dit tabblad, geen API-verzoek, e-mail of automatische toestemming.
       Sluit je het tabblad, dan verdwijnen de ingevulde waarden; een zelf gedownload bestand blijft onder jouw beheer.
       Controleer persoonlijke informatie vóór je een rapport met anderen deelt.</small></p>
