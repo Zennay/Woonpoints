@@ -49,6 +49,36 @@ velden of plaktekst vervalt de preview. Na de import is **éénmalig ongedaan ma
 tot de gebruiker een nieuwe woningoptie toevoegt, verwijdert of bewerkt. Criteria blijven gelijk;
 de bestaande TXT-preview moet opnieuw worden opgebouwd.
 
+## Nieuw: twee matches naar de bestaande kostenvergelijker
+
+Dezelfde persoonlijke woningmatch kan nu ook worden verbonden met de **bestaande
+twee-scenario kostenvergelijker**, zodat gebruikers niet opnieuw dezelfde kale
+huurprijzen hoeven overtypen. Kies in de ranking expliciet een woning als **A**
+en een andere als **B**. Als beide woninglabels passen in de financiële module
+(1–64 tekens, zonder onzichtbare stuurcodes/leidende spaties) en hun kale
+huren exacte gehele bedragen zijn tussen €100 en €10.000, toont een
+**volledige brongebonden preview** de twee gekozen woninglabels, kale
+huurbedragen, eigen criteriauitslag en private scores.
+
+De scores en voorwaarden worden nooit als huur- of officiële toewijzingsdata
+doorgegeven. Pas na een apart aangevinkt akkoord stuurt de match één
+**tijdelijke in-memory aanbieding met precies twee `{label,rent}`-paren**
+naar de reeds bestaande kostenvergelijker. Geen React state, database, API
+of externe bron wordt vanzelf opgeslagen. In de kostenvergelijker staat
+**opnieuw een preview met een tweede toestemmingskeuze**; pas na bevestigen
+vervangt die de twee tijdelijke scenario's. Andere maandlasten, borg,
+energie, reis- en startkosten worden op blanco standaardramingen gezet,
+niet uit de matchtekst of een algoritme gehaald. De gebruiker vult zelf
+werkelijke bedragen aan en start apart de bestaande kostenberekening.
+Het begin van de match blijft ongewijzigd.
+
+Iedere bronbewerking maakt de eerste preview ongeldig. De tweede
+bestemmingsbevestiging is aan de **exacte inhoud van de twee ontvangen
+paren** gebonden; eerder aangevinkte toestemming voor een ander
+voorstel autoriseert geen nieuwe import. Een mislukte bestemmevaluatie
+laat de oude kosteninvoer staan. Dit is een eigen conceptvergelijking,
+geen aanbod, actie op WoningNet of financiële geschiktheidsverklaring.
+
 ## Nieuw: woningmatch naar eigen huurvoorstel — dubbele toestemming
 
 De al bestaande **Mijn woningmatch** en **Huurvoorstellen** zijn nu echt gekoppeld.
