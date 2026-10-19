@@ -1,5 +1,20 @@
 # Woonpoints
 
+## Nieuw: woningaanbodcheck vóór betalen of gegevens delen
+
+Open **[Woningaanbodcheck](/woningaanbod-check)** vanuit de vaste navigatie
+(of rechtstreeks via `/woningaanbod-check`). In drie korte stappen beoordeel je
+zelf negen signalen rond afzender, betaalverzoeken, identiteitsdocumenten en
+huurvoorwaarden. De uitslag maakt onzekere/onbeantwoorde vragen zichtbaar,
+geeft concrete vervolgstappen en biedt alleen na preview een eigen TXT-download.
+Dit is **geen** automatische controle van identiteit, fraude, contract of recht.
+Je keuzes blijven uitsluitend in dit tabblad; Woonpoints ontvangt of bewaart
+geen aanbod, rekeningnummer, document, wachtwoord of persoonlijk dossier.
+
+[Handleiding en veiligheidsgrenzen](docs/PRIVATE_HOUSING_OFFER_SAFETY.md).
+
+---
+
 ## Nieuw: eigen energietarieven vergelijken (zonder leverancierkoppeling)
 
 Voer zelf het geschatte jaarverbruik en tot vier eigen stroom-, gas- en vaste tarieven in.
