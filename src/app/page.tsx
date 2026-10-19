@@ -8643,6 +8643,9 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   const [pendingBackup, setPendingBackup] = useState<OfferSafetyCase[] | null>(null);
   const [backupMessage, setBackupMessage] = useState('');
   const [undoBackup, setUndoBackup] = useState<{ cases: OfferSafetyCase[]; selected: number } | null>(null);
+  // Invalidate incomplete File.text() promises when the user changes this workmap
+  // or chooses another import. Never replace newer user edits with stale previews.
+  const backupReadGeneration = useRef(0);
 
   const currentCase = caseItems.find(item => item.id === currentCaseId) ?? caseItems[0];
   const answers = currentCase.answers;
@@ -8654,6 +8657,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   ).join('\n\n' + '='.repeat(46) + '\n\n');
 
   function updateCurrentCase(change: (current: OfferSafetyCase) => OfferSafetyCase) {
+    backupReadGeneration.current++;
     setCaseItems(current => current.map(item => item.id === currentCaseId ? change(item) : item));
     setUndoBackup(null);
     setPendingBackup(null);
@@ -8668,6 +8672,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   }
   function addCase() {
     if (caseItems.length >= MAX_OFFER_SAFETY_CASES) return;
+    backupReadGeneration.current++;
     // Imported workbooks may contain large safe IDs; reserve a fresh small ID
     // rather than overflowing the versioned backup's integer admission bound.
     let id = 1;
@@ -8679,6 +8684,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   }
   function deleteCase() {
     if (caseItems.length <= 1) return;
+    backupReadGeneration.current++;
     onClearRentalDecision?.();
     setFinancialPreview(false);
     const next = caseItems.filter(item => item.id !== currentCaseId);
@@ -8704,6 +8710,25 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
   const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
   const portableBackup = offerSafetyBackup(caseItems);
+  // A merge never edits an existing workblad, only appends complete imported
+  // cases. Conflicting numeric IDs get the first available positive ID.
+  const mergePreview = useMemo(() => {
+    if (!pendingBackup || caseItems.length + pendingBackup.length > MAX_OFFER_SAFETY_CASES)
+      return null;
+    const used = new Set(caseItems.map(item => item.id));
+    const incoming = pendingBackup.map(item => {
+      let targetId = item.id;
+      if (used.has(targetId)) {
+        targetId = 1;
+        while (used.has(targetId)) targetId++;
+      }
+      used.add(targetId);
+      return { sourceId: item.id, targetId, item: {
+        id: targetId, answers: { ...item.answers }, reviewed: { ...item.reviewed }
+      } as OfferSafetyCase };
+    });
+    return incoming;
+  }, [caseItems, pendingBackup]);
   const acceptedForCase=acceptedRentalDecision?.caseId===currentCase.id
     ? acceptedRentalDecision.offer:null;
   const euros=(cents:number)=>new Intl.NumberFormat('nl-NL',{
@@ -8750,6 +8775,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
   }
 
   async function readOwnBackup(file?: File) {
+    const generation = ++backupReadGeneration.current;
     setPendingBackup(null);
     setBackupMessage('');
     setBackupPreview(false);
@@ -8761,6 +8787,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
     }
     try {
       const raw = await file.text();
+      if (generation !== backupReadGeneration.current) return;
       const restored = decodeOfferSafetyBackup(raw);
       if (!restored) {
         setBackupMessage('Bestand geweigerd: schema, versie, vragen of afvinkingen zijn ongeldig.');
@@ -8769,12 +8796,14 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
       setPendingBackup(restored);
       setBackupMessage('Eigen bestand gecontroleerd. Niets vervangen totdat je apart bevestigt.');
     } catch {
-      setBackupMessage('Bestand kon niet veilig worden gelezen; huidige werkmap ongewijzigd.');
+      if (generation === backupReadGeneration.current)
+        setBackupMessage('Bestand kon niet veilig worden gelezen; huidige werkmap ongewijzigd.');
     }
   }
 
   function applyOwnBackup() {
     if (!pendingBackup) return;
+    backupReadGeneration.current++;
     onClearRentalDecision?.();
     setFinancialPreview(false);
     setUndoBackup({ cases: caseItems, selected: currentCaseId });
@@ -8786,8 +8815,22 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
     setBackupMessage('Eigen werkmap hersteld. Eenmalig terugdraaien mogelijk zolang je niets wijzigt.');
   }
 
+  function mergeOwnBackup() {
+    if (!mergePreview || !pendingBackup) return;
+    backupReadGeneration.current++;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
+    setUndoBackup({cases:caseItems, selected:currentCaseId});
+    setCaseItems([...caseItems, ...mergePreview.map(entry => entry.item)]);
+    setPendingBackup(null);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+    setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Werkbladen toegevoegd zonder je bestaande invoer te wijzigen. Eenmalig terugdraaien mogelijk zolang je niets wijzigt.');
+  }
+
   function undoOwnBackup() {
     if (!undoBackup) return;
+    backupReadGeneration.current++;
     onClearRentalDecision?.();
     setFinancialPreview(false);
     setCaseItems(undoBackup.cases);
@@ -9099,21 +9142,36 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
           }} />
         {backupMessage && <p role="status" aria-live="polite">{backupMessage}</p>}
         {pendingBackup && <div style={{ background: '#f1f6f1', borderRadius: 10, padding: 14 }}>
-          <p><strong>Voorbeeld herstel:</strong> {pendingBackup.length} werkbladen; de huidige {caseItems.length}
-            {' '}worden pas na aparte bevestiging volledig vervangen.</p>
+          <p><strong>Gecontroleerd bestand:</strong> {pendingBackup.length} werkbladen;
+            {' '}je huidige {caseItems.length} blijven onveranderd tot je kiest om
+            <strong> alles te vervangen</strong> of <strong> zonder overschrijven toe te voegen</strong>.</p>
           <ul>{pendingBackup.map(item => <li key={item.id}>
             {caseLabel(item.id)}: {Object.keys(item.answers).length} vragen ingevuld,
             {' '}{Object.values(item.reviewed).filter(Boolean).length} acties zelf nagelopen.
           </li>)}</ul>
-          <button type="button" onClick={applyOwnBackup} style={{ minHeight: 44, padding: '9px 14px' }}>
-            Vervang mijn complete huidige werkmap
+          {mergePreview ? <div>
+            <h3>Voorbeeld toevoegen zonder overschrijven</h3>
+            <p>Na toevoegen bevat dit tabblad {caseItems.length + mergePreview.length}
+              {' '}afzonderlijke werkbladen. Bij gelijke nummers wordt een nieuwe, vrije
+              nummercode gebruikt; geen enkel bestaand antwoord wordt aangepast.</p>
+            <ul>{mergePreview.map(entry => <li key={entry.sourceId}>
+              {caseLabel(entry.sourceId)} uit bestand → {caseLabel(entry.targetId)}
+              {entry.sourceId !== entry.targetId ? ' (nieuw nummer)' : ''}
+            </li>)}</ul>
+            <button type="button" onClick={mergeOwnBackup} style={{ minHeight: 44, padding: '9px 14px' }}>
+              Voeg deze werkbladen toe — behoud bestaande
+            </button>
+          </div> : <p role="status">Toevoegen kan niet: maximaal vijf werkbladen totaal.
+            Kies eventueel bewust volledig vervangen of annuleer de import.</p>}
+          <button type="button" onClick={applyOwnBackup} style={{ minHeight: 44, padding: '9px 14px', marginTop: 12 }}>
+            Vervang in plaats daarvan alle huidige werkbladen
           </button>
-          <button type="button" onClick={() => { setPendingBackup(null); setBackupMessage('Herstel geannuleerd.'); }}
+          <button type="button" onClick={() => { backupReadGeneration.current++; setPendingBackup(null); setBackupMessage('Herstel geannuleerd.'); }}
             style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
         </div>}
         {undoBackup && <button type="button" onClick={undoOwnBackup}
           style={{ minHeight: 44, padding: '9px 14px', marginTop: 12 }}>
-          Draai laatste herstel eenmalig terug
+          Draai laatste import (vervangen of toevoegen) eenmalig terug
         </button>}
         <p style={{ fontSize: 14 }}>Alleen precies de bekende vraag-ID's en antwoorden
           worden geaccepteerd. Onbekende velden, extra werkbladen, corrupte bestandsinhoud,
