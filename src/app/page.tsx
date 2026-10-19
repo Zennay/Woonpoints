@@ -10665,15 +10665,58 @@ function WoonMatchField({ label, value, setValue, placeholder, maxLength = 20 }:
   </label>;
 }
 
+
+const WOON_MATCH_CSV_HEADER = 'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie';
+
+/** Only locally pasted, seven-column Dutch semicolon records; no spreadsheet parser or network. */
+function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'id'>[]; error: string } {
+  if (!source || source.length > 4096 || /[^\S\n\r\t ]/.test(source)) {
+    return { rows: [], error: 'Plak maximaal 4.096 tekens zonder verborgen besturingstekens.' };
+  }
+  const normalized = source.replace(/\r\n/g, '\n');
+  if (normalized.includes('\r')) return { rows: [], error: 'Gebruik gewone LF of CRLF-regels.' };
+  const lines = normalized.trimEnd().split('\n');
+  if (lines[0] !== WOON_MATCH_CSV_HEADER) return { rows: [], error: 'De zeven kolomnamen moeten exact overeenkomen met het getoonde sjabloon.' };
+  if (lines.length < 3 || lines.length > 6) return { rows: [], error: 'Voer precies twee tot vijf woningregels in.' };
+  const rows: Omit<WoonMatchListing, 'id'>[] = [];
+  const names = new Set<string>();
+  for (let index = 1; index < lines.length; index++) {
+    const cols = lines[index].split(';');
+    if (cols.length !== 7) return { rows: [], error: 'Rij ' + (index + 1) + ': verwacht precies 7 met puntkomma gescheiden velden; geen quotes of puntkomma in notities.' };
+    const [name, monthlyRent, utilities, area, bedrooms, commute, note] = cols.map(value => value.trim());
+    if (!name || name.length > 80 || note.length > 200 || /[\u0000-\u001f\u007f]/.test(name + note)) {
+      return { rows: [], error: 'Rij ' + (index + 1) + ': naam of notitie ontbreekt, is te lang of bevat besturingstekens.' };
+    }
+    const nameKey = name.toLocaleLowerCase('nl-NL');
+    if (names.has(nameKey)) return { rows: [], error: 'Rij ' + (index + 1) + ': gebruik voor iedere optie een uniek eigen label.' };
+    names.add(nameKey);
+    const amounts = [monthlyRent, utilities, area, bedrooms, commute];
+    const caps = [100000, 100000, 100000, 100, 10000];
+    if (amounts.some((value, k) => WoonMatchNumeric(value, caps[k]) === null) ||
+      !/^\d+$/.test(bedrooms) || !/^\d+$/.test(commute)) {
+      return { rows: [], error: 'Rij ' + (index + 1) + ': ongeldige bedragen, m², gehele slaapkamers of gehele reistijd.' };
+    }
+    rows.push({ name, monthlyRent, utilities, area, bedrooms, commute, note });
+  }
+  return { rows, error: '' };
+}
+
 function PrivateListingMatchStudio() {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
   const [listings, setListings] = useState<WoonMatchListing[]>([WoonMatchBlank(1), WoonMatchBlank(2)]);
   const nextId = useRef(3);
+  const [csvText, setCsvText] = useState('');
+  const [csvError, setCsvError] = useState('');
+  const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
+  const [confirmCsv, setConfirmCsv] = useState(false);
+  const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
   const [showPreview, setShowPreview] = useState<{ source: string; text: string } | null>(null);
   const [allowDownload, setAllowDownload] = useState(false);
   const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => setCriteria(prev => ({ ...prev, [key]: value }));
-  const changeListing = (id: number, key: keyof Omit<WoonMatchListing, 'id'>, value: string) =>
+  const changeListing = (id: number, key: keyof Omit<WoonMatchListing, 'id'>, value: string) => {
+    setUndoCsv(null);
     setListings(prev => prev.map(row => row.id === id ? { ...row, [key]: value } : row));
+  };
 
   const currentSource = JSON.stringify({ schema: 1, criteria, listings });
   const outcomes = useMemo(() => listings.map(item => WoonMatchCalculate(item, criteria)), [listings, criteria]);
@@ -10695,6 +10738,35 @@ function PrivateListingMatchStudio() {
   const ordered = [...outcomes].sort((a, b) =>
     Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) || a.listing.id - b.listing.id);
   const previewValid = showPreview?.source === currentSource && canCompare;
+  const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
+  const previewPastedCsv = () => {
+    setConfirmCsv(false);
+    const result = parsePrivateMatchCsv(csvText);
+    setPendingCsv(result.error ? null : { rows: result.rows, source: currentSource, paste: csvText });
+    setCsvError(result.error);
+  };
+  const acceptPastedCsv = () => {
+    if (!pendingCsvValid || !confirmCsv || !pendingCsv) return;
+    const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
+    setUndoCsv(listings.map(item => ({ ...item })));
+    setListings(imported);
+    setCsvText('');
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setCsvError('Eigen woningopties vervangen. Vorige opties kun je één keer herstellen.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
+  const undoPastedCsv = () => {
+    if (!undoCsv) return;
+    setListings(undoCsv);
+    setUndoCsv(null);
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setCsvError('Vorige woningopties in dit tabblad teruggezet.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
 
   const makeReport = (): string => {
     const lines = [
@@ -10753,7 +10825,7 @@ function PrivateListingMatchStudio() {
           <article key={row.id} style={WoonMatchPanelStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'start' }}>
               <h3 style={{ marginTop: 0 }}>Optie {index + 1}</h3>
-              <button type="button" disabled={listings.length <= 2} onClick={() => setListings(prev => prev.filter(item => item.id !== row.id))}>Verwijder</button>
+              <button type="button" disabled={listings.length <= 2} onClick={() => { setUndoCsv(null); setListings(prev => prev.filter(item => item.id !== row.id)); }}>Verwijder</button>
             </div>
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
               <WoonMatchField label="Naam of eigen label (zonder adres)" value={row.name} setValue={v => changeListing(row.id, 'name', v)} maxLength={80} placeholder="Woning A" />
@@ -10768,10 +10840,44 @@ function PrivateListingMatchStudio() {
             </div>
           </article>
         ))}
-        <button type="button" disabled={listings.length >= 5} onClick={() => setListings(prev => [...prev, WoonMatchBlank(nextId.current++)])}
+        <button type="button" disabled={listings.length >= 5} onClick={() => { setUndoCsv(null); setListings(prev => [...prev, WoonMatchBlank(nextId.current++)]); }}
           style={{ padding: '10px 16px', border: '1px solid #075e57', borderRadius: 7, background: '#f2faf7' }}>
           + Woningoptie toevoegen ({listings.length}/5)
         </button>
+      </section>
+
+      <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="csv-intake-heading">
+        <h2 id="csv-intake-heading">Optioneel: eigen woninglijst plakken</h2>
+        <p>Gebruik een zelf gemaakt, puntkomma-gescheiden tekstlijstje. Maximaal 4 KiB en twee tot vijf woningen;
+          kolommen en volgorde liggen vast. Dit is geen advertentie-import, linkbezoek, CSV-export of accountkoppeling.
+          <strong> Kies liever eigen labels dan adressen.</strong></p>
+        <p><code style={{ overflowWrap: 'anywhere' }}>{WOON_MATCH_CSV_HEADER}</code></p>
+        <label style={{ display: 'block', fontWeight: 650 }} htmlFor="woonmatch-paste">Eigen tekst (één woning per regel)</label>
+        <textarea id="woonmatch-paste" rows={5} maxLength={4096} value={csvText}
+          onChange={event => { setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setCsvError(''); }}
+          placeholder={'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie\nWoning A;800;190;60;1;30;zelf bekijken\nWoning B;880;210;75;2;45;'}
+          style={{ ...WoonMatchInputStyle, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} />
+        <div style={{ marginTop: 10 }}>
+          <button type="button" onClick={previewPastedCsv}>Bekijk alle geplakte woningopties vóór vervangen</button>
+        </div>
+        {csvError && <p role="status">{csvError}</p>}
+        {pendingCsv && !pendingCsvValid && <p role="status">De preview is vervallen omdat de invoer of woninglijst veranderde.</p>}
+        {pendingCsv && pendingCsvValid && <>
+          <h3>Voorbeeld — vervangt je huidige {listings.length} opties uitsluitend na bevestiging</h3>
+          <ol>{pendingCsv.rows.map((row, index) => <li key={index}>
+            {row.name} · kale huur € {row.monthlyRent}, overige maandlasten € {row.utilities},
+            {' '}{row.area} m², {row.bedrooms} slaapkamers, {row.commute} minuten;
+            {' '}{row.note || 'geen notitie'}
+          </li>)}</ol>
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            <input type="checkbox" checked={confirmCsv} onChange={event => setConfirmCsv(event.target.checked)} />
+            {' '}Ik heb alle regels bekeken; vervang alleen mijn huidige tijdelijke opties in dit tabblad.
+          </label>
+          <button type="button" disabled={!confirmCsv} onClick={acceptPastedCsv}>Vervang met deze bekeken opties</button>
+        </>}
+        {undoCsv && <p><button type="button" onClick={undoPastedCsv}>
+          Draai mijn laatste lijstvervanging één keer terug
+        </button></p>}
       </section>
 
       <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="result-heading">

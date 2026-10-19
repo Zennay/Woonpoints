@@ -11,6 +11,28 @@ Open **Mijn woningmatch** via de navigatie of rechtstreeks via `/#private-woning
 - Alle velden zijn vereist voor een vergelijking. Lege en ongeldige waarden worden dus niet als `0`, als bekende advertentiegegevens of als een geslaagde match voorgesteld.
 - Open een **volledige TXT-preview** met exacte eigen criteria, per-woning uitleg en optionele notities, vink afzonderlijk aan dat je de inhoud wilt downloaden. Iedere bewerking maakt de preview ongeldig.
 
+## Nieuw: eigen woningopties in één keer plakken
+
+In het onderdeel **Eigen woninglijst plakken** kan de gebruiker nu optioneel twee tot vijf eigen records
+met precies deze zeven puntkomma-gescheiden kolommen vooraf bekijken:
+
+```text
+label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie
+Woning A;800;190;60;1;30;zelf bekijken
+Woning B;880;210;75;2;45;
+```
+
+De tekst blijft maximaal 4.096 tekens in het tabblad. Geen bestand, server, scraper, website of WoningNet wordt aangeroepen.
+Alle kolommen zijn exact en in vaste volgorde vereist; maximaal vijf records, unieke labels, bekende begrensde
+getallen, gehele slaapkamers/reistijd en korte vrije labels/notities zonder verborgen besturingstekens.
+Geciteerde CSV, puntkomma's binnen notities en onverwachte velden worden bewust niet stilzwijgend gerepareerd.
+
+De gebruiker ziet eerst **alle** nieuw herkende opties met de ingevulde waarden. Alleen na een
+afzonderlijk aangevinkte bevestiging worden de huidige tijdelijke opties vervangen. Bij gewijzigde bron,
+velden of plaktekst vervalt de preview. Na de import is **éénmalig ongedaan maken** beschikbaar,
+tot de gebruiker een nieuwe woningoptie toevoegt, verwijdert of bewerkt. Criteria blijven gelijk;
+de bestaande TXT-preview moet opnieuw worden opgebouwd.
+
 ## Veiligheids- en privacygrenzen
 
 De invoer, berekeningen en preview blijven uitsluitend in het actieve tabblad. Er zijn geen nieuwe netwerkverzoeken, database-, cookie-, localStorage- of serverwrites; een bewust gedownloade TXT is vervolgens jouw eigen verantwoordelijkheid. Sluiten/herladen van het tabblad verwijdert je tijdelijke invoer. Voer bij voorkeur geen identificeerbaar woningadres of persoonlijke gegevens in het vrije notitieveld in.
