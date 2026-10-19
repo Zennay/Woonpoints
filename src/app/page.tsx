@@ -3539,7 +3539,7 @@ export default function HomePage() {
         onAcceptRentalDecision={setAcceptedRentalDecision}
         onClearRentalProposal={()=>setRentalDecisionProposal(null)}
         onClearRentalDecision={invalidateRentalDecision} />
-      <PrivateContractReview />
+      <PrivateContractReview acceptedRentalDecision={acceptedRentalDecision} />
     </main>
   );
 }
@@ -11896,7 +11896,10 @@ function parseContractMoney(input: string): number | null {
 }
 const contractEuro = (cents: number): string =>
   new Intl.NumberFormat('nl-NL', {style:'currency',currency:'EUR'}).format(cents / 100);
-function PrivateContractReview() {
+function PrivateContractReview({acceptedRentalDecision}: {
+  acceptedRentalDecision?: {caseId:number;offer:PrivateRentalDecisionSnapshot}|null
+} = {}) {
+  const [comparedSource, setComparedSource] = useState<string|null>(null);
   const [values, setValues] = useState<Record<string, ContractTopicChoice>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [rent, setRent] = useState('');
@@ -11914,13 +11917,15 @@ function PrivateContractReview() {
   const checked = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='gevonden').length;
   const questions = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='vraag');
   const open = PRIVATE_CONTRACT_TOPICS.filter(([id])=>!values[id]||values[id]==='open');
-  const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate});
+  const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate,acceptedRentalDecision});
+  const acceptedOffer = acceptedRentalDecision?.offer ?? null;
+  const showOfferComparison = acceptedOffer!==null && comparedSource===source;
   const totalMonthly = amounts[0]!==null&&amounts[1]!==null ? amounts[0]+amounts[1] : null;
   const initialCash = totalMonthly!==null&&amounts[2]!==null ? totalMonthly+amounts[2] : null;
   const firstYearRent = totalMonthly!==null ? totalMonthly*12 : null;
   const change = () => {
     setPreview(null);setApproved(false);setCalendarPreview(null);
-    setCalendarAccepted(false);setFeedback('');
+    setCalendarAccepted(false);setComparedSource(null);setFeedback('');
   };
   const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
   const formGrid = {display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14} as const;
@@ -11953,6 +11958,16 @@ function PrivateContractReview() {
       ...questions.map(([id,title])=>'- '+title+(notes[id]?.trim()?' — '+notes[id].trim().replace(/[\r\n\t]+/g,' '):'')),
       'NIET NAGEKEKEN: '+open.length,
       ...open.map(([,title])=>'- '+title),
+      '',
+      ...(showOfferComparison && acceptedOffer ? [
+        '', 'EERDER BEVESTIGDE AANBODCHECK — EIGEN, NIET GEVERIFIEERD',
+        'Eigen voorstel: '+acceptedOffer.label.replace(/[\r\n\t]+/g,' '),
+        'Aanbod maandlasten (kan energie en andere posten omvatten): '+contractEuro(acceptedOffer.monthlyCents),
+        'Aanbod startgeld (eigen raming): '+contractEuro(acceptedOffer.initialCents),
+        'Aanbod eerstejaarskosten (eigen raming): '+contractEuro(acceptedOffer.firstYearCents),
+        'Contractvergelijking is indicatief: kostengrondslagen zijn niet bewezen gelijk.',
+        'Controleer servicekosten, energiekosten, overige kosten, voorschotten en borg zelf.',
+      ] : []),
       '',
       'Dit is een persoonlijke conceptlijst. Controleer bedragen, geldende regels en het originele contract zelf.',
       'Er is geen acceptatie, betaling, officiële beoordeling, e-mail of upload uitgevoerd.'
@@ -12051,6 +12066,37 @@ function PrivateContractReview() {
     <p><strong>Indicatief bij aanvang te betalen:</strong> {initialCash===null?'Onbekend; vul huur, service en borg in':contractEuro(initialCash)}
       {' · '}<strong>Eerste 12 maanden huur + service:</strong> {firstYearRent===null?'Onbekend':contractEuro(firstYearRent)}.
       De borg is mogelijk terug te ontvangen en zit niet in de genoemde 12-maandskosten. Energie, verhuizing en andere kosten zijn niet inbegrepen.</p>
+    {acceptedOffer&&<div style={{marginTop:16,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+      <h3>Eerder bewust bevestigd aanbod naast mijn contract</h3>
+      <p>De aanbodcheck bevat een zelf ingevulde financiële momentopname. Dat is geen geverifieerd
+        contract of bewijs dat dezelfde kostenposten zijn gebruikt. Je contractvelden hierboven
+        worden niet automatisch aangepast en er vindt geen opslag of overdracht plaats.</p>
+      <button type="button" onClick={()=>{
+        setComparedSource(source);setPreview(null);setApproved(false);
+        setFeedback('Aanbod en contract staan naast elkaar. Vergelijk zelf de kostengrondslag.');
+      }}>Toon mijn bevestigde aanbod naast deze contractcijfers</button>
+      {showOfferComparison&&<div role="region" aria-label="Zelf bevestigde aanbod- en contractvergelijking">
+        <p><strong>Mijn aanbod:</strong> {acceptedOffer.label} (aanbodcheck #{acceptedRentalDecision?.caseId}).</p>
+        <dl style={{display:'grid',gap:8}}>
+          <div><dt><strong>Maandbedrag</strong></dt>
+            <dd>Contract kale huur + service: {totalMonthly===null?'Onbekend':contractEuro(totalMonthly)};
+              aanbod maandlasten: {contractEuro(acceptedOffer.monthlyCents)}.</dd></div>
+          <div><dt><strong>Benodigd startgeld</strong></dt>
+            <dd>Contract maandbedrag + borg: {initialCash===null?'Onbekend':contractEuro(initialCash)};
+              aanbod eigen startgeld: {contractEuro(acceptedOffer.initialCents)}.</dd></div>
+          <div><dt><strong>Jaarbedrag</strong></dt>
+            <dd>Contract 12 maanden kale huur + service: {firstYearRent===null?'Onbekend':contractEuro(firstYearRent)};
+              aanbod eigen eerstejaarsraming: {contractEuro(acceptedOffer.firstYearCents)}.</dd></div>
+        </dl>
+        <p><strong>Let op:</strong> aanbodbedragen kunnen energie, overige kosten of andere periodes
+          omvatten. Daarom wordt geen kunstmatig verschil of goedkeuringsscore berekend.
+          Controleer de onderliggende voorwaarden en bedragen rechtstreeks in de documenten.</p>
+        <button type="button" onClick={()=>{
+          setComparedSource(null);setPreview(null);setApproved(false);
+          setFeedback('De tijdelijke aanbodvergelijking is gesloten.');
+        }}>Sluit mijn tijdelijke vergelijking</button>
+      </div>}
+    </div>}
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(270px,1fr))',gap:12}}>
       {PRIVATE_CONTRACT_TOPICS.map(([id,title,hint],i)=>
         <fieldset key={id} style={{border:'1px solid #c9d8cf',borderRadius:12,padding:14,minWidth:0}}>
