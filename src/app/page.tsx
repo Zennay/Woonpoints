@@ -10690,7 +10690,7 @@ function PrivateListingMatchStudio() {
     WoonMatchScalar(row.area, 'Optie ' + (index + 1) + ': oppervlak', 100000, true),
     WoonMatchScalar(row.bedrooms, 'Optie ' + (index + 1) + ': slaapkamers', 100, true),
     WoonMatchScalar(row.commute, 'Optie ' + (index + 1) + ': reistijd', 10000, true)
-  ].filter(Boolean) as string[];
+  ].filter(Boolean)) as string[];
   const canCompare = criteriaErrors.length === 0 && fieldErrors.length === 0;
   const ordered = [...outcomes].sort((a, b) =>
     Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) || a.listing.id - b.listing.id);
