@@ -49,6 +49,33 @@ velden of plaktekst vervalt de preview. Na de import is **éénmalig ongedaan ma
 tot de gebruiker een nieuwe woningoptie toevoegt, verwijdert of bewerkt. Criteria blijven gelijk;
 de bestaande TXT-preview moet opnieuw worden opgebouwd.
 
+## Nieuw: complete lokale back-up en bewuste restore
+
+Een gebruiker kan de **volledige eigen privéwoningmatch** (ook een tijdelijk onvolledig
+concept) als `woonpoints.private-match.v1` JSON apart bewaren. De export bevat alleen
+vier eigen criteria, vier gewichten, 2–5 zelf ingevoerde woningopties en optionele
+notities; geen interne tijdelijke row-ID, account, reacties, authenticatie, externe
+listing of WoningNet-bewijs. De tekst wordt volledig getoond; pas na afzonderlijk
+aanvinken kan de eigenaar zelf een lokaal JSON-bestand downloaden.
+
+Via **Open eigen woningmatch-back-up** kan de eigenaar later maximaal 12 KiB
+lokale UTF-8 JSON opnieuw openen. Het formulier weigert niet-UTF-8, afwijkende
+schema's/versies, extra of ontbrekende velden, ongeldige numerieke grenswaarden,
+onvolledige surrogate-paren, dubbele niet-lege woninglabels of ongeldige gewichtwaarden
+(alleen gehele 1–5). Geen externe API of server ziet het gekozen bestand.
+De browser toont vóór vervanging **alle** criteria, gewichten, woninglabels,
+bedragen, oppervlaktes, kamers, reistijden en notities. Niets wordt gewijzigd
+zonder een apart bevestigingsvakje. Een wijziging van de huidige invoer tijdens
+de preview maakt het voorbeeld ongeldig.
+
+De vorige volledige invoer kan na herstel één keer ongedaan worden gemaakt, zolang
+nog geen nieuwe formulieredit is uitgevoerd. Een restore of undo maakt de oude
+TXT- en JSON-exportpreviews ongeldig en wist de oude CSV-undo-optie.
+Geldig geschreven onvolledige concepten mogen wel worden teruggezet, maar
+leveren nog steeds géén fictieve score totdat de ontbrekende gegevens ingevuld zijn.
+Bestanden kunnen op het gekozen apparaat eventueel automatisch worden
+gesynchroniseerd: beheer dat zelf.
+
 ## Veiligheids- en privacygrenzen
 
 De invoer, berekeningen en preview blijven uitsluitend in het actieve tabblad. Er zijn geen nieuwe netwerkverzoeken, database-, cookie-, localStorage- of serverwrites; een bewust gedownloade TXT is vervolgens jouw eigen verantwoordelijkheid. Sluiten/herladen van het tabblad verwijdert je tijdelijke invoer. Voer bij voorkeur geen identificeerbaar woningadres of persoonlijke gegevens in het vrije notitieveld in.
