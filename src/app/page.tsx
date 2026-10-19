@@ -8558,7 +8558,10 @@ function PrivateOfferSafety() {
   }
   function addCase() {
     if (caseItems.length >= MAX_OFFER_SAFETY_CASES) return;
-    const id = Math.max(...caseItems.map(item => item.id)) + 1;
+    // Imported workbooks may contain large safe IDs; reserve a fresh small ID
+    // rather than overflowing the versioned backup's integer admission bound.
+    let id = 1;
+    while (caseItems.some(item => item.id === id)) id++;
     setCaseItems(current => [...current, { id, answers: {}, reviewed: {} }]);
     setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
     setCurrentCaseId(id);
