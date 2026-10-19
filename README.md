@@ -23,6 +23,18 @@ vragenveld**. Eigen bestaande tekst wordt niet overschreven; maximaal
 antwoord of identiteitsgegeven overgedragen en er wordt geen huurvoorstel,
 contract of WoningNet-actie automatisch opgeslagen, verzonden of geaccepteerd.
 
+## Nieuw: privé-aanbodwerkbladen veilig samenvoegen
+
+Bij het openen van een eerder bewaarde woningaanbod-JSON kun je nu bewust
+**toevoegen zonder je huidige werkbladen te overschrijven**. Woonpoints
+laat vóór bevestiging de oorspronkelijke en eventuele automatisch nieuw
+toegewezen werkbladnummers zien. Maximaal vijf werkbladen in totaal; bij
+overschrijding wordt toevoegen geweigerd, maar kun je nog bewust voor
+volledig vervangen kiezen. Beide importmodi hebben een eenmalige
+ongedaanmaakactie. Als je intussen een ander bestand kiest of de werkmap
+wijzigt, wordt een nog lopende oudere bestandslezing genegeerd. Alleen
+jouw eigen lokale JSON wordt gelezen; niets wordt geüpload.
+
 ## Nieuw: complete woningaanbodwerkmap zelf veilig bewaren en terugzetten
 
 De [aanbodcheck](/#private-offer-safety-heading) biedt nu een vrijwillige
