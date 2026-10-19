@@ -252,3 +252,31 @@ tijdelijke lijst voor expliciet terugdraaien; handmatig bewerken, toevoegen
 of verwijderen trekt dat herstel in. Een verouderde preview verliest
 toestemming als bron, CSV-tekst of woninglijst verandert.
 Geen netwerk, woningreactie, opslag of accountkoppeling.
+
+
+## Zelf gedownloade CSV rechtstreeks lokaal openen
+
+Onder **Eigen woninglijst plakken of lokaal openen** kun je nu ook
+**Open mijn eigen CSV-bestand op dit apparaat** gebruiken. Dit sluit
+aan op de bestaande verliesvrije zevenkoloms-export. De browser leest
+alleen op jouw expliciete bestandskeuze het lokale bestand; er wordt
+geen upload, API-verzoek, adresherkenning of serveropslag gestart.
+
+Alleen strikt UTF-8 leesbare bestanden van maximaal 4 KiB worden
+toegelaten. De bestaande CSV-parser controleert de zeven exacte
+kolomnamen, één tot vijf woningregels, numerieke grenzen en unieke
+labels. Ongeldige bytes of velden geven een zichtbare reden en laten
+eerder ingevoerde tekst staan. Een geldig bestand zet alleen de
+**bewerkbare tekst in het tabblad**, nog geen woning. Selecteer eerst
+zelf **Bekijk alle eigen woningopties vóór toevoegen of vervangen**,
+lees iedere regel en kies daarna afzonderlijk tussen **Vervangen**
+(minimaal twee regels) en **Toevoegen** (samen maximaal vijf regels,
+zonder botsende woninglabels). De bestaande twee gescheiden toestemmingen
+en eenmalige ongedaan-makenfunctie blijven intact.
+
+Als je tijdens een lopende bestandslezing zelf in de tekst typt of een
+nieuw bestand opent, mag de oude leesactie je nieuwste tekst niet later
+overschrijven. Er wordt niets automatisch opgeslagen en er ontstaat
+geen provider- of WoningNet-koppeling. CSV bewaart géén
+toewijzingsmethode, persoonlijke grenzen of wegingsfactoren:
+gebruik voor volledig herstel nog steeds de bestaande JSON-back-up.
