@@ -126,3 +126,48 @@ woningen en budget bevatten; hypothetische stresstestinstellingen
 worden daarin niet meegenomen. Ook deze simulatie blijft
 uitsluitend in de huidige browser-tabbladstatus, zonder server,
 accountkoppeling, WoningNet-verzoek of opslag door Woonpoints.
+
+## Eigen verhuisspaarplan: geld verzamelen voor start en aparte buffer
+
+Een derde paneel **Mijn verhuisspaarplan: startgeld + aparte reserve**
+maakt van de eerdere eigen huurberekening een concrete persoonlijke
+spaarroute. Vul desgewenst in hoeveel euro je nu zelf voor de verhuizing
+beschikbaar hebt, hoeveel je iedere maand verwacht te sparen en of jouw
+eigen doel nog 0, 1, 2, 3, 6, 9, 12, 18 of 24 maanden weg is.
+Een leeg of onvolledig bedrag toont géén berekende spaarclaims. Wie
+bewust niet spaart mag 0 invullen. Er is geen bank- of inkomenskoppeling.
+
+De getoonde berekening per woning is:
+
+- **Doelbedrag** = eerste-maand huur-/lastenkosten plus eenmalig
+  verhuizen en borg (zoals al berekend), **plus** jouw zelfgekozen
+  aparte woonlastenbuffer op basis van de wat-als-maandlasten.
+  De buffer is geen extra rekening: je houdt die volgens jouw eigen
+  aanname juist apart.
+- **Beschikbaar op verhuisdatum** = zelf ingevuld beschikbaar bedrag
+  + zelf gepland maandspaarbedrag × aantal maanden tot verhuizing.
+- **Tekort** = maximaal nul of het doel minus dat geprojecteerde bedrag;
+  daarnaast zie je de onder- of overdekking met teken.
+- **Maanden nodig** = naar boven afgeronde resterende inleg gedeeld
+  door je zelfgekozen maandspaarbedrag; als die inleg nul is terwijl
+  het doel nog niet is bereikt, zegt Woonpoints expliciet dat geen
+  eindmaand berekend kan worden.
+- **Maandelijks nodig vóór jouw verhuisdatum** = naar boven afgeronde
+  resterende inleg gedeeld door de beschikbare maanden. Bij een
+  verhuisdoel van 0 maanden kan dat alleen worden getoond als het doel
+  nu al gefinancierd is; anders is er geen fictief maandbedrag.
+
+Alle bedragen zijn eurocenten-rekenwerk met begrensde invoer. Het
+resultaat is een hypothetische eigen kasplanning, **geen** krediet,
+financieel advies, risicoprofiel, huurtoeslag, loonbewijs of
+bankafschrift. Er worden geen rentebaten, onverwachte uitgaven of
+toekomstige inkomensstijgingen verzonnen. Aparte liquiditeitsreserve
+en de borg kunnen tijdelijk vaststaan.
+
+De bestaande opt-in privé-TXT toont dit spaarplan **alleen** als beide
+eigen spaardata zijn ingevuld, en noemt de aannames. Iedere wijziging
+vervalt een eerdere TXT-preview. De herstelbare versie 1 JSON blijft
+het oorspronkelijke schema voor basiswoningen en maandgrens: spaardata
+en stresstestinstellingen worden niet persistent, automatisch
+gesynchroniseerd of in deze JSON meegenomen. Sluiten van het tabblad
+wist ze; *Wis alle eigen scenario's* wist ze na bevestiging.
