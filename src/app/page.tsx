@@ -2562,7 +2562,8 @@ function stressScenarios(results:Result[],extra:string,energyPercent:number,
 
 type SavingsRow={
   id:string;scenario:string;target:number;availableAtMove:number;
-  gap:number;monthsNeeded:number|null;remainingAfterGoal:number
+  gap:number;monthsNeeded:number|null;remainingAfterGoal:number;
+  neededMonthly:number|null
 };
 function planSavings(stress:RentalShock[],cashNow:string,savingPerMonth:string,
   monthsAway:number):SavingsRow[]|null{
@@ -2578,6 +2579,7 @@ function planSavings(stress:RentalShock[],cashNow:string,savingPerMonth:string,
     return {id:row.id,scenario:row.scenario,target,availableAtMove:available,
       gap:Math.max(0,target-available),
       monthsNeeded:outstanding===0?0:perMonth===0?null:Math.ceil(outstanding/perMonth),
+      neededMonthly:outstanding===0?0:monthsAway===0?null:Math.ceil(outstanding/monthsAway),
       remainingAfterGoal:available-target};
   });
 }
@@ -2626,6 +2628,8 @@ function reportText(results:Result[],monthlyBudget:number,stress:RentalShock[],
         'Tekort bij verhuisdoel: '+euro.format(r.gap/100),
         'Zelf benodigde maanden bij gekozen spaarbedrag: '+(
           r.monthsNeeded===null?'niet haalbaar zonder extra inleg':String(r.monthsNeeded)),
+        'Maandelijks nodig voor mijn gekozen verhuisdatum: '+(
+          r.neededMonthly===null?'datum bereikt; doel niet gefinancierd':euro.format(r.neededMonthly/100)),
         'Ruimte (+) of tekort (-): '+euro.format(r.remainingAfterGoal/100),'');
     }
   }else lines.push('Persoonlijke spaarsimulatie niet ingevuld; geen spaardoel berekend.','');
@@ -2915,6 +2919,7 @@ function PrivateRentalScenarioBudget({
               <thead><tr><th scope="col">Eigen woning</th><th scope="col">Doel: start + reserve</th>
                 <th scope="col">Zelf verwacht bij vertrek</th><th scope="col">Tekort bij vertrek</th>
                 <th scope="col">Maanden om dit doel te bereiken</th>
+                <th scope="col">Minimaal sparen per maand voor verhuisdoel</th>
                 <th scope="col">Ruimte (+) of tekort (-)</th></tr></thead>
               <tbody>{savings.map(r=><tr key={r.id}>
                 <th scope="row">{r.scenario}</th>
@@ -2923,6 +2928,10 @@ function PrivateRentalScenarioBudget({
                 <td>{euro.format(r.gap/100)}</td>
                 <td>{r.monthsNeeded===null?'Niet met € 0 extra sparen':
                   r.monthsNeeded+' '+(r.monthsNeeded===1?'maand':'maanden')}</td>
+                <td>{r.neededMonthly===null?'Niet vóór vertrek bij 0 maanden':
+                  euro.format(r.neededMonthly/100)}
+                  {r.neededMonthly!==null&&cents(saveMonthly)!==null&&
+                    r.neededMonthly>cents(saveMonthly)!?' (meer dan eigen plan)':''}</td>
                 <td>{euro.format(r.remainingAfterGoal/100)}</td>
               </tr>)}</tbody>
             </table>
