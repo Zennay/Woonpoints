@@ -1,6 +1,6 @@
 # Mijn woningmatch — eigen woningopties vergelijken
 
-Open **Mijn woningmatch** via de navigatie of rechtstreeks via `/woningmatch`.
+Open **Mijn woningmatch** via de navigatie of rechtstreeks via `/#private-woningmatch-heading`.
 
 ## Wat je hiermee kunt
 
@@ -21,4 +21,4 @@ De bestaande maandreactieplanner, woonpositiehistorie, aanbodcheck, import- en e
 
 ## Operationele oplevering
 
-Dit is een zelfstandige Next.js clientroute `src/app/woningmatch/page.tsx` met een expliciete navigatielink via `src/app/layout.tsx`. Geen nieuwe dependencies, workflows, QA- of regressiesuites. Release via bestaande repository-branch, verplichte CI/review en reguliere deploy-admissie, niet door een productscore of documentpreview.
+Dit is een zelfstandige clientcomponent binnen de bestaande, reeds voor Docker expliciet toegelaten `src/app/page.tsx`, bereikbaar via de bestaande navigatie in `src/app/layout.tsx`. De Docker file-allowlist blijft onveranderd en weigert dus ook na deze feature onbekende nieuwe bestanden. Geen nieuwe dependencies, workflows, QA- of regressiesuites. Release via bestaande repository-branch, verplichte CI/review en reguliere deploy-admissie, niet door een productscore of documentpreview.
