@@ -1,5 +1,17 @@
 # Woonpoints
 
+## Nieuw: eigen huurkosten naast de risico's van een aanbieding
+
+Een zelf ingevuld huurvoorstel kan met twee bewuste toestemmingsstappen als
+**privé-momentopname** in de [aanbodcheck](/#private-offer-safety-heading)
+verschijnen. De gebruiker ziet eigen maandlasten, benodigd startgeld,
+eerstejaarskosten en maandgrens naast urgente, onbekende en open
+controlepunten. Niets daarvan is een officieel oordeel over betaalbaarheid,
+fraude of huurrechten. Een afzonderlijk financieel TXT-verslag verschijnt
+pas na een volledige preview en vrijwillige download; de gewone privé-JSON
+bevat geen automatisch overgenomen huurdata. Bronwijzigingen wissen de
+tijdelijke financiële momentopname.
+
 ## Nieuw: controlepunten meenemen naar mijn huurvoorstel
 
 De woningaanbodcheck kan voor één eigen werkblad nu **vaste algemene
