@@ -6,7 +6,7 @@ Open **[Woningaanbodcheck](/#private-offer-safety-heading)** vanuit de vaste nav
 (of rechtstreeks via `/woningaanbod-check`). In drie korte stappen beoordeel je
 zelf negen signalen rond afzender, betaalverzoeken, identiteitsdocumenten en
 huurvoorwaarden. De uitslag maakt onzekere/onbeantwoorde vragen zichtbaar,
-geeft concrete vervolgstappen en biedt alleen na preview een eigen TXT-download.
+geeft een afvinkbaar actieplan met afzonderlijke voortgang per aandachtspunt en biedt alleen na preview een eigen TXT-download. Een vinkje is **geen bewijs** van identiteit of betrouwbaarheid; wissel je het antwoord, dan vervalt het bijbehorende vinkje.
 Dit is **geen** automatische controle van identiteit, fraude, contract of recht.
 Je keuzes blijven uitsluitend in dit tabblad; Woonpoints ontvangt of bewaart
 geen aanbod, rekeningnummer, document, wachtwoord of persoonlijk dossier.
