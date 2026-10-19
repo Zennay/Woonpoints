@@ -1376,6 +1376,10 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
 }
 
 // Scoped feature, including private state and validation helpers; no external storage.
+type PrivateRentalDecisionSnapshot={
+  offerId:string;label:string;monthlyCents:number;initialCents:number;firstYearCents:number;
+  checked:number;budgetCents:number|null
+};
 type PrivateEnergyRentalOfferProposal={label:string;monthlyCents:number;sourceKey:string};
 const PrivateRentalOfferDesk = (() => {
   const styles = {budget: 'rental-budget', buttons: 'rental-buttons', checks: 'rental-checks', column: 'rental-column', desk: 'rental-desk', details: 'rental-details', footnote: 'rental-footnote', form: 'rental-form', header: 'rental-header', importLabel: 'rental-importLabel', links: 'rental-links', notice: 'rental-notice', ok: 'rental-ok', portable: 'rental-portable', preview: 'rental-preview', ranking: 'rental-ranking', rowhead: 'rental-rowhead', sections: 'rental-sections', summary: 'rental-summary', two: 'rental-two', warn: 'rental-warn', warnbox: 'rental-warnbox'};
@@ -1702,13 +1706,15 @@ function saveDownload(filename:string,content:string,mime='application/json;char
 }
 
 function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandled,
-  safetyQuestions,onSafetyQuestionsHandled}: {
+  safetyQuestions,onSafetyQuestionsHandled,onPrepareSafetyDecision,onInvalidateSafetyDecision}: {
   prefill?: {label:string;rent:number}|null;
   onPrefillHandled?:()=>void;
   energyPrefill?:PrivateEnergyRentalOfferProposal|null;
   onEnergyHandled?:()=>void;
   safetyQuestions?: string|null;
   onSafetyQuestionsHandled?:()=>void;
+  onPrepareSafetyDecision?:(snapshot:PrivateRentalDecisionSnapshot)=>void;
+  onInvalidateSafetyDecision?:()=>void;
 } = {}){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [draft,setDraft]=useState<Draft>(newDraft);
@@ -1762,6 +1768,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
     };
     const updated=editing?offers.map(o=>o.id===editing?item:o):[...offers,item];
     setOffers(updated);
+    onInvalidateSafetyDecision?.();
     if(!selected||editing===selected)setSelected(item.id);
     resetDraft();resetTransient();
     setNotice(editing?'Eigen voorstel aangepast.':'Eigen voorstel toegevoegd; niets is verstuurd.');
@@ -1777,11 +1784,13 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
   }
   function changeRow(id:string,patch:Partial<Offer>){
     setOffers(items=>items.map(row=>row.id===id?{...row,...patch}:row));
+    onInvalidateSafetyDecision?.();
     resetTransient();
     setNotice('Persoonlijke notitie bijgewerkt, zonder externe actie.');
   }
   function remove(id:string){
     setOffers(rows=>rows.filter(row=>row.id!==id));
+    onInvalidateSafetyDecision?.();
     if(selected===id)setSelected(null);
     if(editing===id)resetDraft();
     resetTransient();setNotice('Alleen dit eigen voorstel uit het tabblad verwijderd.');
@@ -1803,6 +1812,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
     }
   }
   function restore(rows:Offer[],withUndo:boolean){
+    onInvalidateSafetyDecision?.();
     if(withUndo)setUndoImport(offers.map(row=>({...row,checked:[...row.checked]})));
     else setUndoImport(null);
     setOffers(rows.map(row=>({...row,checked:[...row.checked]})));
@@ -1953,7 +1963,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
         <h3>Vergelijking <small>alleen mijn eigen invoer</small></h3>
         <label className={styles.budget}>Mijn eigen maandgrens (€)
           <input inputMode="decimal" value={budget} placeholder="Bijv. 1300,00"
-            onChange={e=>setBudget(e.target.value)} />
+            onChange={e=>{setBudget(e.target.value);onInvalidateSafetyDecision?.();}} />
         </label>
         {budget!==''&&budgetCents===null&&<p role="status">Voer een bedrag in van € 0 tot € 50.000.</p>}
         {!ranked.length?<p>Voeg links je eerste voorstel toe om de maandlasten te vergelijken.</p>:
@@ -1989,6 +1999,30 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
         <div><dt>Eerste 12 maanden, exclusief terugbetaalbare borg</dt><dd>{euro(totals(chosen).firstYear)}</dd></div>
         <div><dt>Eigen verwachte startdatum</dt><dd>{chosen.startDate||'Onbekend'}</dd></div>
       </dl>
+      <div className={styles.portable}>
+        <h4>Combineer mijn eigen huurkosten met de aanbodcheck</h4>
+        <p>Neem alleen een <strong>tijdelijke momentopname</strong> van jouw huurkosten,
+          benodigd startgeld, jaarlasten, eigen maandgrens en afvinkvoortgang mee.
+          De eigen vragen en identiteit blijven buiten deze overdracht.
+          In de aanbodcheck is een <strong>tweede bevestiging</strong> vereist;
+          een export van de combinatie is altijd afzonderlijk en vrijwillig.</p>
+        <button type="button" disabled={!onPrepareSafetyDecision}
+          onClick={()=>{
+            const costs=totals(chosen);
+            if(![costs.monthly,costs.initial,costs.firstYear].every(
+              value=>Number.isSafeInteger(value)&&value>=0)) {
+              setNotice('Financieel overzicht is ongeldig; niets doorgezet.');
+              return;
+            }
+            onPrepareSafetyDecision?.({
+              offerId:chosen.id,label:chosen.label,monthlyCents:costs.monthly,
+              initialCents:costs.initial,firstYearCents:costs.firstYear,
+              checked:chosen.checked.length,budgetCents
+            });
+            document.getElementById('private-offer-safety-heading')?.scrollIntoView({behavior:'smooth'});
+            setNotice('Financiële momentopname aangeboden aan de privé-aanbodcheck. Daar eerst bewust bevestigen.');
+          }}>Bekijk deze huurkosten bij mijn aanbodcheck</button>
+      </div>
       <p><strong>Zelf afgevinkt:</strong> {chosen.checked.length}/{checklist.length}.
         Dit is geen juridische toets, betaalbaarheidsverklaring of officiële toelating.</p>
       <ul className={styles.checks}>{checklist.map(item=><li key={item.id}>
@@ -2072,7 +2106,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
       {confirmClear&&<div className={styles.warnbox}>
         <p>Weet je zeker dat je alle {offers.length} eigen voorstellen wilt wissen?
           Bewaarde bestanden worden hiermee niet verwijderd.</p>
-        <button type="button" onClick={()=>{setOffers([]);setSelected(null);resetDraft();resetTransient();
+        <button type="button" onClick={()=>{setOffers([]);onInvalidateSafetyDecision?.();setSelected(null);resetDraft();resetTransient();
           setNotice('Alle eigen voorstellen uit dit tabblad gewist.');}}>Ja, wis alles</button>
         <button type="button" onClick={()=>setConfirmClear(false)}>Annuleren</button>
       </div>}
@@ -2414,6 +2448,13 @@ export default function HomePage() {
   const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
   const [energyRentalProposal,setEnergyRentalProposal]=useState<PrivateEnergyRentalOfferProposal|null>(null);
   const [safetyQuestionsProposal,setSafetyQuestionsProposal]=useState<string|null>(null);
+  const [rentalDecisionProposal,setRentalDecisionProposal]=useState<PrivateRentalDecisionSnapshot|null>(null);
+  const [acceptedRentalDecision,setAcceptedRentalDecision]=useState<{
+    caseId:number;offer:PrivateRentalDecisionSnapshot
+  }|null>(null);
+  const invalidateRentalDecision=()=>{
+    setRentalDecisionProposal(null);setAcceptedRentalDecision(null);
+  };
   const cards = initialCards.map(([label,value,detail])=>{
     if(label==='Maanddoel' && personalOverview?.count!=null) return [
       label,personalOverview.count+' / 4 zelf genoteerd',
@@ -2858,7 +2899,12 @@ export default function HomePage() {
         energyPrefill={energyRentalProposal}
         onEnergyHandled={()=>setEnergyRentalProposal(null)}
         safetyQuestions={safetyQuestionsProposal}
-        onSafetyQuestionsHandled={()=>setSafetyQuestionsProposal(null)} />
+        onSafetyQuestionsHandled={()=>setSafetyQuestionsProposal(null)}
+        onPrepareSafetyDecision={snapshot=>{
+          setRentalDecisionProposal(snapshot);
+          setAcceptedRentalDecision(null);
+        }}
+        onInvalidateSafetyDecision={invalidateRentalDecision} />
       <PrivateEnergyQuoteComparison
         onProposeRental={proposal=>setEnergyRentalProposal({...proposal})}
         onInvalidateRental={()=>setEnergyRentalProposal(null)} />
@@ -2908,7 +2954,11 @@ export default function HomePage() {
           <li>De huidige worker accepteert uitsluitend <code>BOT_DRY_RUN=true</code>.</li>
         </ul>
       </section>
-      <PrivateOfferSafety onPrepareRentalQuestions={setSafetyQuestionsProposal} />
+      <PrivateOfferSafety onPrepareRentalQuestions={setSafetyQuestionsProposal}
+        rentalDecisionProposal={rentalDecisionProposal}
+        acceptedRentalDecision={acceptedRentalDecision}
+        onAcceptRentalDecision={setAcceptedRentalDecision}
+        onClearRentalDecision={invalidateRentalDecision} />
     </main>
   );
 }
@@ -8573,8 +8623,13 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
   return lines.join('\n');
 }
 
-function PrivateOfferSafety({onPrepareRentalQuestions}: {
-  onPrepareRentalQuestions?: (questions: string) => void
+function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
+  acceptedRentalDecision,onAcceptRentalDecision,onClearRentalDecision}: {
+  onPrepareRentalQuestions?: (questions: string) => void;
+  rentalDecisionProposal?: PrivateRentalDecisionSnapshot|null;
+  acceptedRentalDecision?: {caseId:number;offer:PrivateRentalDecisionSnapshot}|null;
+  onAcceptRentalDecision?: (value:{caseId:number;offer:PrivateRentalDecisionSnapshot})=>void;
+  onClearRentalDecision?:()=>void
 } = {}) {
   const [caseItems, setCaseItems] = useState<OfferSafetyCase[]>([{ id: 1, answers: {}, reviewed: {} }]);
   const [currentCaseId, setCurrentCaseId] = useState(1);
@@ -8605,6 +8660,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
   }
   function selectCase(id: number) {
     if (!caseItems.some(item => item.id === id)) return;
+    setFinancialPreview(false);
     setCurrentCaseId(id);
     setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
   }
@@ -8621,6 +8677,8 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
   }
   function deleteCase() {
     if (caseItems.length <= 1) return;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
     const next = caseItems.filter(item => item.id !== currentCaseId);
     setCaseItems(next);
     setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
@@ -8644,6 +8702,24 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
   const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
   const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
   const portableBackup = offerSafetyBackup(caseItems);
+  const acceptedForCase=acceptedRentalDecision?.caseId===currentCase.id
+    ? acceptedRentalDecision.offer:null;
+  const euros=(cents:number)=>new Intl.NumberFormat('nl-NL',{
+    style:'currency',currency:'EUR'
+  }).format(cents/100);
+  // Export of personal financial data requires a dedicated preview/confirmation.
+  // The existing safety TXT and versioned JSON intentionally exclude this snapshot.
+  const combinedFinancialReport = acceptedForCase ? [
+    report,'','EIGEN FINANCIËLE MOMENTOPNAME — NIET GEVERIFIEERD',
+    'Eigen maandlasten: '+euros(acceptedForCase.monthlyCents),
+    'Eigen benodigd startgeld: '+euros(acceptedForCase.initialCents),
+    'Eigen eerste jaar, excl. terugbetaalbare borg: '+euros(acceptedForCase.firstYearCents),
+    'Eigen maandgrens: '+(acceptedForCase.budgetCents===null?'Niet ingevuld':euros(acceptedForCase.budgetCents)),
+    'Zelf nagelopen huurvragen: '+acceptedForCase.checked+'/6',
+    'Dit is een verouderbare momentopname. Na bewerking van het huurvoorstel opnieuw aanmaken.',
+    'Geldbedragen zijn eigen invoer; geen officiële huurprijs, bewijs van betaalbaarheid of geldige aanbieding.'
+  ].join('\n'):null;
+  const [financialPreview,setFinancialPreview]=useState(false);
   const status = findings.urgent.length > 0
     ? 'Eerst stoppen en onafhankelijk controleren'
     : findings.flagged.length > 0 || findings.unknown.length > 0 || findings.unanswered.length > 0
@@ -8697,6 +8773,8 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
 
   function applyOwnBackup() {
     if (!pendingBackup) return;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
     setUndoBackup({ cases: caseItems, selected: currentCaseId });
     setCaseItems(pendingBackup);
     setCurrentCaseId(pendingBackup[0].id);
@@ -8708,6 +8786,8 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
 
   function undoOwnBackup() {
     if (!undoBackup) return;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
     setCaseItems(undoBackup.cases);
     setCurrentCaseId(undoBackup.selected);
     setUndoBackup(null); setPendingBackup(null); setBackupPreview(false);
@@ -8726,6 +8806,64 @@ function PrivateOfferSafety({onPrepareRentalQuestions}: {
           geen account, opslag, externe aanvraag of WoningNet-reactie.</p>
       </header>
 
+      {(rentalDecisionProposal || acceptedForCase) && <section className="card"
+        aria-label="Persoonlijk financieel beslisblad" style={{marginTop:24}}>
+        <h2 style={{fontSize:24}}>Mijn eigen huurkosten naast de aanbodcheck</h2>
+        {rentalDecisionProposal && <div>
+          <p><strong>Voorgestelde momentopname uit Huurvoorstellen:</strong>
+            {' '}{rentalDecisionProposal.label}. Het betreft zelf ingevulde bedragen,
+            zonder onafhankelijke huurprijs-, verhuurder- of contractcontrole.</p>
+          <p>Maandlasten {euros(rentalDecisionProposal.monthlyCents)} ·
+            benodigd startgeld {euros(rentalDecisionProposal.initialCents)} ·
+            eigen maandgrens {rentalDecisionProposal.budgetCents===null?
+              'onbekend':euros(rentalDecisionProposal.budgetCents)}.</p>
+          <button type="button" onClick={()=>{
+            if(!onAcceptRentalDecision)return;
+            onAcceptRentalDecision({caseId:currentCase.id,offer:rentalDecisionProposal});
+            setFinancialPreview(false);
+            onClearRentalDecision?.();
+          }} disabled={!onAcceptRentalDecision} style={{minHeight:44,padding:'9px 14px'}}>
+            Koppel deze momentopname aan {caseLabel(currentCase.id)}
+          </button>
+          <button type="button" onClick={onClearRentalDecision}
+            style={{minHeight:44,padding:'9px 14px',marginLeft:8}}>
+            Niet overnemen</button>
+        </div>}
+        {acceptedForCase && <div>
+          <p><strong>{caseLabel(currentCase.id)} · eigen financiële momentopname</strong>
+            {' '}(bron: {acceptedForCase.label}). Het gaat om je eigen invoer,
+            geen officiële financiële toets.</p>
+          <dl style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:14}}>
+            <div><dt>Geschatte maandlasten</dt><dd><strong>{euros(acceptedForCase.monthlyCents)}</strong></dd></div>
+            <div><dt>Benodigd startgeld</dt><dd><strong>{euros(acceptedForCase.initialCents)}</strong></dd></div>
+            <div><dt>Eerste jaar excl. borg</dt><dd><strong>{euros(acceptedForCase.firstYearCents)}</strong></dd></div>
+            <div><dt>Eigen maandgrens</dt><dd><strong>{acceptedForCase.budgetCents===null?'Niet ingevuld':euros(acceptedForCase.budgetCents)}</strong></dd></div>
+          </dl>
+          <p role="status">
+            {acceptedForCase.budgetCents===null?
+              'Geen eigen maandgrens ingesteld: betaalbaarheid niet beoordeeld.':
+              acceptedForCase.monthlyCents>acceptedForCase.budgetCents?
+                'Boven je zelf ingestelde maandgrens. Onderzoek de woonkosten voor je besluit.':
+                'Binnen je eigen maandgrens, maar overige vaste lasten en onverwachte kosten kunnen ontbreken.'}
+            {' '}{findings.urgent.length} urgent door jou gemeld,
+            {' '}{findings.unknown.length+findings.unanswered.length} onbekend of open.
+            De controlevragen en huurkosten zijn onafhankelijk; nul signalen betekent niet dat de aanbieding veilig is.
+          </p>
+          <button type="button" onClick={()=>setFinancialPreview(value=>!value)}
+            style={{minHeight:44,padding:'9px 14px'}}>
+            {financialPreview?'Sluit gecombineerd voorbeeld':'Bekijk gecombineerd privéverslag'}
+          </button>
+          {financialPreview && combinedFinancialReport && <div>
+            <p>Dit extra verslag bevat je eigen financiële bedragen. Lees de exacte tekst
+              vóór je bewust downloadt; een gekozen opslaglocatie kan elders synchroniseren.</p>
+            <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:240,overflow:'auto',
+              padding:12,background:'#f3f6f3'}}>{combinedFinancialReport}</pre>
+            <button type="button" onClick={()=>downloadLocal(combinedFinancialReport,
+              'woonpoints-woonbesluit-prive.txt')}
+              style={{minHeight:44,padding:'9px 14px'}}>Download dit bekeken privéverslag</button>
+          </div>}
+        </div>}
+      </section>}
       <section className="card" aria-label="Mijn afzonderlijke aanbodcontroles" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 24, marginBottom: 12 }}>Mijn eigen voorstellen — {caseItems.length} van {MAX_OFFER_SAFETY_CASES}</h2>
         <p>Vergelijk maximaal vijf afzonderlijke controles naast elkaar. Elk voorstel heeft alleen een
