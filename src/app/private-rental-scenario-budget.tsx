@@ -52,7 +52,7 @@ function decodeRentalBackup(raw:string):RentalBackup|null{
       const r=row as Record<string,unknown>;
       if(!exactKeys(r,['id','title','rent','service','utilities','commute','moving','deposit'])||
          r.id!==ids[i]||typeof r.title!=='string'||!r.title.trim()||r.title.length>40||
-         /[\\u0000-\\u001f\\u007f]/u.test(r.title))return null;
+         /[\u0000-\u001f\u007f]/u.test(r.title))return null;
       if(prices.some(p=>typeof r[p.key]!=='string'||(r[p.key]!==''&&cents(r[p.key] as string)===null)))return null;
       restored.push({...r} as RentalScenario);
     }
@@ -180,7 +180,13 @@ export default function PrivateRentalScenarioBudget(){
     setStatus('Je vorige tabbladinvoer is hersteld.');
   }
   function previewBackup(){
-    setBackupPreview({fingerprint,text:encodeRentalBackup(scenarios,budget)});
+    const text=encodeRentalBackup(scenarios,budget);
+    if(text.length>BACKUP_LIMIT||!decodeRentalBackup(text)){
+      setBackupPreview(null);
+      setStatus('Back-up niet gereed: maak bedragen en woonlabels compleet, zonder halve decimalen.');
+      return;
+    }
+    setBackupPreview({fingerprint,text});
     setPreview(null);setStatus('Bekijk de volledige privé-JSON en kies daarna zelf voor downloaden.');
   }
   function downloadFile(filename:string,text:string,type:string){
