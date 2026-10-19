@@ -8433,7 +8433,7 @@ const offerSignals: readonly OfferSignal[] = [
 const offerGroups = ['Identiteit en kanaal', 'Betalen en documenten', 'Afspraak en overeenkomst'] as const;
 const offerLabels: Record<OfferAnswer, string> = { yes: 'Ja, dit speelt', no: 'Nee', unknown: 'Weet ik niet' };
 
-function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: string): string {
+function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: string, reviewed: Record<string, boolean>): string {
   const lines = [
     'WOONPOINTS · PRIVÉ WONINGAANBODCHECK',
     'Zelf ingevulde aandachtspunten (geen identiteits- of fraudecontrole)',
@@ -8442,6 +8442,8 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
     ...offerSignals.flatMap(signal => [
       signal.group + ' — ' + signal.question,
       'Antwoord: ' + (answers[signal.id] ? offerLabels[answers[signal.id]] : 'Niet ingevuld'),
+      ...((answers[signal.id] === 'yes' || answers[signal.id] === 'unknown')
+        ? ['Zelf nagekeken (niet geverifieerd): ' + (reviewed[signal.id] ? 'Ja' : 'Nog niet')] : []),
       ...(answers[signal.id] === 'yes' ? ['Volgende stap: ' + signal.next] : []),
       ...(answers[signal.id] === 'unknown' ? ['Volgende stap: onafhankelijke informatie verzamelen.'] : []),
       ''
@@ -8454,6 +8456,7 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
 
 function PrivateOfferSafety() {
   const [answers, setAnswers] = useState<Record<string, OfferAnswer>>({});
+  const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
   const [preview, setPreview] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -8467,7 +8470,9 @@ function PrivateOfferSafety() {
       checked: offerSignals.length - unanswered.length
     };
   }, [answers]);
-  const report = offerSafetyExport(answers, new Date().toLocaleDateString('nl-NL'));
+  const reviewActions = [...findings.flagged, ...findings.unknown];
+  const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
+  const report = offerSafetyExport(answers, new Date().toLocaleDateString('nl-NL'), reviewed);
   const status = findings.urgent.length > 0
     ? 'Eerst stoppen en onafhankelijk controleren'
     : findings.flagged.length > 0 || findings.unknown.length > 0 || findings.unanswered.length > 0
@@ -8476,6 +8481,7 @@ function PrivateOfferSafety() {
 
   function setAnswer(id: string, value: OfferAnswer) {
     setAnswers(current => ({ ...current, [id]: value }));
+    setReviewed(current => current[id] ? { ...current, [id]: false } : current);
     setPreview(false);
     setConfirmReset(false);
   }
@@ -8538,13 +8544,28 @@ function PrivateOfferSafety() {
 
       <section className="card" style={{ marginTop: 22 }}>
         <h2 style={{ fontSize: 25 }}>Jouw concrete vervolg</h2>
+        {reviewActions.length > 0 && <p aria-live="polite" role="status">
+          <strong>{reviewedCount} van {reviewActions.length} vervolgstappen zelf nagelopen.</strong>
+          Afvinken betekent alleen dat je zelf een stap hebt nagekeken, niet dat
+          de woning, overeenkomst of afzender betrouwbaar is bevestigd.
+        </p>}
         {findings.flagged.length === 0 && findings.unknown.length === 0 && findings.unanswered.length === 0
           ? <p>Je hebt zelf geen van de signalen gemeld. Controleer desondanks de aanbieder, het schriftelijke
               aanbod en de betaalinstructies buiten dit scherm.</p>
           : <ol style={{ lineHeight: 1.7, paddingLeft: 22 }}>
-              {findings.flagged.map(signal => <li key={signal.id}>{signal.next}</li>)}
-              {findings.unknown.length > 0 && <li>Zoek onafhankelijke bevestiging voor de {findings.unknown.length}
-                {' '}onbekende {findings.unknown.length === 1 ? 'vraag' : 'vragen'}.</li>}
+              {reviewActions.map(signal => <li key={signal.id} style={{ marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'start', gap: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={reviewed[signal.id] === true}
+                    aria-label={'Zelf nagelopen: ' + signal.question}
+                    onChange={() => {
+                      setReviewed(current => ({ ...current, [signal.id]: !current[signal.id] }));
+                      setPreview(false);
+                    }} style={{ marginTop: 7 }} />
+                  <span>{answers[signal.id] === 'yes' ? signal.next :
+                    'Verzamel onafhankelijke informatie: ' + signal.question}
+                  </span>
+                </label>
+              </li>)}
               {findings.unanswered.length > 0 && <li>Beantwoord de {findings.unanswered.length}
                 {' '}open {findings.unanswered.length === 1 ? 'vraag' : 'vragen'} voordat je op deze check vertrouwt.</li>}
             </ol>}
@@ -8574,8 +8595,8 @@ function PrivateOfferSafety() {
         <button type="button" onClick={() => { setConfirmReset(true); setPreview(false); }}
           style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Wis antwoorden</button>
         {confirmReset && <div role="group" aria-label="Antwoorden wissen" style={{ paddingTop: 12 }}>
-          <p>Alle {findings.checked} antwoorden in dit tabblad wissen?</p>
-          <button type="button" onClick={() => { setAnswers({}); setConfirmReset(false); setPreview(false); }}
+          <p>Alle {findings.checked} antwoorden en {reviewedCount} zelf afgevinkte vervolgstappen in dit tabblad wissen?</p>
+          <button type="button" onClick={() => { setAnswers({}); setReviewed({}); setConfirmReset(false); setPreview(false); }}
             style={{ minHeight: 44, padding: '9px 14px' }}>Ja, wis alles</button>
           <button type="button" onClick={() => setConfirmReset(false)}
             style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
