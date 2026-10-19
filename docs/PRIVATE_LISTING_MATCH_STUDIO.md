@@ -49,6 +49,36 @@ velden of plaktekst vervalt de preview. Na de import is **éénmalig ongedaan ma
 tot de gebruiker een nieuwe woningoptie toevoegt, verwijdert of bewerkt. Criteria blijven gelijk;
 de bestaande TXT-preview moet opnieuw worden opgebouwd.
 
+## Nieuw: woningmatch naar eigen huurvoorstel — dubbele toestemming
+
+De al bestaande **Mijn woningmatch** en **Huurvoorstellen** zijn nu echt gekoppeld.
+Kies bij een ingevulde woning **Bekijk overname naar eigen huurvoorstel…**
+om eerst een volledige, brongebonden preview van jouw keuze te openen.
+Je ziet het zelf gekozen label, de exacte kale huur, de huidige geschatte
+totale maandlasten en of de vier persoonlijke grenzen gehaald zijn.
+Bij een niet passende woning verschijnt een expliciete waarschuwing;
+de keuze wordt **niet** stilzwijgend gefilterd of als officiële kans getoond.
+
+Alleen als het label voldoet aan de doelmodule (1–64 tekens, geen control
+characters/whitespace aan de randen) én kale huur een geheel bedrag van
+€100–€10.000 is, kan de overdracht worden aangeboden. De bestaande vergelijking
+zelf accepteert bewust andere bedragen/labels; die worden niet stilzwijgend
+afgerond of ingekort. Wijzigingen aan criteria, relatieve gewichten, methode,
+woningbedragen of notities maken de oude preview ongeldig.
+
+De gebruiker vinkt daarna **apart** aan dat uitsluitend eigen
+`{label, rent}` als tijdelijk voorstel mag worden aangeboden. Ook dan
+zijn er **twee verdere handelingen vereist**: in de bestaande Huurvoorstellendesk
+zelf kiezen of de tijdelijke kopie mag worden vooringevuld, en vervolgens
+zelf de ontbrekende service-, energie-, borg-, verhuiskosten,
+ingangsdatum en status controleren en het concept afzonderlijk opslaan.
+
+Er wordt uit de match dus **geen** volledige kostenraming, matchscore,
+lotingskans, accountgegevens, bezoek-/reactiestatus, adres of officiële
+aanbieding aan de huurdesk verzonden. Er gebeurt geen save, upload, API,
+browseropslag, WoningNet-actie of automatisch aanbod. De andere al
+bestaande shortlist-handoffs blijven onveranderd en onafhankelijk.
+
 ## Nieuw: bewuste loting- of inschrijfduurvoorkeur
 
 De M2-privévergelijker bevat nu ook een handmatig genoteerde **toewijzingsmethode** per
