@@ -10707,11 +10707,84 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
   return { rows, error: '' };
 }
 
+
+type WoonMatchPortable = {
+  format: 'woonpoints.private-match.v1';
+  criteria: WoonMatchCriteria;
+  weights: WoonMatchWeights;
+  listings: Omit<WoonMatchListing, 'id'>[];
+};
+const WOON_MATCH_BACKUP_LIMIT = 12288;
+const woonMatchKeys = (value: Record<string, unknown>, expected: string[]): boolean =>
+  Object.keys(value).sort().join('|') === [...expected].sort().join('|');
+const woonMatchRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const woonMatchSafeText = (value: unknown, cap: number): value is string => {
+  if (typeof value !== 'string' || value.length > cap || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  // JSON can decode \uD800 into an unpaired UTF-16 surrogate even from valid UTF-8.
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = value.charCodeAt(++i);
+      if (!(next >= 0xDC00 && next <= 0xDFFF)) return false;
+    } else if (code >= 0xDC00 && code <= 0xDFFF) return false;
+  }
+  return true;
+};
+function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; error: string } {
+  const fail = (message: string) => ({ data: null, error: message });
+  if (new TextEncoder().encode(text).length > WOON_MATCH_BACKUP_LIMIT) return fail('Het bestand is groter dan 12 KiB.');
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return fail('Dit is geen geldige JSON-back-up.'); }
+  if (!woonMatchRecord(value) || !woonMatchKeys(value, ['format','criteria','weights','listings']) ||
+      value.format !== 'woonpoints.private-match.v1') return fail('Onbekende versie of extra back-upvelden.');
+  const c = value.criteria, w = value.weights, items = value.listings;
+  const fields: Array<keyof WoonMatchCriteria> = ['budget','area','bedrooms','commute'];
+  if (!woonMatchRecord(c) || !woonMatchKeys(c, fields) ||
+      fields.some((key, index) => !woonMatchSafeText(c[key], 20) ||
+        (c[key] !== '' && WoonMatchNumeric(c[key] as string, [100000,100000,100,10000][index]) === null))) {
+    return fail('Ongeldige eigen criteria in de back-up.');
+  }
+  if (!woonMatchRecord(w) || !woonMatchKeys(w, fields) ||
+      fields.some(key => typeof w[key] !== 'number' || !Number.isInteger(w[key]) || (w[key] as number) < 1 || (w[key] as number) > 5)) {
+    return fail('Ongeldige relatieve weging in de back-up.');
+  }
+  if (!Array.isArray(items) || items.length < 2 || items.length > 5) return fail('Alleen twee tot vijf opties worden ondersteund.');
+  const names = new Set<string>();
+  for (const [index,item] of items.entries()) {
+    if (!woonMatchRecord(item) || !woonMatchKeys(item, ['name','monthlyRent','utilities','area','bedrooms','commute','note'])) {
+      return fail('Optie '+(index+1)+': onbekende of ontbrekende velden.');
+    }
+    for (const [key,cap] of [['name',80],['note',200]] as const) {
+      if (!woonMatchSafeText(item[key], cap)) return fail('Optie '+(index+1)+': ongeldige '+key+'.');
+    }
+    const name = (item.name as string).trim().toLocaleLowerCase('nl-NL');
+    if (name && names.has(name)) return fail('Dubbele labels in het herstelbestand.');
+    if (name) names.add(name);
+    const numbers: Array<[string,number]> = [['monthlyRent',100000],['utilities',100000],['area',100000],['bedrooms',100],['commute',10000]];
+    if (numbers.some(([key,cap]) => !woonMatchSafeText(item[key],20) ||
+        (item[key] !== '' && WoonMatchNumeric(item[key] as string,cap) === null))) {
+      return fail('Optie '+(index+1)+': ongeldig numeriek veld.');
+    }
+    if (['bedrooms','commute'].some(key => item[key] !== '' && !/^\d+$/.test(item[key] as string))) {
+      return fail('Optie '+(index+1)+': kamers en reistijd moeten gehele getallen zijn.');
+    }
+  }
+  return { data: value as WoonMatchPortable, error: '' };
+}
+
 function PrivateListingMatchStudio() {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
   const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
   const [listings, setListings] = useState<WoonMatchListing[]>([WoonMatchBlank(1), WoonMatchBlank(2)]);
   const nextId = useRef(3);
+  const backupRead = useRef(0);
+  const [backupPreview, setBackupPreview] = useState<{ source: string; text: string } | null>(null);
+  const [backupExportApproved, setBackupExportApproved] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<{ source: string; data: WoonMatchPortable; label: string } | null>(null);
+  const [restoreApproved, setRestoreApproved] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState('');
+  const [undoRestore, setUndoRestore] = useState<{ criteria: WoonMatchCriteria; weights: WoonMatchWeights; listings: WoonMatchListing[] } | null>(null);
   const [csvText, setCsvText] = useState('');
   const [csvError, setCsvError] = useState('');
   const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
@@ -10719,13 +10792,25 @@ function PrivateListingMatchStudio() {
   const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
   const [showPreview, setShowPreview] = useState<{ source: string; text: string } | null>(null);
   const [allowDownload, setAllowDownload] = useState(false);
-  const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => setCriteria(prev => ({ ...prev, [key]: value }));
+  const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
+    setUndoRestore(null);
+    setCriteria(prev => ({ ...prev, [key]: value }));
+  };
   const changeListing = (id: number, key: keyof Omit<WoonMatchListing, 'id'>, value: string) => {
+    setUndoRestore(null);
     setUndoCsv(null);
     setListings(prev => prev.map(row => row.id === id ? { ...row, [key]: value } : row));
   };
 
   const currentSource = JSON.stringify({ schema: 1, criteria, weights, listings });
+  const portableBackup: WoonMatchPortable = {
+    format: 'woonpoints.private-match.v1', criteria, weights,
+    listings: listings.map(({ id, ...fields }) => fields)
+  };
+  const portableBackupText = JSON.stringify(portableBackup, null, 2);
+  const backupSourceValid = woonMatchDecodeBackup(portableBackupText).data !== null;
+  const backupPreviewValid = backupPreview?.source === currentSource && backupSourceValid;
+  const restorePreviewValid = pendingRestore?.source === currentSource;
   const outcomes = useMemo(() => listings.map(item => WoonMatchCalculate(item, criteria, weights)), [listings, criteria, weights]);
   const criteriaErrors = [
     WoonMatchScalar(criteria.budget, 'Maandgrens', 100000, true),
@@ -10755,6 +10840,7 @@ function PrivateListingMatchStudio() {
   const acceptPastedCsv = () => {
     if (!pendingCsvValid || !confirmCsv || !pendingCsv) return;
     const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
+    setUndoRestore(null);
     setUndoCsv(listings.map(item => ({ ...item })));
     setListings(imported);
     setCsvText('');
@@ -10766,12 +10852,81 @@ function PrivateListingMatchStudio() {
   };
   const undoPastedCsv = () => {
     if (!undoCsv) return;
+    setUndoRestore(null);
     setListings(undoCsv);
     setUndoCsv(null);
     setPendingCsv(null);
     setConfirmCsv(false);
     setCsvError('Vorige woningopties in dit tabblad teruggezet.');
     setShowPreview(null);
+    setAllowDownload(false);
+  };
+
+  const downloadBackup = () => {
+    if (!backupExportApproved || !backupPreviewValid || !backupPreview) return;
+    const url = URL.createObjectURL(new Blob([backupPreview.text], { type: 'application/json;charset=utf-8' }));
+    const element = document.createElement('a');
+    element.href = url;
+    element.download = 'woonpoints-prive-woningmatch-v1.json';
+    document.body.appendChild(element);
+    element.click();
+    element.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+  const openBackupFile = async (file: File | undefined) => {
+    const read = ++backupRead.current;
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('');
+    if (!file) return;
+    if (file.size > WOON_MATCH_BACKUP_LIMIT) {
+      setRestoreMessage('Bestand geweigerd: groter dan 12 KiB.');
+      return;
+    }
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      if (read !== backupRead.current) return;
+      const result = woonMatchDecodeBackup(text);
+      if (!result.data) {
+        setRestoreMessage(result.error);
+        return;
+      }
+      setPendingRestore({ source: currentSource, data: result.data, label: file.name.slice(0, 100) });
+    } catch {
+      if (read === backupRead.current) setRestoreMessage('Bestand niet leesbaar of niet geldig UTF-8.');
+    }
+  };
+  const applyRestore = () => {
+    if (!pendingRestore || !restoreApproved || !restorePreviewValid) return;
+    const copy = pendingRestore.data;
+    setUndoRestore({
+      criteria: { ...criteria }, weights: { ...weights }, listings: listings.map(item => ({ ...item }))
+    });
+    setCriteria({ ...copy.criteria });
+    setWeights({ ...copy.weights });
+    setListings(copy.listings.map(item => ({ ...item, id: nextId.current++ })));
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('De gekozen back-up is tijdelijk geopend. Je kunt de vorige sessie één keer terugzetten.');
+    setUndoCsv(null);
+    setCsvText('');
+    setShowPreview(null);
+    setBackupPreview(null);
+    setBackupExportApproved(false);
+    setAllowDownload(false);
+  };
+  const revertRestore = () => {
+    if (!undoRestore) return;
+    setCriteria(undoRestore.criteria);
+    setWeights(undoRestore.weights);
+    setListings(undoRestore.listings);
+    setUndoRestore(null);
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('Vorige invoer teruggezet.');
+    setShowPreview(null);
+    setBackupPreview(null);
+    setBackupExportApproved(false);
     setAllowDownload(false);
   };
 
@@ -10835,6 +10990,7 @@ function PrivateListingMatchStudio() {
               <select style={WoonMatchInputStyle} value={weights[entry.key]} onChange={event => {
                 const next = Number(event.currentTarget.value);
                 if (Number.isInteger(next) && next >= 1 && next <= 5) {
+                  setUndoRestore(null);
                   setWeights(prev => ({ ...prev, [entry.key]: next }));
                 }
               }}>
@@ -10844,7 +11000,7 @@ function PrivateListingMatchStudio() {
               </select>
             </label>)}
           </div>
-          <button type="button" style={{ marginTop: 12 }} onClick={() => setWeights({ ...WOON_MATCH_DEFAULT_WEIGHTS })}>
+          <button type="button" style={{ marginTop: 12 }} onClick={() => { setUndoRestore(null); setWeights({ ...WOON_MATCH_DEFAULT_WEIGHTS }); }}>
             Herstel startweging
           </button>
         </fieldset>
@@ -10859,7 +11015,7 @@ function PrivateListingMatchStudio() {
           <article key={row.id} style={WoonMatchPanelStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'start' }}>
               <h3 style={{ marginTop: 0 }}>Optie {index + 1}</h3>
-              <button type="button" disabled={listings.length <= 2} onClick={() => { setUndoCsv(null); setListings(prev => prev.filter(item => item.id !== row.id)); }}>Verwijder</button>
+              <button type="button" disabled={listings.length <= 2} onClick={() => { setUndoRestore(null); setUndoCsv(null); setListings(prev => prev.filter(item => item.id !== row.id)); }}>Verwijder</button>
             </div>
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
               <WoonMatchField label="Naam of eigen label (zonder adres)" value={row.name} setValue={v => changeListing(row.id, 'name', v)} maxLength={80} placeholder="Woning A" />
@@ -10874,7 +11030,7 @@ function PrivateListingMatchStudio() {
             </div>
           </article>
         ))}
-        <button type="button" disabled={listings.length >= 5} onClick={() => { setUndoCsv(null); setListings(prev => [...prev, WoonMatchBlank(nextId.current++)]); }}
+        <button type="button" disabled={listings.length >= 5} onClick={() => { setUndoRestore(null); setUndoCsv(null); setListings(prev => [...prev, WoonMatchBlank(nextId.current++)]); }}
           style={{ padding: '10px 16px', border: '1px solid #075e57', borderRadius: 7, background: '#f2faf7' }}>
           + Woningoptie toevoegen ({listings.length}/5)
         </button>
@@ -10955,6 +11111,71 @@ function PrivateListingMatchStudio() {
           </label>
           <button type="button" disabled={!allowDownload} onClick={download}>Download eigen TXT</button>
         </>}
+      </section>
+
+      <section style={WoonMatchPanelStyle} aria-labelledby="backup-match-heading">
+        <h2 id="backup-match-heading">5. Mijn eigen woningmatch bewaren en terugzetten</h2>
+        <p>Bewaar je zelf ingevoerde criteria, prioriteiten, woningopties en notities in een
+          <strong> lokale JSON-back-up</strong> voor een volgende sessie. Ook onvolledige maar geldig geschreven concepten mogen mee.
+          Het formaat bevat geen account-, cookies-, WoningNet- of bronrechtengegevens.
+          Jouw gekozen opslaglocatie kan buiten Woonpoints synchroniseren.</p>
+        <button type="button" disabled={!backupSourceValid} onClick={() => {
+          setBackupPreview({ source: currentSource, text: portableBackupText });
+          setBackupExportApproved(false);
+        }}>Bekijk mijn volledige privé-JSON</button>
+        {backupPreview && !backupPreviewValid && <p role="status">Je invoer veranderde; bekijk de actuele JSON eerst opnieuw.</p>}
+        {backupPreview && backupPreviewValid && <>
+          <pre style={{ maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            padding: 14, background: '#f2faf7', borderRadius: 7 }}>{backupPreview.text}</pre>
+          <label style={{ display: 'block', margin: '12px 0' }}>
+            <input type="checkbox" checked={backupExportApproved}
+              onChange={event => setBackupExportApproved(event.target.checked)} />
+            {' '}Ik heb alle velden bekeken en wil deze privé-JSON zelf lokaal downloaden.
+          </label>
+          <button type="button" disabled={!backupExportApproved} onClick={downloadBackup}>Download bekeken JSON</button>
+        </>}
+        <h3>Mijn eerdere privé-JSON terugzetten</h3>
+        <p>Selecteer uitsluitend je eigen \`woonpoints.private-match.v1\` JSON (maximaal 12 KiB).
+          Er wordt niets geüpload; onbekende velden en versies worden geweigerd.
+          Je huidige invoer verandert pas na volledige preview en afzonderlijke bevestiging.</p>
+        <input type="file" accept=".json,application/json"
+          aria-label="Open eigen woningmatch-back-up" onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void openBackupFile(file);
+          }} />
+        {restoreMessage && <p role="status">{restoreMessage}</p>}
+        {pendingRestore && !restorePreviewValid && <p role="status">De restore-preview is verouderd: de huidige invoer is veranderd.</p>}
+        {pendingRestore && restorePreviewValid && <div style={{ background: '#f2faf7', padding: 14, borderRadius: 8, marginTop: 12 }}>
+          <p><strong>Volledig herstelvoorbeeld:</strong> {pendingRestore.label} · {pendingRestore.data.listings.length}
+            {' '}opties. Je huidige {listings.length} opties en alle vier eigen grenzen/gewichten worden vervangen.</p>
+          <p>Eigen grenzen:
+            {' '}max €{pendingRestore.data.criteria.budget || 'onbekend'} per maand,
+            {' '}min {pendingRestore.data.criteria.area || '?'} m²,
+            {' '}min {pendingRestore.data.criteria.bedrooms || '?'} kamers,
+            {' '}max {pendingRestore.data.criteria.commute || '?'} minuten.
+          </p>
+          <p>Prioriteiten: {WOON_MATCH_PRIORITY_LABELS.map(x => x.label + ' ' + pendingRestore.data.weights[x.key]).join(' · ')}</p>
+          <ul>{pendingRestore.data.listings.map((row,index) => <li key={index}>
+            <strong>{row.name || '(concept zonder naam)'}</strong> — huur {row.monthlyRent || '?'},
+            {' '}extra {row.utilities || '?'}, {row.area || '?'} m², {row.bedrooms || '?'} slaapkamers,
+            {' '}{row.commute || '?'} min; notitie: {row.note || '(leeg)'}
+          </li>)}</ul>
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            <input type="checkbox" checked={restoreApproved} onChange={event => setRestoreApproved(event.target.checked)} />
+            {' '}Ik heb alle waarden bekeken; vervang alleen de tijdelijke invoer in dit tabblad.
+          </label>
+          <button type="button" disabled={!restoreApproved} onClick={applyRestore}>Zet deze privémomentopname terug</button>
+          <button type="button" style={{ marginLeft: 10 }} onClick={() => {
+            backupRead.current++;
+            setPendingRestore(null);
+            setRestoreApproved(false);
+            setRestoreMessage('Herstel geannuleerd.');
+          }}>Annuleren</button>
+        </div>}
+        {undoRestore && <p><button type="button" onClick={revertRestore}>
+          Vorige complete woningmatch één keer terugzetten
+        </button></p>}
       </section>
     </div>
   );
