@@ -59,3 +59,39 @@ geblokkeerd tot hij opnieuw wordt samengesteld. Tekst wordt beperkt tot 8 KiB en
 wordt uitsluitend op expliciet verzoek lokaal als Blob aangeboden. Er wordt
 geen backend, account, portaal, contactpersoon of automatische opslag gebruikt.
 Zelfgekozen bestandsproviders kunnen de TXT buiten de browser synchroniseren.
+
+
+## Wat-als: financiële verhuisbuffer en tegenvallers
+
+Open binnen **Huurvoorstellen** de sectie **Wat als verhuizen duurder uitvalt?**.
+Daar kun je onafhankelijk van de originele eigen huurvoorstellen zes persoonlijke
+scenario-aannames invoeren: oude maandhuur, nul tot drie overlappende huurmaanden,
+extra eenmalige verhuiskosten, extra maandelijkse energie/onvoorziene lasten,
+optioneel beschikbaar startgeld en een eigen maandgrens.
+
+Voor **ieder bestaand** huurvoorstel krijg je een vergelijkbare
+- verwachte nieuwe maandlast: kale huur + service + eigen energie-inschatting
+  + opgegeven tegenvaller per maand;
+- vereiste startbuffer: eerste nieuwe maand + borg + originele eenmalige kosten
+  + eerste maandelijkse tegenvaller + eigen verhuiskosten + oude huur × overlapmaanden;
+- jaaruitgaven: twaalf nieuwe maanden + originele eenmalige kosten +
+  twaalf maandelijkse tegenvallers + oude huur tijdens overlap + verhuiskosten;
+- afzonderlijke verschillen met de vrijwillig ingevulde kasbuffer en maandgrens.
+
+Het bestaande huurvoorstel, de contractchecklist en de JSON-back-up
+worden **niet gewijzigd** door de wat-als-bedragen. Er wordt geen
+persoonlijke inkomensinformatie gevraagd of afgeleid. De buffer na start toont
+slechts startgeld minus berekende startbehoefte; hij is geen volledige
+maandelijkse huishoudbegroting. De terugbetaalbaarheid van een borg is onzeker,
+dus de borg wordt direct gereserveerd maar telt niet automatisch als
+niet-terugvorderbare twaalfmaandslast.
+
+De gebruiker kan een exact Nederlandstalig kostenoverzicht **vooraf bekijken**
+en daarna afzonderlijk als privé-TXT downloaden. Bij wijzigingen aan scenario
+of huurvoorstellen wordt een eerdere preview ongeldig. Geen upload, bericht
+aan de verhuurder, woningreactie, cookie, opslag of achtergrondverwerking.
+Een gekozen bestandsprovider kan bewust gedownloade bestanden wel synchroniseren.
+Onjuist ingevulde bedragen (maximaal € 50.000 met twee decimalen) zorgen ervoor
+dat berekeningen stoppen, in plaats van ongemerkt naar € 0 te worden afgerond.
+Voor een realistische beslissing blijven belastingen, verzekering, indexaties,
+woninggebreken en actuele contractvoorwaarden handmatig te controleren.

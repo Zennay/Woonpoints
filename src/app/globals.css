@@ -700,3 +700,42 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .rental-notice{padding:12px 15px;border-left:4px solid #336847;background:#edf5ef;color:#264b32;font-size:14px;line-height:1.5}
 @media(max-width:780px){.rental-desk{padding:20px}.rental-sections{grid-template-columns:1fr}.rental-column{padding:16px}.rental-summary{grid-template-columns:1fr}.rental-ranking{max-height:none}}
 @media(max-width:390px){.rental-two{grid-template-columns:1fr}}
+
+
+/* Explicit user-owned cost scenarios, isolated from stored rental offer records. */
+.rental-stress{border-top:1px solid #d8e4da;margin-top:26px;padding-top:25px}
+.rental-stress>h3{font-size:24px;margin:2px 0 10px;color:#1b3824}
+.rental-stress>p{color:#52665a;line-height:1.55}
+.rental-stress-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:18px 0}
+.rental-stress-inputs label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:700;color:#284333;min-width:0}
+.rental-stress-inputs small{color:#76847a;font-weight:400}
+.rental-stress-inputs input,.rental-stress-inputs select{
+  border:1.5px solid #8da997;background:#fff;color:#182d1e;border-radius:9px;
+  width:100%;padding:11px;font:inherit;font-size:14px;min-height:44px
+}
+.rental-stress-inputs input:focus-visible,.rental-stress-inputs select:focus-visible{
+  outline:3px solid #a8d6b5;outline-offset:2px
+}
+.rental-stress .rental-stress-hint{color:#647568;font-size:13px;line-height:1.6}
+.rental-stress-invalid{color:#96390f!important;background:#fff3e9;
+  border-left:3px solid #ac4d26;padding:12px}
+.rental-stress-results h4{font-size:18px;margin:20px 0 12px;color:#193c26}
+.rental-stress-results ol{list-style:none;display:grid;gap:12px;padding:0;margin:0}
+.rental-stress-results li{border:1px solid #d8e4d9;border-radius:12px;padding:17px;background:#f9fbf9;min-width:0}
+.rental-stress-results li>strong{font-size:17px;color:#153d25;overflow-wrap:anywhere}
+.rental-stress-results dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+.rental-stress-results dl div{padding:12px;background:white;border:1px solid #e3ece6;border-radius:9px}
+.rental-stress-results dt{font-size:12px;color:#5a715e;line-height:1.4}
+.rental-stress-results dd{font-size:18px;font-weight:800;color:#254932;margin:7px 0 0}
+.rental-stress-results li p{font-size:13px;margin:8px 0 0;font-weight:700}
+.rental-stress-risk{color:#963a1c!important}
+.rental-stress-safe{color:#176339!important}
+.rental-stress-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:17px}
+.rental-stress-preview{border:1px solid #b5c9b7;border-radius:12px;padding:15px;margin-top:16px}
+.rental-stress-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;
+  font:12px/1.6 ui-monospace,Consolas,monospace;max-height:260px;
+  background:#f1f5f0;padding:13px;border-radius:8px}
+.rental-stress-preview p{font-size:13px;color:#52675a}
+@media(max-width:850px){.rental-stress-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.rental-stress-inputs,.rental-stress-results dl{grid-template-columns:1fr}
+.rental-stress{padding-top:18px;margin-top:18px}}
