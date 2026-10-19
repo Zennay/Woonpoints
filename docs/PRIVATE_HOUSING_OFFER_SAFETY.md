@@ -2,6 +2,27 @@
 
 Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, ook bereikbaar via de vaste navigatie.
 
+## Meerdere voorstellen als privéwerkbladen
+
+- De aanbodcheck ondersteunt nu **1–5 onafhankelijke voorstellen** zonder vrijetekst-identiteit:
+  uitsluitend automatisch toegekende werkbladnummers. Wisselen behoudt per
+  werkblad eigen ja/nee/onbekend-antwoorden en per vraag eigen afvinkstatus.
+- De overzichtstabel toont per werkblad **urgente gemelde signalen**, overige
+  gemelde signalen, onbekend, onbeantwoord en eigen vervolgvoortgang.
+  Het is nadrukkelijk geen objectieve rangorde of frauderisicoscore.
+- Nieuwe voorstellen beginnen leeg. Eén gekozen werkblad verwijderen vraagt
+  bevestiging en laat alle andere werkbladen ongewijzigd; het allerlaatste
+  werkblad kan niet verwijderd worden. De bestaande reset wist uitsluitend
+  het actieve werkblad.
+- Een privé-TXT-download bevat standaard alleen het actieve werkblad. Via
+  **Bekijk complete privévergelijking** kan de gebruiker eerst alle inhoud
+  van 2–5 werkbladen controleren en pas daarna bewust één TXT downloaden.
+  Er worden geen namen, adressen, telefoonnummers, documenten of URL's gevraagd.
+- Alle werkbladen zijn uitsluitend vluchtig React-geheugen. Herladen sluit de
+  hele vergelijking af zonder persistentie; downloaden kan extern synchroniseren.
+- De data gaat niet naar de bestaande huurvoorstellenlijst en wijzigt nooit
+  aangevinkte huurrechten, WoningNet-reacties of contractstatussen.
+
 ## Wat werkt
 
 De gebruiker doorloopt negen concrete aandachtspunten in drie categorieën:
