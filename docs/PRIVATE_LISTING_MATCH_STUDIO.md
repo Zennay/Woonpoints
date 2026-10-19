@@ -231,7 +231,10 @@ Iedere bewerking maakt een eerdere CSV-preview ongeldig.
 ## Eigen CSV-opties toevoegen zonder bestaande te overschrijven
 
 Na de bestaande **Bekijk alle geplakte woningopties**-preview is er nu
-ook een afzonderlijke keuze **Voeg deze bekeken opties toe**.
+ook een afzonderlijke keuze **Voeg deze bekeken opties toe**. Je mag daarbij
+één tot vijf nieuwe regels aanleveren, zolang er maximaal vijf woningen
+totaal overblijven. Volledig vervangen vraagt nog steeds twee tot vijf
+regels; één regel is dus uitsluitend voor toevoegen toegestaan.
 Woonpoints toont vooraf hoeveel woningen er blijven en hoeveel worden
 toegevoegd. De toevoeging is alleen beschikbaar als er in totaal
 maximaal vijf opties ontstaan, alle bestaande labels uniek en niet-leeg
