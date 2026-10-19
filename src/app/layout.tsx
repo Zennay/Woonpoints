@@ -11,7 +11,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="nl">
       <body>
         <nav className="private-box-nav" aria-label="Verhuisgereedschap" style={{ background: '#edf6f4', padding: '10px 18px', display: 'flex', justifyContent: 'flex-end', gap: 18, flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
-          <a href="/woningmatch" style={{ color: '#075e57', fontWeight: 750, textDecoration: 'underline', textUnderlineOffset: 3 }}>Mijn woningmatch ↗</a>
+          <a href="/#private-woningmatch-heading" style={{ color: '#075e57', fontWeight: 750, textDecoration: 'underline', textUnderlineOffset: 3 }}>Mijn woningmatch ↗</a>
           <a href="/#private-offer-safety-heading" style={{ color: '#075e57', fontWeight: 750, textDecoration: 'underline', textUnderlineOffset: 3 }}>Woningaanbodcheck ↗</a>
           <a href="/#dozenlabels" style={{ color: '#075e57', fontWeight: 750, textDecoration: 'underline', textUnderlineOffset: 3 }}>
             Print verhuisdozenlabels ↗
