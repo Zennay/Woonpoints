@@ -2,6 +2,34 @@
 
 Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, ook bereikbaar via de vaste navigatie.
 
+## Privé woonbesluit: eigen huurkosten en aanbiedingsrisico samen bekijken
+
+- Vanuit **Huurvoorstellen** kan de gebruiker voor één al zelf ingevoerd en
+  geselecteerd huurvoorstel vrijwillig **Bekijk deze huurkosten bij mijn
+  aanbodcheck** kiezen. Alleen een tijdelijke momentopname wordt binnen
+  React-tabgeheugen doorgegeven: eigen label, geschatte maand-/eerstejaarslast,
+  benodigd startgeld, eigen maandgrens en het aantal zelf nagelopen huurvragen.
+  Vrijetekstvragen, documenten, identiteit of betalings- en WoningNet-gegevens
+  worden niet overgedragen.
+- In het gekozen privé-aanbodwerkblad volgt een **tweede expliciete
+  bevestiging**. Daar verschijnen de originele geldbedragen samen met de
+  door de gebruiker gemelde urgente, open en onbekende aandachtspunten.
+  Binnen een zelf ingestelde grens is nadrukkelijk geen betaalbaarheidsbewijs;
+  nul gemelde signalen is geen bewijs dat het aanbod of contract veilig is.
+- De gebruiker kan daarna een **apart, opt-in financieel privéverslag**
+  volledig bekijken en pas na die preview lokaal als TXT bewaren. De gewone
+  aanbodcheck-TXT en versiegebonden JSON-back-up nemen de financiële gegevens
+  niet stilzwijgend over.
+- Bewerken/wissen/importeren van de bronhuurvoorstellen of veranderen van
+  de eigen maandgrens maakt de oude snapshot ongeldig; de gebruiker moet
+  opnieuw bewust een momentopname voorbereiden. Verwijderen of importeren
+  van de veiligheidswerkmap maakt de tijdelijke koppeling ook ongedaan.
+  De waarden worden nergens naar een server verstuurd of automatisch
+  bij een formeel dossier, akkoord of huurcontract opgeslagen.
+- Dit is geen modelmatige ranking en geen externe financierings-, fraude-,
+  huurrecht-, adres- of legitimiteitscontrole; alle prijzen en signalen
+  blijven eigen, niet-geverifieerde invoer.
+
 ## Vrijwillige koppeling naar bestaande huurvoorstellen
 
 - Vanuit één gekozen aanbodcheck-werkblad kan de gebruiker voor alle zelf
