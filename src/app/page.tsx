@@ -19,6 +19,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-woningmatch-heading',title:'Mijn woningmatch',category:'woning'},
   {id:'private-offer-desk-heading',title:'Huurvoorstellen',category:'woning'},
   {id:'private-offer-safety-heading',title:'Aanbodcheck',category:'woning'},
+  {id:'private-contract-review-heading',title:'Huurcontract nalopen',category:'woning'},
   {id:'private-energy-quotes-heading',title:'Energietarieven vergelijken',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
   {id:'rental-scenarios-heading',title:'Huurscenario’s vergelijken',category:'woning'},
@@ -69,6 +70,7 @@ const homeNavAliases:Record<string,string[]>={
   'private-points-heading':['zoekpunten','puntenstand'],
   'housing-shortlist-heading':['woning kiezen','selectie'],
   'private-woningmatch-heading':['zelf woning vergelijken','matchscore','huurcriterium','match studio'],
+  'private-contract-review-heading':['contract controleren','huurovereenkomst','voorwaarden','borg terug','contract tekenen'],
   'private-budget-title':['woonlasten','huur vergelijken'],
   'rental-scenarios-heading':['huurscenario','budget woning','borg reserveren','eerstejaarskosten','verhuizen kosten'],
   'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
@@ -3537,6 +3539,7 @@ export default function HomePage() {
         onAcceptRentalDecision={setAcceptedRentalDecision}
         onClearRentalProposal={()=>setRentalDecisionProposal(null)}
         onClearRentalDecision={invalidateRentalDecision} />
+      <PrivateContractReview />
     </main>
   );
 }
@@ -11863,4 +11866,172 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       </section>
     </div>
   );
+}
+
+
+/**
+ * Local contract-reading workspace. No legal decision, account integration,
+ * persistence, upload or automatic acceptance; all values belong to this tab.
+ */
+const PRIVATE_CONTRACT_TOPICS = [
+  ['partijen', 'Partijen en contactpersoon', 'Klopt wie verhuurt en met wie je afspraken maakt?'],
+  ['woning', 'Woning en inbegrepen ruimtes', 'Staan woning, adres en afgesproken berging/parkeerplaats duidelijk genoemd?'],
+  ['huur', 'Kale huur en betaalmoment', 'Zijn kale huur, ingangsdatum en betaalmoment terug te vinden?'],
+  ['service', 'Servicekosten en afrekening', 'Is duidelijk wat een voorschot is en hoe afrekening plaatsvindt?'],
+  ['borg', 'Borg en teruggave', 'Staan het betaalbedrag en de voorwaarden voor teruggave op papier?'],
+  ['duur', 'Duur en opzegging', 'Is duidelijk welk soort overeenkomst je krijgt en hoe opzeggen werkt?'],
+  ['verhoging', 'Huurprijsverhoging', 'Weet je waar en hoe een eventuele huurverhoging is beschreven?'],
+  ['gebreken', 'Onderhoud en opleverstaat', 'Zijn bestaande gebreken en onderhoudsafspraken vastgelegd?'],
+  ['energie', 'Gas, water, licht en internet', 'Weet je wat inbegrepen is en wat je zelf moet afsluiten?'],
+  ['bijlagen', 'Bijlagen, huisregels en extra kosten', 'Zijn genoemde bijlagen beschikbaar en ongewenste extra kosten uitgezocht?']
+] as const;
+type ContractTopicChoice = 'open'|'gevonden'|'vraag';
+function parseContractMoney(input: string): number | null {
+  const value = input.trim();
+  if (value === '') return null;
+  if (!/^(?:0|[1-9][0-9]{0,5})(?:[,.][0-9]{1,2})?$/.test(value)) return null;
+  const [whole, fraction = ''] = value.replace(',', '.').split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) && cents >= 0 && cents <= 50000000 ? cents : null;
+}
+const contractEuro = (cents: number): string =>
+  new Intl.NumberFormat('nl-NL', {style:'currency',currency:'EUR'}).format(cents / 100);
+function PrivateContractReview() {
+  const [values, setValues] = useState<Record<string, ContractTopicChoice>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [rent, setRent] = useState('');
+  const [service, setService] = useState('');
+  const [deposit, setDeposit] = useState('');
+  const [signingDate, setSigningDate] = useState('');
+  const [preview, setPreview] = useState<{source: string;text: string}|null>(null);
+  const [approved, setApproved] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const amounts = [rent,service,deposit].map(parseContractMoney);
+  const moneyBad = [rent,service,deposit].some((s,i)=>s.trim()!==''&&amounts[i]===null);
+  const checked = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='gevonden').length;
+  const questions = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='vraag');
+  const open = PRIVATE_CONTRACT_TOPICS.filter(([id])=>!values[id]||values[id]==='open');
+  const source = JSON.stringify({values,notes,rent,service,deposit,signingDate});
+  const change = () => {setPreview(null);setApproved(false);setFeedback('');};
+  const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
+  const formGrid = {display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14} as const;
+  function makeReport() {
+    if (moneyBad) {setFeedback('Controleer de bedragen: gebruik eurobedragen zonder valutateken en maximaal twee decimalen.');return;}
+    const date = signingDate && /^\d{4}-\d{2}-\d{2}$/.test(signingDate) ? signingDate : 'Niet ingevuld';
+    const lines = [
+      'MIJN PRIVÉ-HUURCONTRACTCONTROLE','',
+      'Eigen invulhulp; geen juridische toets, goedkeuring of digitale ondertekening.',
+      'Niets is gecontroleerd bij een verhuurder of WoningNet.','',
+      'AFGESPROKEN BEDRAGEN (ALLEEN EIGEN INVOER)',
+      'Kale huur per maand: '+(amounts[0]===null?'Niet ingevuld':contractEuro(amounts[0])),
+      'Servicekosten per maand: '+(amounts[1]===null?'Niet ingevuld':contractEuro(amounts[1])),
+      'Kale huur + service per maand: '+(amounts[0]===null||amounts[1]===null?'Onbekend; vul beide bedragen in':contractEuro(amounts[0]+amounts[1])),
+      'Borg eenmalig: '+(amounts[2]===null?'Niet ingevuld':contractEuro(amounts[2])),
+      'Eigen gewenste tekendatum: '+date,
+      '',
+      'CONTROLEPUNTEN',
+      ...PRIVATE_CONTRACT_TOPICS.flatMap(([id,title,hint])=>[
+        '- '+title+': '+(values[id]==='gevonden'?'Zelf teruggevonden':values[id]==='vraag'?'Vragen open':'Nog niet nagekeken'),
+        '  Controle: '+hint,
+        ...(notes[id]?.trim()?['  Eigen notitie: '+notes[id].trim().replace(/[\r\n\t]+/g,' ')]:[])
+      ]),
+      '',
+      'VRAGEN VOOR EEN MENS: '+questions.length,
+      ...questions.map(([id,title])=>'- '+title+(notes[id]?.trim()?' — '+notes[id].trim().replace(/[\r\n\t]+/g,' '):'')),
+      'NIET NAGEKEKEN: '+open.length,
+      ...open.map(([,title])=>'- '+title),
+      '',
+      'Dit is een persoonlijke conceptlijst. Controleer bedragen, geldende regels en het originele contract zelf.',
+      'Er is geen acceptatie, betaling, officiële beoordeling, e-mail of upload uitgevoerd.'
+    ];
+    setPreview({source,text:lines.join('\n')+'\n'});
+    setApproved(false);
+    setFeedback('Rapport voorbereid. Lees de volledige tekst hieronder en bevestig zelf de download.');
+  }
+  function saveReport() {
+    if (!preview || preview.source!==source || !approved || moneyBad) {
+      setFeedback('Het rapport is gewijzigd of niet bevestigd. Maak een nieuwe preview.');
+      setPreview(null);setApproved(false);return;
+    }
+    const url = URL.createObjectURL(new Blob([preview.text],{type:'text/plain;charset=utf-8'}));
+    try {
+      const a = document.createElement('a');
+      a.href=url;a.download='mijn-huurcontractcontrole.txt';
+      document.body.appendChild(a);a.click();a.remove();
+      setFeedback('Privé-TXT aangeboden aan je browser. Er is niets verzonden of ondertekend.');
+      setApproved(false);
+    } finally {window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
+  return <section className="panel" id="private-contract-review-heading" aria-labelledby="private-contract-review-title">
+    <div>
+      <p className="eyebrow">HUURCONTRACT · ALLEEN IN DIT TABBLAD</p>
+      <h2 id="private-contract-review-title">Mijn contract vóór ondertekenen nalopen</h2>
+      <p>Loop zelf tien contractonderwerpen langs, vergelijk eigen bedragen en maak een lijst met open vragen.
+        Dit is een hulpmiddel bij het lezen, geen juridisch advies, goedkeuring of verhuurdercontrole.
+        Woonpoints vraagt niet om je contract te uploaden of automatisch te accepteren.</p>
+    </div>
+    <div style={formGrid}>
+      {([
+        ['Kale maandhuur (€)',rent,setRent],
+        ['Servicekosten per maand (€)',service,setService],
+        ['Borg eenmalig (€)',deposit,setDeposit]
+      ] as const).map(([label,value,set])=>
+        <label key={label} style={fieldStyle}><strong>{label}</strong>
+          <input type="text" inputMode="decimal" value={value} maxLength={10}
+            placeholder="Bijvoorbeeld 850,00" onChange={e=>{set(e.target.value);change();}} />
+        </label>)}
+      <label style={fieldStyle}><strong>Eigen gewenste tekendatum (optioneel)</strong>
+        <input type="date" value={signingDate} onChange={e=>{setSigningDate(e.target.value);change();}}/>
+      </label>
+    </div>
+    {moneyBad&&<p role="alert">Een bedrag is ongeldig. Gebruik bijvoorbeeld 850,00 zonder €-teken.</p>}
+    <p aria-live="polite"><strong>{checked}/10 zelf teruggevonden</strong> · {questions.length} vraagpunten · {open.length} nog niet nagekeken.</p>
+    <p><strong>Kale huur + service:</strong> {amounts[0]!==null&&amounts[1]!==null?
+      contractEuro(amounts[0]+amounts[1]):'Onbekend totdat beide bedragen zijn ingevuld'}
+      {' · '}<strong>Borg:</strong> {amounts[2]!==null?contractEuro(amounts[2]):'Niet ingevuld'}.
+      Dit zijn uitsluitend eigen contractaannames, geen geverifieerde kosten.</p>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(270px,1fr))',gap:12}}>
+      {PRIVATE_CONTRACT_TOPICS.map(([id,title,hint],i)=>
+        <fieldset key={id} style={{border:'1px solid #c9d8cf',borderRadius:12,padding:14,minWidth:0}}>
+          <legend style={{fontWeight:700}}>{i+1}. {title}</legend>
+          <p style={{margin:'6px 0 14px'}}>{hint}</p>
+          <label style={fieldStyle}><strong>Mijn beoordeling</strong>
+            <select value={values[id]||'open'} onChange={e=>{
+              setValues(current=>({...current,[id]:e.target.value as ContractTopicChoice}));change();
+            }}>
+              <option value="open">Nog niet nagekeken</option>
+              <option value="gevonden">Zelf teruggevonden</option>
+              <option value="vraag">Vraag voor verhuurder / adviseur</option>
+            </select>
+          </label>
+          <label style={{...fieldStyle,marginTop:12}}><strong>Eigen notitie (optioneel)</strong>
+            <textarea rows={2} maxLength={180} value={notes[id]||''}
+              placeholder="Bijvoorbeeld: waar staat dit beschreven?"
+              onChange={e=>{setNotes(current=>({...current,[id]:e.target.value}));change();}}/>
+          </label>
+        </fieldset>)}
+    </div>
+    <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:20}}>
+      <button type="button" disabled={moneyBad} onClick={makeReport}>Bekijk mijn volledige vraag- en contractrapport</button>
+      <button type="button" onClick={()=>{
+        if(!window.confirm('Alle eigen controles en bedragen uit dit tabblad wissen?'))return;
+        setValues({});setNotes({});setRent('');setService('');setDeposit('');
+        setSigningDate('');change();setFeedback('Alleen deze tijdelijke contractcontrole is gewist.');
+      }}>Wis tijdelijke contractcontrole</button>
+    </div>
+    {preview&&preview.source===source&&<div style={{marginTop:16}}>
+      <h3>Volledige preview van mijn privérapport</h3>
+      <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:420,overflowY:'auto',
+        padding:16,background:'#f2f6f2',borderRadius:10}}>{preview.text}</pre>
+      <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+        <input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/>
+        <span>Ik heb deze volledige tekst bekeken en bepaal zelf of ik hem lokaal download.</span>
+      </label>
+      <button type="button" disabled={!approved} onClick={saveReport}>Download mijn bekeken TXT</button>
+    </div>}
+    {feedback&&<p role="status" aria-live="polite">{feedback}</p>}
+    <p><small>Er is geen opslag in dit tabblad, geen API-verzoek, e-mail of automatische toestemming.
+      Sluit je het tabblad, dan verdwijnen de ingevulde waarden; een zelf gedownload bestand blijft onder jouw beheer.
+      Controleer persoonlijke informatie vóór je een rapport met anderen deelt.</small></p>
+  </section>;
 }
