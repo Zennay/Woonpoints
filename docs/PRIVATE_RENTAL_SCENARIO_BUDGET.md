@@ -88,3 +88,14 @@ Dit is een expliciet lokale, door de gebruiker beheerde handoff tussen
 bestaande React-componenten; geen automatische koppeling met WoningNet,
 bank, verhuurder, externe dienst of beveiligde accountinhoud. Er is
 geen automatische opslag en geen server- of netwerkverzoek.
+
+## Product-integratie en Docker-brongrens
+
+De complete React-vergelijker is samengebracht in de bestaande, reeds
+expliciet toegelaten `src/app/page.tsx`, niet als extra build-context
+dependency. De oorspronkelijke exacte `.dockerignore`-allowlist blijft
+onveranderd. De tijdelijke losstaande TSX-bron is verwijderd toen de
+component in de bestaande dashboardmodule landde. De normale
+Woonpoints-GitHub-workflows controleren de integratie opnieuw op de
+definitieve PR-head; deze documentatie is geen claim dat een aparte
+QA-test of production release succesvol is uitgevoerd.
