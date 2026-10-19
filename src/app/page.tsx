@@ -8670,14 +8670,202 @@ const offerDecisionReasons: readonly {value: OfferReason; label: string}[] = [
   { value: 'other', label: 'Andere persoonlijke reden' }
 ];
 
+type PrivateDecisionBackupRow = {
+  id: number;
+  stage: OfferDecision | null;
+  reason: OfferReason | null;
+};
+
+function PrivateOfferDecisionBackup({
+  cases, onRestore
+}: {
+  cases: readonly Workblad[];
+  onRestore: (rows: readonly PrivateDecisionBackupRow[]) => void;
+}) {
+  const [preview, setPreview] = useState<{source: string; content: string} | null>(null);
+  const [pending, setPending] = useState<{
+    rows: PrivateDecisionBackupRow[];
+    source: string;
+  } | null>(null);
+  const [message, setMessage] = useState('');
+  const generation = useRef(0);
+  const source = JSON.stringify(cases.map(item =>
+    [item.id, item.decision ?? null, item.decisionReason ?? null]));
+  const rawBackup = JSON.stringify({
+    kind: 'woonpoints-private-offer-decisions',
+    version: 1,
+    cases: cases.map(item => ({
+      id: item.id, stage: item.decision ?? null,
+      reason: item.decision ? item.decisionReason ?? null : null
+    }))
+  }, null, 2);
+  const shownBackup = preview?.source === rawBackup ? preview.content : null;
+  const shownImport = pending?.source === source ? pending.rows : null;
+
+  function decodeDecisionBackup(raw: string): PrivateDecisionBackupRow[] | null {
+    if (raw.length < 40 || raw.length > 4096) return null;
+    try {
+      const object: unknown = JSON.parse(raw);
+      const isRecord = (value: unknown): value is Record<string, unknown> =>
+        value !== null && typeof value === 'object' && !Array.isArray(value) &&
+        Object.getPrototypeOf(value) === Object.prototype;
+      const keys = (value: Record<string, unknown>, expected: readonly string[]) =>
+        Object.keys(value).length === expected.length &&
+        expected.every(key => Object.prototype.hasOwnProperty.call(value, key));
+      if (!isRecord(object) || !keys(object, ['kind', 'version', 'cases']) ||
+        object.kind !== 'woonpoints-private-offer-decisions' ||
+        object.version !== 1 || !Array.isArray(object.cases) ||
+        object.cases.length !== cases.length || object.cases.length > 5 ||
+        object.cases.length < 1) return null;
+      const seen = new Set<number>();
+      const ids = new Set(cases.map(item => item.id));
+      const rows: PrivateDecisionBackupRow[] = [];
+      for (const candidate of object.cases) {
+        if (!isRecord(candidate) || !keys(candidate, ['id', 'stage', 'reason']) ||
+          typeof candidate.id !== 'number' || !Number.isSafeInteger(candidate.id) ||
+          candidate.id < 1 || candidate.id > 1_000_000_000 ||
+          !ids.has(candidate.id) || seen.has(candidate.id)) return null;
+        const stage = candidate.stage;
+        const reason = candidate.reason;
+        if (!(stage === null || offerDecisionStages.some(item => item.value === stage)) ||
+          !(reason === null || offerDecisionReasons.some(item => item.value === reason)) ||
+          (stage === null && reason !== null)) return null;
+        seen.add(candidate.id);
+        rows.push({
+          id: candidate.id,
+          stage: stage as OfferDecision | null,
+          reason: reason as OfferReason | null
+        });
+      }
+      // Require exact native canonical encoding: duplicate keys, aliases,
+      // added fields or arbitrary input JSON cannot be silently accepted.
+      const canonical = JSON.stringify({
+        kind: 'woonpoints-private-offer-decisions',
+        version: 1,
+        cases: rows
+      }, null, 2);
+      if (raw.trimEnd() !== canonical) return null;
+      return rows;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveLocal(content: string) {
+    if (!shownBackup || content !== shownBackup) return;
+    const url = URL.createObjectURL(new Blob([content], {
+      type: 'application/json;charset=utf-8'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-mijn-voorlopige-keuzes-prive.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setPreview(null);
+  }
+  async function chooseFile(file: File | undefined) {
+    const currentRead = ++generation.current;
+    setPending(null);
+    setPreview(null);
+    setMessage('');
+    if (!file) return;
+    if (file.size > 4096 || file.size < 40) {
+      setMessage('Bestand afgewezen: maximaal 4 KiB in het exacte privékeuzeformaat.');
+      return;
+    }
+    const readFor = source;
+    let raw = '';
+    try { raw = await file.text(); } catch {
+      if (currentRead === generation.current) setMessage('Bestand lezen mislukt.');
+      return;
+    }
+    if (currentRead !== generation.current) return;
+    const rows = decodeDecisionBackup(raw);
+    if (!rows) {
+      setMessage('Bestand afgewezen: ongeldig, onvolledig of geen exacte werkblad-ID-overeenkomst.');
+      return;
+    }
+    setPending({rows, source: readFor});
+    setMessage('Exacte privékeuzes ingelezen. Bekijk ze eerst en bevestig afzonderlijk.');
+  }
+  const decisionLabel = (stage: OfferDecision | null) =>
+    offerDecisionStages.find(item => item.value === stage)?.label || 'Nog geen keuze';
+  const reasonLabel = (reason: OfferReason | null) =>
+    offerDecisionReasons.find(item => item.value === reason)?.label || 'Geen reden';
+
+  return <section style={{ borderTop: '1px solid #dbe6dd',
+    marginTop: 20, paddingTop: 15 }} aria-label="Privékeuzes bewaren en herstellen">
+    <h3>Mijn voorlopige keuzes zelf bewaren of terugzetten</h3>
+    <p>De officiële aanbodcheck-JSON bevat deze informele keuzes niet.
+      Alleen als je bewust deze <em>aparte</em> privékeuze-JSON bewaart,
+      kun je dezelfde keuze later in de bijbehorende werkbladen terugzetten.
+      Geen namen, adressen, bedragen of antwoorden; een eigen opslaglocatie
+      kan wel extern synchroniseren.</p>
+    <button type="button" onClick={() =>
+      setPreview(shownBackup ? null : {source: rawBackup, content: rawBackup})}
+      style={{ minHeight: 44, padding: '8px 12px' }}>
+      {shownBackup ? 'Sluit JSON-voorbeeld' : 'Bekijk exacte privékeuze-JSON'}
+    </button>
+    {shownBackup && <div>
+      <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+        maxHeight: 220, overflow: 'auto', padding: 12, background: '#f3f6f3' }}>
+        {shownBackup}
+      </pre>
+      <button type="button" onClick={() => saveLocal(shownBackup)}
+        style={{ minHeight: 44, padding: '8px 12px' }}>
+        Download deze bekeken privékeuzes
+      </button>
+    </div>}
+    <label htmlFor="offer-decision-private-import"
+      style={{ display: 'block', fontWeight: 700, marginTop: 16 }}>
+      Kies uitsluitend je eerdere privékeuzebestand (max. 4 KiB)
+    </label>
+    <input id="offer-decision-private-import" type="file" accept=".json,application/json"
+      onChange={event => {
+        const file = event.target.files?.[0];
+        void chooseFile(file);
+        event.target.value = '';
+      }} style={{ display: 'block', margin: '8px 0', maxWidth: '100%' }} />
+    {message && <p role="status">{message}</p>}
+    {shownImport && <div role="group" aria-label="Privékeuzes herstellen">
+      <p>Herstellen vervangt <strong>uitsluitend de voorlopige keuze en algemene reden</strong>
+        van dezelfde huidige werkbladnummers. Alle veiligheidsantwoorden, datums
+        en financiële informatie blijven intact. Verkeerde of ontbrekende IDs zijn geweigerd.</p>
+      <ul>{shownImport.map(row => <li key={row.id}>
+        Voorstel {row.id}: {decisionLabel(row.stage)} · {reasonLabel(row.reason)}
+      </li>)}</ul>
+      <button type="button" onClick={() => {
+        if (!shownImport || pending?.source !== source) return;
+        generation.current++;
+        onRestore(shownImport);
+        setPending(null);
+        setMessage('Eigen voorlopige keuzes bewust overgenomen.');
+      }} style={{ minHeight: 44, padding: '8px 12px' }}>
+        Ja, neem uitsluitend deze privékeuzes over
+      </button>
+      <button type="button" onClick={() => {
+        generation.current++;
+        setPending(null);
+        setMessage('Import geannuleerd. Niets gewijzigd.');
+      }} style={{ minHeight: 44, padding: '8px 12px', marginLeft: 8 }}>
+        Annuleer
+      </button>
+    </div>}
+  </section>;
+}
+
+
 function PrivateOfferDecisionDesk({
-  cases, signals, onUpdate, onSelect
+  cases, signals, onUpdate, onSelect, onRestore
 }: {
   cases: readonly Workblad[];
   signals: readonly Signal[];
   onUpdate: (caseId: number, stage: OfferDecision | undefined,
     reason: OfferReason | undefined) => void;
   onSelect: (caseId: number) => void;
+  onRestore: (rows: readonly PrivateDecisionBackupRow[]) => void;
 }) {
   const [preview, setPreview] = useState<{source: string; text: string} | null>(null);
   const count = cases.filter(item => item.decision !== undefined).length;
@@ -8796,6 +8984,7 @@ function PrivateOfferDecisionDesk({
         Download deze bekeken privésamenvatting
       </button>
     </div>}
+    <PrivateOfferDecisionBackup cases={cases} onRestore={onRestore} />
   </section>;
 }
 
@@ -9477,7 +9666,19 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
       </section>
 
       <PrivateOfferDecisionDesk cases={caseItems} signals={offerSignals}
-        onSelect={selectCase} onUpdate={(id, decision, reason) => {
+        onSelect={selectCase} onRestore={(rows) => {
+          const byId = new Map(rows.map(row => [row.id, row]));
+          if (rows.length !== caseItems.length ||
+            caseItems.some(item => !byId.has(item.id))) return;
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => {
+            const next = byId.get(item.id);
+            return next ? { ...item, decision: next.stage ?? undefined,
+              decisionReason: next.reason ?? undefined } : item;
+          }));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} onUpdate={(id, decision, reason) => {
           backupReadGeneration.current++;
           setCaseItems(items => items.map(item => item.id === id
             ? { ...item, decision, decisionReason: reason } : item));
