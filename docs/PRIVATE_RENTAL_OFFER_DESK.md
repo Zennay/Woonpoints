@@ -27,3 +27,18 @@ Zelfstandige handmatige huurvoorstelvergelijker binnen Woonpoints. Geen officië
 ## Implementatie
 
 De complete afgeschermde component staat in bestaande src/app/page.tsx met de gescopeerde rental- CSS-klassen in bestaande src/app/globals.css; opgenomen na de woningkeuze, met navigatieanker private-offer-desk-heading. Geen mutatie aan Prisma, worker, WoningNet, authenticatie, accountflow, QA-tests of workflows. Bestaande CI/review/releasegates blijven intact.
+## Directe handoff vanuit de bestaande woningshortlist
+
+Vanuit de eigen woningvergelijking biedt elke kandidaat nu **Gebruik voor een huurvoorstel**.
+De knop draagt uitsluitend het reeds handmatig opgegeven neutrale woninglabel en de kale
+maandhuur over aan de bestaande huurvoorstelvergelijker, **niet** de rest van de woning,
+naam/adres, accountdata, status, service, energie, borg of startdatum.
+De gebruiker ziet eerst een bevestiging en kan die annuleren zonder formuliermutatie.
+Bevestigen vult uitsluitend de twee genoemde velden in een **nog niet opgeslagen**
+nieuw formulier in. Bij een al bewerkt voorstel wordt dat formulier niet vervangen
+zonder expliciete bevestiging. De gebruiker moet daarna onbekende kosten en andere
+gegevens zelf invullen en apart **Voeg eigen voorstel toe** kiezen.
+Bronvelden worden opnieuw gecontroleerd op geldig label en oorspronkelijke kale-huurrange.
+De bestaande Woonpoints-snelkoppelingen voor kosten, verhuizing, bezichtiging en
+planner blijven ongewijzigd. Handoff bestaat uitsluitend in React-geheugen van
+dezelfde pagina; geen browserstorage, WoningNet-verzoek of gedeelde accountdata.

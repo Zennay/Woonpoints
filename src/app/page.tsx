@@ -1483,7 +1483,10 @@ function saveDownload(filename:string,content:string){
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
 
-function PrivateOfferDesk(){
+function PrivateOfferDesk({prefill,onPrefillHandled}: {
+  prefill?: {label:string;rent:number}|null;
+  onPrefillHandled?:()=>void;
+} = {}){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [draft,setDraft]=useState<Draft>(newDraft);
   const [editing,setEditing]=useState<string|null>(null);
@@ -1517,7 +1520,7 @@ function PrivateOfferDesk(){
     const utilities=integerMoney(draft.utilities);
     const deposit=integerMoney(draft.deposit);
     const other=integerMoney(draft.other);
-    if(!validLabel(draft.label.trim(),60)||rent===null||rent<=0||
+    if(!validLabel(draft.label.trim(),64)||rent===null||rent<=0||
       [service,utilities,deposit,other].some(v=>v===null)||
       !validDate(draft.startDate)||!validQuestions(draft.questions)){
       setNotice('Controleer het label, echte datum en bedragen (0 tot € 50.000, maximaal 2 decimalen). Kale huur moet hoger dan nul zijn.');
@@ -1598,12 +1601,37 @@ function PrivateOfferDesk(){
       </div>
     </header>
 
+    {prefill&&<aside className={styles.warnbox} aria-label="Eigen woninggegevens overnemen">
+      <h3>Woning uit jouw eigen shortlist overnemen?</h3>
+      <p><strong>{prefill.label}</strong> · zelf genoteerde kale huur:
+        {' '}{euro(Number.isSafeInteger(prefill.rent)?prefill.rent*100:0)} per maand.
+        Dit is uitsluitend een kopieervoorstel. Servicekosten, energie, borg,
+        overige kosten, ingangsdatum en status worden niet overgenomen of verzonnen.
+        Het bestaande formulier wordt pas na jouw bevestiging vervangen;
+        een definitief huurvoorstel wordt niet automatisch opgeslagen.</p>
+      <div className={styles.buttons}>
+        <button type="button" onClick={()=>{
+          if(!validLabel(prefill.label,64)||!Number.isSafeInteger(prefill.rent)||
+             prefill.rent<100||prefill.rent>10000){
+            setNotice('Ongeldige woninggegevens. Controleer de oorspronkelijke shortlist.');
+            onPrefillHandled?.();
+            return;
+          }
+          setDraft({...newDraft(),label:prefill.label,rent:String(prefill.rent)});
+          setEditing(null);
+          resetTransient();
+          setNotice('Woninglabel en kale huur vooringevuld. Vul onbekende bedragen zelf in en kies daarna pas Voeg eigen voorstel toe.');
+          onPrefillHandled?.();
+        }}>Ja, vul alleen label en kale huur in</button>
+        <button type="button" onClick={onPrefillHandled}>Nee, behoud huidige invoer</button>
+      </div>
+    </aside>}
     <div className={styles.sections}>
       <div className={styles.column}>
         <h3>{editing?'Eigen voorstel bewerken':'Eigen voorstel toevoegen'} <small>({offers.length}/{MAX_OFFERS})</small></h3>
         <form onSubmit={submit} className={styles.form}>
           <label>Neutraal eigen label <span>(geen adres nodig)</span>
-            <input value={draft.label} maxLength={60} placeholder="Bijv. woning A"
+            <input value={draft.label} maxLength={64} placeholder="Bijv. woning A"
               onChange={e=>edit('label',e.target.value)} required/></label>
           <div className={styles.two}>
             <label>Kale huur per maand (€)
@@ -1763,6 +1791,7 @@ export default function HomePage() {
       hint:'Zelf gemarkeerde contract- en verhuisstappen.',pulse:utilitiesPulse}
   ];
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
+  const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
   const cards = initialCards.map(([label,value,detail])=>{
     if(label==='Maanddoel' && personalOverview?.count!=null) return [
       label,personalOverview.count+' / 4 zelf genoteerd',
@@ -2201,8 +2230,9 @@ export default function HomePage() {
         <PositionStats />
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
-      <ManualHousingDecisionWorkspace />
-      <PrivateRentalOfferDesk />
+      <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
+      <PrivateRentalOfferDesk prefill={rentalPrefill}
+        onPrefillHandled={()=>setRentalPrefill(null)} />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />

@@ -1344,11 +1344,12 @@ const defaults: Preferences = {maxRent: 1000, minRooms: 2, maxTravel: 45, prefer
 const emptyHousing = {label: '', rent: '', rooms: '2', travel: '30', balcony: false};
 const number = (s: string) => s.trim() === '' ? NaN : Number(s);
 
-export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingPrefill, onMovePrefill}: {
+export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingPrefill, onMovePrefill, onRentalPrefill}: {
   onCostPrefill?: (selected: [Home, Home], preferences: Preferences) => void;
   onPlanPrefill?: (selected: Home) => void;
   onViewingPrefill?: (selected: [Home, Home]) => void;
   onMovePrefill?: (selected: Home) => void;
+  onRentalPrefill?: (selected: Home) => void;
 } = {}) {
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [draft, setDraft] = useState(emptyHousing);
@@ -1716,6 +1717,19 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
                   document.getElementById('private-moving-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
                 }}>
                 Bereid verhuisplan voor deze woning voor ↓
+              </button>}
+              {onRentalPrefill && <button type="button" className="secondary"
+                onClick={() => {
+                  const home = normalizeManualHome(row.home) as Home | null;
+                  if (!home) {
+                    setNotice('De woninggegevens zijn gewijzigd; vul de woning opnieuw in.');
+                    return;
+                  }
+                  onRentalPrefill({...home});
+                  setNotice('Eigen woninglabel en kale huur naar de huurvoorstelvergelijker aangeboden. Bevestig daar eerst; overige bedragen blijven onbekend.');
+                  document.getElementById('private-offer-desk-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+                }}>
+                Gebruik voor een huurvoorstel ↓
               </button>}
               <button type="button" className="secondary" onClick={() => {
                 setCompared([]);
@@ -2256,7 +2270,9 @@ type PrivateLongTermOffer = {
 
 
 /** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
-export function ManualHousingDecisionWorkspace() {
+export function ManualHousingDecisionWorkspace({onRentalPrefill}: {
+  onRentalPrefill?: (selected: {label:string;rent:number}) => void;
+} = {}) {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
   const [planPrefill, setPlanPrefill] =
     useState<{label:string; kind?:PrivatePlanKind} | null>(null);
@@ -2272,7 +2288,8 @@ export function ManualHousingDecisionWorkspace() {
         })}
         onPlanPrefill={home => setPlanPrefill({...home})}
         onViewingPrefill={selected => setViewingOffer([selected[0].label, selected[1].label])}
-        onMovePrefill={home => setMovingOffer({...home})} />
+        onMovePrefill={home => setMovingOffer({...home})}
+        onRentalPrefill={onRentalPrefill} />
       <ManualHousingCostComparison handoff={handoff}
         onLongTermOffer={offer => setLongTermOffer(offer)} />
       <PrivateLongTermHousingCosts offer={longTermOffer}
