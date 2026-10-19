@@ -8534,7 +8534,13 @@ const offerSafetyRentalQuestions: Record<string,string> = {
   'different-offer': 'Waarom wijkt het aanbod af?'
 };
 
-type OfferSafetyCase = { id: number; answers: Record<string, OfferAnswer>; reviewed: Record<string, boolean> };
+type OfferSafetyCase = {
+  id: number;
+  answers: Record<string, OfferAnswer>;
+  reviewed: Record<string, boolean>;
+  // Local-only planning. Not included in either the TXT/JSON safety evidence.
+  reviewDate?: string;
+};
 const MAX_OFFER_SAFETY_CASES = 5;
 const MAX_OFFER_SAFETY_BACKUP_BYTES = 10 * 1024;
 const OFFER_SAFETY_BACKUP_KIND = 'woonpoints-private-offer-safety';
@@ -8629,6 +8635,7 @@ type Workblad = {
   id: number;
   answers: Record<string, Answer>;
   reviewed: Record<string, boolean>;
+  reviewDate?: string;
 };
 type Signal = {
   id: string;
@@ -8645,15 +8652,17 @@ type Action = {
 };
 
 function PrivateOfferActionBoard({
-  cases, signals, onSelect, onToggle
+  cases, signals, onSelect, onToggle, onSetDate
 }: {
   cases: readonly Workblad[];
   signals: readonly Signal[];
   onSelect: (id: number) => void;
   onToggle: (caseId: number, signalId: string) => void;
+  onSetDate: (caseId: number, date: string | undefined) => void;
 }) {
   const [includeReviewed, setIncludeReviewed] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [calendarPreview, setCalendarPreview] = useState<number | null>(null);
   const actions = useMemo<Action[]>(() => cases.flatMap(item =>
     signals.flatMap(signal => {
       const answer = item.answers[signal.id];
@@ -8673,6 +8682,34 @@ function PrivateOfferActionBoard({
     action.answer === 'yes' && action.signal.severity === 'urgent').length;
   const unknown = pending.filter(action => action.answer === 'unknown').length;
   const missing = pending.filter(action => !action.answer).length;
+  const localNow = new Date();
+  const todayKey = [localNow.getFullYear(),
+    String(localNow.getMonth() + 1).padStart(2, '0'),
+    String(localNow.getDate()).padStart(2, '0')].join('-');
+  const validDay = (date?: string) => {
+    if (!date || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(date)) return false;
+    const parsed = new Date(date + 'T12:00:00Z');
+    return !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === date;
+  };
+  // Export an intentionally anonymous calendar entry only after preview.
+  // Date-only start/end avoids forcing a timezone or a private address.
+  function privateCalendar(item: Workblad): string | null {
+    const date = item.reviewDate;
+    if (!validDay(date)) return null;
+    const start = date!.replace(/-/g, '');
+    const next = new Date(Date.parse(date! + 'T12:00:00Z') + 86_400_000);
+    const end = next.toISOString().slice(0, 10).replace(/-/g, '');
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    return [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Woonpoints//Private Offer Planning//NL',
+      'BEGIN:VEVENT', 'UID:woonpoints-private-' + item.id + '-' + start + '@local',
+      'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start,
+      'DTEND;VALUE=DATE:' + end, 'SUMMARY:Woonpoints eigen voorstel ' + item.id + ' nalopen',
+      'DESCRIPTION:Zelf controles nalopen. Geen externe verificatie of automatische reactie.',
+      'END:VEVENT', 'END:VCALENDAR', ''
+    ].join('\r\n');
+  }
   const report = [
     'WOONPOINTS · PRIVÉ VERVOLGACTIES',
     'Zelf ingevuld op ' + new Date().toLocaleDateString('nl-NL'),
@@ -8690,6 +8727,20 @@ function PrivateOfferActionBoard({
       ''
     ].join('\n'))
   ].join('\n');
+
+  function downloadCalendar(item: Workblad) {
+    const content = privateCalendar(item);
+    if (!content || calendarPreview !== item.id) return;
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-voorstel-' + item.id + '-eigen-herinnering.ics';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setCalendarPreview(null);
+  }
 
   function openQuestion(action: Action) {
     onSelect(action.caseId);
@@ -8723,6 +8774,44 @@ function PrivateOfferActionBoard({
     <p style={{ fontSize: 14 }}>Dit is géén veilige-aanbiedingenranglijst.
       Een afgevinkte stap bevestigt geen identiteit, overeenkomst of betaling.
       Bij een urgent signaal: stop en controleer onafhankelijk voordat je doorgaat.</p>
+    <h3>Zelf een vervolgdatum kiezen (optioneel)</h3>
+    <p>Per werkblad kun je handmatig een controledag kiezen en pas na een preview
+      een anonieme agenda-afspraak downloaden. Geen automatische herinnering,
+      synchronisatie of providercontrole. Agendadiensten kunnen jouw eigen
+      import buiten dit tabblad bewaren.</p>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12 }}>
+      {cases.map(item => <div key={item.id}
+        style={{ border: '1px solid #dbe6dd', borderRadius: 10, padding: 12 }}>
+        <label style={{ display: 'block', fontWeight: 700 }} htmlFor={'offer-review-date-' + item.id}>
+          Voorstel {item.id} · eigen controledatum
+        </label>
+        <input id={'offer-review-date-' + item.id} type="date"
+          min="2000-01-01" max="2099-12-31" value={item.reviewDate || ''}
+          onChange={event => {
+            onSetDate(item.id, event.target.value || undefined);
+            setCalendarPreview(null);
+          }} style={{ display: 'block', minHeight: 44, margin: '8px 0', maxWidth: '100%' }} />
+        {validDay(item.reviewDate) && <p role="status">
+          {item.reviewDate! < todayKey ? 'Gekozen controledatum is voorbij (geen automatische melding).' :
+            item.reviewDate === todayKey ? 'Eigen controledag is vandaag.' :
+            'Controledatum voor jezelf gekozen.'}
+        </p>}
+        {validDay(item.reviewDate) && <button type="button"
+          onClick={() => setCalendarPreview(calendarPreview === item.id ? null : item.id)}
+          style={{ minHeight: 44, padding: '8px 12px' }}>
+          {calendarPreview === item.id ? 'Sluit agenda-voorbeeld' : 'Bekijk anonieme agenda-afspraak'}
+        </button>}
+        {calendarPreview === item.id && validDay(item.reviewDate) && <div>
+          <p>Dit agenda-bestand bevat alléén de datum, het nummer
+            van dit werkblad en de algemene omschrijving. Geen antwoorden,
+            bedragen of contactgegevens.</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            maxHeight: 170, overflow: 'auto' }}>{privateCalendar(item)}</pre>
+          <button type="button" onClick={() => downloadCalendar(item)}
+            style={{ minHeight: 44, padding: '8px 12px' }}>Download bekeken .ics</button>
+        </div>}
+      </div>)}
+    </div>
     <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44 }}>
       <input type="checkbox" checked={includeReviewed}
         onChange={event => setIncludeReviewed(event.target.checked)} />
@@ -9142,7 +9231,14 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
       </section>
 
       <PrivateOfferActionBoard cases={caseItems} signals={offerSignals}
-        onSelect={selectCase} onToggle={toggleCaseReview} />
+        onSelect={selectCase} onToggle={toggleCaseReview}
+        onSetDate={(caseId, date) => {
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => item.id === caseId
+            ? { ...item, reviewDate: date } : item));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} />
 
       <section className="card" aria-label="Resultaatoverzicht" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 22 }}>Controle voor {caseLabel(currentCase.id)}</h2>
