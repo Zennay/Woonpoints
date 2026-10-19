@@ -2322,7 +2322,8 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
   const [fromShortlist, setFromShortlist] = useState(false);
-  const [matchCostApproved, setMatchCostApproved] = useState(false);
+  const [matchCostApprovedKey, setMatchCostApprovedKey] = useState<string|null>(null);
+  const matchCostKey = matchCostOffer ? JSON.stringify(matchCostOffer) : null;
   const [pendingBudgetRestore, setPendingBudgetRestore] = useState<PrivateBudgetBackup | null>(null);
   const [budgetArchiveMessage, setBudgetArchiveMessage] = useState('');
 
@@ -2585,12 +2586,12 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
           <p>Alle andere kosten starten op €0 als <strong>nog zelf in te vullen</strong>.
             De financiële vergelijking wordt niet automatisch als akkoord of besluit opgeslagen.</p>
           <label style={{display:'block',marginBottom:12}}>
-            <input type="checkbox" checked={matchCostApproved}
-              onChange={event=>setMatchCostApproved(event.target.checked)} />
+            <input type="checkbox" checked={matchCostApprovedKey===matchCostKey}
+              onChange={event=>setMatchCostApprovedKey(event.target.checked?matchCostKey:null)} />
             {' '}Ik heb de twee kale huurprijzen gecontroleerd en wil mijn huidige tijdelijke
             kostenscenario&apos;s pas nu overschrijven.
           </label>
-          <button type="button" disabled={!matchCostApproved} onClick={()=>{
+          <button type="button" disabled={!matchCostKey||matchCostApprovedKey!==matchCostKey} onClick={()=>{
             const first=matchCostOffer.first,second=matchCostOffer.second;
             const valid=(entry:{label:string;rent:number})=>
               entry.label.length>=1&&entry.label.length<=64&&entry.label===entry.label.trim()&&
@@ -2601,14 +2602,14 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
             if(!valid(first)||!valid(second)||first.label===second.label||
               !calculatePrivateCosts(nextA)||!calculatePrivateCosts(nextB)){
               setNotice('De ontvangen woninglabels of huurbedragen zijn ongeldig. Kostengegevens zijn ongewijzigd.');
-              onMatchCostHandled?.();setMatchCostApproved(false);return;
+              onMatchCostHandled?.();setMatchCostApprovedKey(null);return;
             }
             setA(nextA);setB(nextB);setShow(false);setFromShortlist(false);
-            setPendingBudgetRestore(null);setMatchCostApproved(false);
+            setPendingBudgetRestore(null);setMatchCostApprovedKey(null);
             setNotice('Twee eigen woninglabels en kale huren overgenomen. Controleer service, energie, vervoer en startkosten vóór je verder rekent; overige bedragen starten op nul.');
             onMatchCostHandled?.();
           }}>Ja, vervang mijn tijdelijke kostenscenario&apos;s</button>{' '}
-          <button type="button" onClick={()=>{setMatchCostApproved(false);onMatchCostHandled?.();}}>
+          <button type="button" onClick={()=>{setMatchCostApprovedKey(null);onMatchCostHandled?.();}}>
             Nee, behoud mijn huidige scenario&apos;s
           </button>
         </aside>}
