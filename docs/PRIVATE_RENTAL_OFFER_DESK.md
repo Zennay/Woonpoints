@@ -26,4 +26,4 @@ Zelfstandige handmatige huurvoorstelvergelijker binnen Woonpoints. Geen officië
 
 ## Implementatie
 
-Nieuwe bestanden src/app/private-offer-desk.tsx en src/app/private-offer-desk.module.css; opgenomen in bestaande homepage na de woningkeuze, met navigatieanker private-offer-desk-heading. Geen mutatie aan Prisma, worker, WoningNet, authenticatie, accountflow, QA-tests of workflows. Bestaande CI/review/releasegates blijven intact.
+De complete afgeschermde component staat in bestaande src/app/page.tsx met de gescopeerde rental- CSS-klassen in bestaande src/app/globals.css; opgenomen na de woningkeuze, met navigatieanker private-offer-desk-heading. Geen mutatie aan Prisma, worker, WoningNet, authenticatie, accountflow, QA-tests of workflows. Bestaande CI/review/releasegates blijven intact.
