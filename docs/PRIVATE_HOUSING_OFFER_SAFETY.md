@@ -12,8 +12,12 @@ een stop-en-verifieer-advies; alle andere gemelde punten geven afzonderlijk
 uitvoerbare vervolgstappen. De resultaten zijn bewust **geen frauderisicoscore**
 of oordeel over de rechtmatigheid van een woningaanbod.
 
-Er is een openbaar, transparant overzicht van ingevulde/ongekende/open
-vragen, een verzameld vervolgplan en een aparte eigen TXT-export:
+Er is een transparant overzicht van ingevulde/ongekende/open
+vragen, een afvinkbaar eigen vervolgplan (elk vinkje betekent alleen **zelf nagekeken**, geen verificatie) en een aparte eigen TXT-export:
+voor elk risico/onbekend antwoord gaat ook de persoonlijke nagelopen-/open-status mee.
+De status wordt direct gewist zodra het bijbehorende antwoord verandert; overige
+acties blijven intact. Er komt geen automatisch betrouwbaarheidsstempel.
+
 eerst volledige lokale preview, daarna expliciete download. TXT bevat alleen
 vaste vragen, gekozen antwoordlabels en generieke tips — geen formuliertekst,
 credentials, adressen, betaalgegevens, contracten, URL's of persoonsgegevens.
