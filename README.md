@@ -1,5 +1,23 @@
 # Woonpoints
 
+## Nieuw: eigen huurscenario’s en eerstejaars kasbehoefte vergelijken
+
+Open **Huurscenario’s vergelijken** in de woningnavigatie, of ga rechtstreeks
+naar [Huurscenario’s vergelijken](/#rental-scenarios-heading). Je vergelijkt
+twee of drie eigen woningopties op kale maandhuur, servicekosten,
+energie/water/internet, reistijdkosten, eenmalige verhuizing en apart te
+reserveren borg. Naast de eigen maandgrens zie je maandlasten,
+twaalfmaandskosten exclusief terug te vragen borg en de kasbehoefte voor
+de eerste maand en het eerste jaar inclusief voorlopig gereserveerde borg.
+
+De uitkomsten zijn uitsluitend jouw eigen schattingen, geen officiële
+woningtoewijzingskans, geverifieerde huurprijs, inkomenscheck of huuradvies.
+Alles staat alleen in het huidige tabblad. Downloaden van een privé-TXT vergt
+eerst volledige preview en aparte toestemming; elke wijziging maakt de
+oude preview ongeldig. Geen WoningNet-koppeling, opslag of automatische actie.
+[Handleiding](docs/PRIVATE_RENTAL_SCENARIO_BUDGET.md).
+
+
 ## Nieuw: eigen huurkosten naast de risico's van een aanbieding
 
 Een zelf ingevuld huurvoorstel kan met twee bewuste toestemmingsstappen als
