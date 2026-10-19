@@ -10925,6 +10925,21 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   const [costApproved,setCostApproved]=useState(false);
   const [costMessage,setCostMessage]=useState('');
   const [whatIf, setWhatIf] = useState<{ source: string; limits: WoonMatchCriteria } | null>(null);
+  const [scenarioReportPreview, setScenarioReportPreview] = useState<{ source: string; text: string } | null>(null);
+  const [scenarioReportApproved, setScenarioReportApproved] = useState(false);
+  const scenarioGeneration = useRef(0);
+  const closeScenario = () => {
+    scenarioGeneration.current++;
+    setWhatIf(null);
+    setScenarioReportPreview(null);
+    setScenarioReportApproved(false);
+  };
+  const modifyScenario = (key: keyof WoonMatchCriteria, value: string) => {
+    scenarioGeneration.current++;
+    setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, [key]: value } }));
+    setScenarioReportPreview(null);
+    setScenarioReportApproved(false);
+  };
   const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
     setUndoRestore(null);
     setCriteria(prev => ({ ...prev, [key]: value }));
@@ -10978,6 +10993,84 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
         a.listing.id - b.listing.id)
     : [];
+  // A separate, explicitly hypothetical plain-text export. This never
+  // authorizes or mutates original listings, budgets, other transfers or backups.
+  const scenarioKey = JSON.stringify({
+    source: currentSource,
+    version: scenarioGeneration.current,
+    limits: whatIf?.limits
+  });
+  const buildScenarioReport = (): string => {
+    if (!whatIfCurrent || whatIfErrors.length > 0) return '';
+    const lines = [
+      'WOONPOINTS — MIJN HYPOTHETISCHE WONINGVERGELIJKING',
+      'GEEN WONINGADVIES, GEEN TOEWIJZINGSKANS OF OFFICIËLE BESLISSING',
+      'Alle waarden en grenzen zijn uitsluitend door mijzelf ingevuld.',
+      'Dit is een wat-als-scenario: geen van mijn oorspronkelijke gegevens is gewijzigd.',
+      '',
+      'MIJN OORSPRONKELIJKE GRENZEN',
+      'Maandkosten max.: € ' + criteria.budget,
+      'Woonoppervlak min.: ' + criteria.area + ' m²',
+      'Slaapkamers min.: ' + criteria.bedrooms,
+      'Reistijd enkele reis max.: ' + criteria.commute + ' min',
+      '',
+      'MIJN HYPOTHETISCHE GRENZEN',
+      'Maandkosten max.: € ' + whatIf!.limits.budget,
+      'Woonoppervlak min.: ' + whatIf!.limits.area + ' m²',
+      'Slaapkamers min.: ' + whatIf!.limits.bedrooms,
+      'Reistijd enkele reis max.: ' + whatIf!.limits.commute + ' min',
+      '',
+      'MIJN WEGENDE PRIORITEITEN (ONVERANDERD)',
+      'Maandkosten: ' + weights.budget + ', oppervlak: ' + weights.area +
+        ', slaapkamers: ' + weights.bedrooms + ', reistijd: ' + weights.commute,
+      '',
+      'VOLLEDIG PASSEND VOLGENS AL MIJN VIER EIGEN GRENZEN',
+      'Origineel: ' + ordered.filter(row => row.pass).length + '/' + ordered.length,
+      'Hypothetisch: ' + scenarioOrdered.filter(row => row.pass).length + '/' + scenarioOrdered.length,
+      '',
+      'RANGSCHIKKING BIJ DE HYPOTHETISCHE GRENZEN'
+    ];
+    scenarioOrdered.forEach((row, index) => {
+      const originalIndex = ordered.findIndex(item => item.listing.id === row.listing.id);
+      const original = ordered[originalIndex];
+      lines.push(
+        String(index + 1) + '. ' + row.listing.name,
+        'Oorspronkelijke plek: ' + (originalIndex + 1) +
+          '; hypothetische plek: ' + (index + 1),
+        'Oorspronkelijke score: ' + original.score + '% (' + original.met +
+          '/4); hypothetische score: ' + row.score + '% (' + row.met + '/4)',
+        'Harde grenzen hypothetisch: ' + (row.pass ? 'alle vier gehaald' : 'NIET alle vier gehaald')
+      );
+      row.rules.filter(rule => rule.met === false).forEach(rule => {
+        lines.push('Niet gehaald: ' + rule.label + ' — ' +
+          (WoonMatchGap(rule) || 'afwijking ten opzichte van eigen grens'));
+      });
+      lines.push('');
+    });
+    lines.push(
+      'De scores zijn uitsluitend afgeleide eigen criteria; geen broncontrole of toewijzingsbewijs.',
+      'Dit TXT-document bevat eigen woninglabels. Deel het alleen bewust.',
+      'Alle scenario-waarden zijn tijdelijk; de oorspronkelijke JSON/TXT en overdrachten blijven ongewijzigd.'
+    );
+    return lines.join('\n') + '\n';
+  };
+  const scenarioPreviewValid = !!scenarioReportPreview && whatIfCurrent &&
+    whatIfErrors.length === 0 && scenarioReportPreview.source === scenarioKey &&
+    scenarioReportPreview.text === buildScenarioReport();
+  const downloadScenarioReport = () => {
+    if (!scenarioPreviewValid || !scenarioReportApproved || !scenarioReportPreview) return;
+    const url = URL.createObjectURL(new Blob([scenarioReportPreview.text], {
+      type: 'text/plain;charset=utf-8'
+    }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-eigen-wat-als-vergelijking.txt';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   const previewValid = showPreview?.source === currentSource && canCompare;
   const rentalHandoffValid = !!rentalHandoff && rentalHandoff.source === currentSource &&
     canCompare && !!onRentalPrefill &&
@@ -11609,7 +11702,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         <p>Vergelijk veilig één hypothetisch scenario met je oorspronkelijke vier persoonlijke grenzen.
           Je echte criteria, weging, woninggegevens, back-up, TXT en overdrachten blijven intact.
           Dit is alleen een eigen rekenscenario, <strong>geen woningadvies of toewijzingskans</strong>.</p>
-        <button type="button" disabled={!canCompare} onClick={() => setWhatIf({ source: currentSource, limits: { ...criteria } })}>
+        <button type="button" disabled={!canCompare} onClick={() => { scenarioGeneration.current++; setScenarioReportPreview(null); setScenarioReportApproved(false); setWhatIf({ source: currentSource, limits: { ...criteria } }); }}>
           {whatIf ? 'Begin nieuw scenario met mijn actuele grenzen' : 'Begin eigen wat-als-scenario'}
         </button>
         {whatIf && !whatIfCurrent && <p role="status">
@@ -11618,13 +11711,13 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         {whatIfCurrent && whatIf && <>
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', marginTop: 14 }}>
             <WoonMatchField label="Scenario: max. maandkosten (€)" value={whatIf.limits.budget}
-              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, budget: value } }))} />
+              setValue={value => modifyScenario('budget', value)} />
             <WoonMatchField label="Scenario: min. woonoppervlak (m²)" value={whatIf.limits.area}
-              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, area: value } }))} />
+              setValue={value => modifyScenario('area', value)} />
             <WoonMatchField label="Scenario: min. slaapkamers" value={whatIf.limits.bedrooms}
-              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, bedrooms: value } }))} />
+              setValue={value => modifyScenario('bedrooms', value)} />
             <WoonMatchField label="Scenario: max. enkele-reisminuten" value={whatIf.limits.commute}
-              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, commute: value } }))} />
+              setValue={value => modifyScenario('commute', value)} />
           </div>
           {whatIfErrors.length > 0 ? <div role="status">
             <p>Vul geldige scenariogrenzen in; ongeldige invoer produceert geen nieuwe rangschikking.</p>
@@ -11648,7 +11741,41 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
             <p style={{ fontSize: 14 }}>Er is niets overgenomen, opgeslagen, verstuurd of in je werkblad aangepast.
               Gebruik de echte vergelijking hierboven voor bewuste vervolgacties.</p>
           </div>}
-          <button type="button" onClick={() => setWhatIf(null)}>Sluit scenario zonder overnemen</button>
+
+          <div style={{ borderTop: '1px solid #cfdcd7', paddingTop: 16, marginTop: 18 }}>
+            <h3>Mijn wat-als-vergelijking als apart privé-TXT</h3>
+            <p>Bekijk de <strong>volledige hypothetische vergelijking</strong> inclusief jouw
+              oorspronkelijke en aangepaste grenzen, scores, rangorde en resterende tekorten.
+              Je reguliere TXT, JSON-back-up en kosten- of huurvoorstellen blijven ongewijzigd.
+              Dit is geen gecontroleerde woninginformatie of toewijzingsadvies.</p>
+            <button type="button" disabled={whatIfErrors.length > 0 || !scenarioOrdered.length}
+              onClick={() => {
+                const text = buildScenarioReport();
+                setScenarioReportPreview({ source: scenarioKey, text });
+                setScenarioReportApproved(false);
+              }}>
+              Bekijk mijn volledige hypothetische privé-TXT
+            </button>
+            {scenarioReportPreview && !scenarioPreviewValid && <p role="status">
+              De scenario-preview is verlopen. Bekijk de huidige inhoud opnieuw.
+            </p>}
+            {scenarioPreviewValid && scenarioReportPreview && <>
+              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320,
+                overflow: 'auto', padding: 14, background: '#f2faf7', borderRadius: 8 }}>
+                {scenarioReportPreview.text}
+              </pre>
+              <label style={{ display: 'block', margin: '12px 0' }}>
+                <input type="checkbox" checked={scenarioReportApproved}
+                  onChange={event => setScenarioReportApproved(event.target.checked)} />
+                {' '}Ik heb dit volledige hypothetische privédocument nagelezen
+                en wil het zelf lokaal bewaren.
+              </label>
+              <button type="button" disabled={!scenarioReportApproved} onClick={downloadScenarioReport}>
+                Download alleen deze bekeken wat-als-TXT
+              </button>
+            </>}
+          </div>
+          <button type="button" onClick={closeScenario}>Sluit scenario zonder overnemen</button>
         </>}
       </section>
 
