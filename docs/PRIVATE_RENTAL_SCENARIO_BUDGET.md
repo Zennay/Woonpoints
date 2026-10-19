@@ -70,3 +70,21 @@ De JSON is privé: eigen woninglabels en bedragen kunnen zichtbaar
 zijn als je het bestand deelt of in een cloudgesynchroniseerde map
 plaatst. Woonpoints gebruikt geen server, mail, cookies, automatische
 accountsynchronisatie of opslag in de browser voor deze workflow.
+
+## Twee bevestigingen: van eigen huurvoorstel naar scenario A
+
+In de bestaande privé-Huurvoorstellen-desk kies je eerst een **zelf ingevuld**
+huurvoorstel en vervolgens **Bekijk dit eigen huurvoorstel bij mijn
+huurscenario’s**. Dat opent slechts een tijdelijk voorstel in de
+scenariovergelijker; nog niets is aangepast. Je ziet vooraf welke eigen
+bedragen en welk korte label meekomen. Pas **Ja, vervang woning A** neemt
+kale huur, service, energie/overige lasten en gereserveerde borg over.
+Woning B/C en je maandgrens blijven ongemoeid. De reis- en
+verhuiskosten van woning A worden bewust op 0 gezet om zelf in te vullen.
+**Nee** laat alles staan. Wijzig je intussen het eigen bronvoorstel,
+dan vervalt een nog openstaand overdrachtsvoorstel.
+
+Dit is een expliciet lokale, door de gebruiker beheerde handoff tussen
+bestaande React-componenten; geen automatische koppeling met WoningNet,
+bank, verhuurder, externe dienst of beveiligde accountinhoud. Er is
+geen automatische opslag en geen server- of netwerkverzoek.
