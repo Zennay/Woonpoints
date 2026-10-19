@@ -8661,8 +8661,10 @@ function PrivateOfferActionBoard({
   onSetDate: (caseId: number, date: string | undefined) => void;
 }) {
   const [includeReviewed, setIncludeReviewed] = useState(false);
+  const [priorityView, setPriorityView] = useState<'all'|'urgent'|'unknown'|'unanswered'|'due'>('all');
   const [preview, setPreview] = useState(false);
   const [calendarPreview, setCalendarPreview] = useState<number | null>(null);
+  const [bundlePreview, setBundlePreview] = useState<{source: string; text: string} | null>(null);
   const actions = useMemo<Action[]>(() => cases.flatMap(item =>
     signals.flatMap(signal => {
       const answer = item.answers[signal.id];
@@ -8677,7 +8679,6 @@ function PrivateOfferActionBoard({
     })
   ), [cases, signals]);
   const pending = actions.filter(action => !action.reviewed);
-  const visible = includeReviewed ? actions : pending;
   const urgent = pending.filter(action =>
     action.answer === 'yes' && action.signal.severity === 'urgent').length;
   const unknown = pending.filter(action => action.answer === 'unknown').length;
@@ -8686,29 +8687,69 @@ function PrivateOfferActionBoard({
   const todayKey = [localNow.getFullYear(),
     String(localNow.getMonth() + 1).padStart(2, '0'),
     String(localNow.getDate()).padStart(2, '0')].join('-');
+  const dueCases = new Set(cases.filter(item =>
+    item.reviewDate && item.reviewDate <= todayKey).map(item => item.id));
+  const dueActionCount = pending.filter(action => dueCases.has(action.caseId)).length;
+  // Never hide urgent self-reported signals below "no" answers. This is
+  // navigation order, not a risk score or verified property ranking.
+  const severityOrder = (action: Action) =>
+    action.answer === 'yes' && action.signal.severity === 'urgent' ? 0 :
+    action.answer === 'yes' ? 1 : action.answer === 'unknown' ? 2 : 3;
+  const visible = (includeReviewed ? actions : pending).filter(action =>
+    priorityView === 'all' ||
+    (priorityView === 'urgent' && action.answer === 'yes' &&
+      action.signal.severity === 'urgent') ||
+    (priorityView === 'unknown' && action.answer === 'unknown') ||
+    (priorityView === 'unanswered' && !action.answer) ||
+    (priorityView === 'due' && dueCases.has(action.caseId))
+  ).sort((left, right) => {
+    const bySeverity = severityOrder(left) - severityOrder(right);
+    if (bySeverity !== 0) return bySeverity;
+    const leftDate = cases.find(item => item.id === left.caseId)?.reviewDate || '9999-12-31';
+    const rightDate = cases.find(item => item.id === right.caseId)?.reviewDate || '9999-12-31';
+    return leftDate.localeCompare(rightDate) ||
+      left.caseId - right.caseId ||
+      signals.findIndex(s => s.id === left.signal.id) -
+      signals.findIndex(s => s.id === right.signal.id);
+  });
   const validDay = (date?: string) => {
     if (!date || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(date)) return false;
     const parsed = new Date(date + 'T12:00:00Z');
     return !Number.isNaN(parsed.getTime()) &&
       parsed.toISOString().slice(0, 10) === date;
   };
-  // Export an intentionally anonymous calendar entry only after preview.
-  // Date-only start/end avoids forcing a timezone or a private address.
-  function privateCalendar(item: Workblad): string | null {
+  // Export only operator-selected anonymous calendar events, never case answers.
+  // Shared UID contract also prevents silently inventing different appointments
+  // between single-event and multi-event downloads for the same date/case.
+  function calendarEvent(item: Workblad): string[] {
     const date = item.reviewDate;
-    if (!validDay(date)) return null;
+    if (!validDay(date)) return [];
     const start = date!.replace(/-/g, '');
     const next = new Date(Date.parse(date! + 'T12:00:00Z') + 86_400_000);
     const end = next.toISOString().slice(0, 10).replace(/-/g, '');
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
     return [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Woonpoints//Private Offer Planning//NL',
       'BEGIN:VEVENT', 'UID:woonpoints-private-' + item.id + '-' + start + '@local',
       'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + start,
       'DTEND;VALUE=DATE:' + end, 'SUMMARY:Woonpoints eigen voorstel ' + item.id + ' nalopen',
       'DESCRIPTION:Zelf controles nalopen. Geen externe verificatie of automatische reactie.',
-      'END:VEVENT', 'END:VCALENDAR', ''
+      'END:VEVENT'
+    ];
+  }
+  function calendarExport(items: readonly Workblad[]): string | null {
+    const events = items.flatMap(calendarEvent);
+    if (!events.length) return null;
+    return [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Woonpoints//Private Offer Planning//NL',
+      ...events, 'END:VCALENDAR', ''
     ].join('\r\n');
+  }
+  const scheduledCases = cases.filter(item => validDay(item.reviewDate));
+  const calendarSource = scheduledCases.map(item =>
+    item.id + ':' + item.reviewDate).join('|');
+  const viewedBundle = bundlePreview?.source === calendarSource ? bundlePreview.text : null;
+  function privateCalendar(item: Workblad): string | null {
+    return calendarExport([item]);
   }
   const report = [
     'WOONPOINTS · PRIVÉ VERVOLGACTIES',
@@ -8716,7 +8757,8 @@ function PrivateOfferActionBoard({
     'Dit is geen verificatie van een aanbieder, woning, identiteit of betaalverzoek.',
     'Afvinken betekent alleen dat je een stap zelf hebt nagelopen; het signaal verdwijnt niet.',
     '',
-    ...pending.map(action => [
+    ...pending.slice().sort((a,b) => severityOrder(a)-severityOrder(b))
+      .map(action => [
       'Voorstel ' + action.caseId + ' · ' + action.signal.group,
       (action.answer === 'yes' ? 'Zelf gemeld' : action.answer === 'unknown' ?
         'Nog onbekend' : 'Nog niet beantwoord') +
@@ -8728,18 +8770,27 @@ function PrivateOfferActionBoard({
     ].join('\n'))
   ].join('\n');
 
-  function downloadCalendar(item: Workblad) {
-    const content = privateCalendar(item);
-    if (!content || calendarPreview !== item.id) return;
+  function downloadCalendarText(content: string, filename: string) {
     const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'woonpoints-voorstel-' + item.id + '-eigen-herinnering.ics';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function downloadCalendar(item: Workblad) {
+    const content = privateCalendar(item);
+    if (!content || calendarPreview !== item.id) return;
+    downloadCalendarText(content,
+      'woonpoints-voorstel-' + item.id + '-eigen-herinnering.ics');
     setCalendarPreview(null);
+  }
+  function downloadCalendarBundle() {
+    if (!viewedBundle || scheduledCases.length < 2) return;
+    downloadCalendarText(viewedBundle, 'woonpoints-eigen-controledagen.ics');
+    setBundlePreview(null);
   }
 
   function openQuestion(action: Action) {
@@ -8790,6 +8841,7 @@ function PrivateOfferActionBoard({
           onChange={event => {
             onSetDate(item.id, event.target.value || undefined);
             setCalendarPreview(null);
+            setBundlePreview(null);
           }} style={{ display: 'block', minHeight: 44, margin: '8px 0', maxWidth: '100%' }} />
         {validDay(item.reviewDate) && <p role="status">
           {item.reviewDate! < todayKey ? 'Gekozen controledatum is voorbij (geen automatische melding).' :
@@ -8812,11 +8864,57 @@ function PrivateOfferActionBoard({
         </div>}
       </div>)}
     </div>
+    <h3>Mijn aandachtspunten prioriteren</h3>
+    <p>Alle signalen blijven beschikbaar. Een urgent zelf gemeld signaal staat vooraan,
+      maar deze ordening is géén objectieve fraude- of verhuurrisicobeoordeling.</p>
+    <div role="group" aria-label="Filter mijn open vervolgacties"
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0' }}>
+      {([
+        ['all', 'Alle aandachtspunten', actions.length],
+        ['urgent', 'Urgent zelf gemeld', urgent],
+        ['unknown', 'Nog onbekend', unknown],
+        ['unanswered', 'Niet ingevuld', missing],
+        ['due', 'Controledatum bereikt', dueActionCount]
+      ] as const).map(([key,label,count]) => <button type="button"
+        key={key} aria-pressed={priorityView === key}
+        onClick={() => setPriorityView(key)}
+        style={{ minHeight: 44, border: '1px solid #355e42',
+          background: priorityView === key ? '#355e42' : 'white',
+          color: priorityView === key ? 'white' : '#355e42',
+          borderRadius: 9, padding: '8px 12px' }}>
+        {label} ({count})
+      </button>)}
+    </div>
+    {scheduledCases.length > 1 && <div
+      style={{ borderTop: '1px solid #dbe6dd', marginTop: 18, paddingTop: 15 }}>
+      <h3>Alle eigen controledagen in één agenda-bestand</h3>
+      <p>{scheduledCases.length} werkbladen hebben een zelf gekozen dag. Bekijk
+        eerst alle kalenderregels en download ze daarna bewust. Een externe
+        agenda-app kan dit bestand verder synchroniseren; Woonpoints doet dat niet.</p>
+      <button type="button" onClick={() =>
+        setBundlePreview(viewedBundle ? null : {
+          source: calendarSource, text: calendarExport(scheduledCases) || ''
+        })}
+        style={{ minHeight: 44, padding: '8px 12px' }}>
+        {viewedBundle ? 'Sluit compleet agenda-voorbeeld' :
+          'Bekijk alle anonieme agenda-afspraken'}
+      </button>
+      {viewedBundle && <div>
+        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+          maxHeight: 260, overflow: 'auto', marginTop: 12 }}>{viewedBundle}</pre>
+        <button type="button" onClick={downloadCalendarBundle}
+          style={{ minHeight: 44, padding: '8px 12px' }}>
+          Download precies deze gecontroleerde .ics
+        </button>
+      </div>}
+    </div>}
     <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44 }}>
       <input type="checkbox" checked={includeReviewed}
         onChange={event => setIncludeReviewed(event.target.checked)} />
       Toon ook zelf nagelopen vervolgstappen
     </label>
+    <p aria-live="polite">Je bekijkt {visible.length} aandachtspunten in deze selectie.
+      Dit verandert geen antwoorden, datums of originele bewijsgegevens.</p>
     {visible.length === 0
       ? <p>Geen acties in deze weergave. Ook zonder signalen blijft onafhankelijke
           controle van een echt aanbod noodzakelijk.</p>
