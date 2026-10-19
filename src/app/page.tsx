@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
-import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview } from './position-stats';
+import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
@@ -3012,6 +3012,7 @@ export default function HomePage() {
   ];
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
+  const [matchCostOffer,setMatchCostOffer]=useState<PrivateMatchCostPair|null>(null);
   const [scenarioOfferProposal,setScenarioOfferProposal]=useState<PrivateRentalScenarioOfferProposal|null>(null);
   const [energyRentalProposal,setEnergyRentalProposal]=useState<PrivateEnergyRentalOfferProposal|null>(null);
   const [safetyQuestionsProposal,setSafetyQuestionsProposal]=useState<string|null>(null);
@@ -3460,9 +3461,11 @@ export default function HomePage() {
         <PositionStats />
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
-      <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
+      <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})}
+        matchCostOffer={matchCostOffer} onMatchCostHandled={()=>setMatchCostOffer(null)} />
       <section id="private-woningmatch-heading" aria-label="Mijn woningmatch" className="card">
-        <PrivateListingMatchStudio onRentalPrefill={item=>setRentalPrefill({...item})} />
+        <PrivateListingMatchStudio onRentalPrefill={item=>setRentalPrefill({...item})}
+          onCostPrefill={pair=>setMatchCostOffer({first:{...pair.first},second:{...pair.second}})} />
       </section>
       <PrivateRentalScenarioBudget proposal={scenarioOfferProposal}
         onProposalHandled={()=>setScenarioOfferProposal(null)} />
@@ -10822,8 +10825,9 @@ const woonMatchHandoffRent = (value: string): number | null => {
   return amount !== null && Number.isSafeInteger(amount) && amount >= 100 ? amount : null;
 };
 
-function PrivateListingMatchStudio({ onRentalPrefill }: {
+function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   onRentalPrefill?: (item: {label: string; rent: number}) => void;
+  onCostPrefill?: (pair: PrivateMatchCostPair) => void;
 } = {}) {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
   const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
@@ -10847,6 +10851,14 @@ function PrivateListingMatchStudio({ onRentalPrefill }: {
   const [rentalHandoff, setRentalHandoff] = useState<WoonMatchRentalHandoff | null>(null);
   const [rentalApproved, setRentalApproved] = useState(false);
   const [rentalMessage, setRentalMessage] = useState('');
+  const [firstCostId,setFirstCostId]=useState<number|null>(null);
+  const [secondCostId,setSecondCostId]=useState<number|null>(null);
+  const [costHandoff,setCostHandoff]=useState<{
+    source:string; first:WoonMatchOutcome; second:WoonMatchOutcome;
+    pair:PrivateMatchCostPair;
+  }|null>(null);
+  const [costApproved,setCostApproved]=useState(false);
+  const [costMessage,setCostMessage]=useState('');
   const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
     setUndoRestore(null);
     setCriteria(prev => ({ ...prev, [key]: value }));
@@ -10895,6 +10907,14 @@ function PrivateListingMatchStudio({ onRentalPrefill }: {
       item.monthly === rentalHandoff.monthly &&
       item.pass === rentalHandoff.allOwnCriteriaMet &&
       item.score === rentalHandoff.score);
+  const costHandoffValid = !!costHandoff && costHandoff.source === currentSource && canCompare &&
+    !!onCostPrefill && costHandoff.first.listing.id !== costHandoff.second.listing.id &&
+    ordered.some(item=>item.listing.id===costHandoff.first.listing.id &&
+      item.listing.name===costHandoff.pair.first.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.first.rent) &&
+    ordered.some(item=>item.listing.id===costHandoff.second.listing.id &&
+      item.listing.name===costHandoff.pair.second.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.second.rent);
   const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
   const previewPastedCsv = () => {
     setConfirmCsv(false);
@@ -10997,6 +11017,37 @@ function PrivateListingMatchStudio({ onRentalPrefill }: {
     setAllowDownload(false);
   };
 
+  const previewCostPair = () => {
+    setCostApproved(false);setCostMessage('');
+    const first=ordered.find(item=>item.listing.id===firstCostId);
+    const second=ordered.find(item=>item.listing.id===secondCostId);
+    if(!onCostPrefill||!canCompare||!first||!second||first.listing.id===second.listing.id||
+      !woonMatchHandoffLabel(first.listing.name)||!woonMatchHandoffLabel(second.listing.name)||
+      first.listing.name===second.listing.name){
+      setCostHandoff(null);
+      setCostMessage('Kies twee verschillende woningen met unieke labels van maximaal 64 tekens.');
+      return;
+    }
+    const rentA=woonMatchHandoffRent(first.listing.monthlyRent);
+    const rentB=woonMatchHandoffRent(second.listing.monthlyRent);
+    if(rentA===null||rentB===null){
+      setCostHandoff(null);
+      setCostMessage('Voor de kostenvergelijker moeten beide kale huurbedragen hele eurobedragen tussen €100 en €10.000 zijn. Afronden gebeurt niet automatisch.');
+      return;
+    }
+    setCostHandoff({source:currentSource,first,second,pair:{
+      first:{label:first.listing.name,rent:rentA},
+      second:{label:second.listing.name,rent:rentB}
+    }});
+  };
+  const acceptCostPair = () => {
+    if(!costHandoffValid||!costHandoff||!costApproved||!onCostPrefill)return;
+    onCostPrefill({
+      first:{...costHandoff.pair.first},second:{...costHandoff.pair.second}
+    });
+    setCostHandoff(null);setCostApproved(false);
+    setCostMessage('Twee kale huren als momentopname aangeboden. Ga naar de bestaande kostenvergelijker en bevestig daar opnieuw vóór overschrijven.');
+  };
   const previewRentalHandoff = (item: WoonMatchOutcome) => {
     setRentalApproved(false);
     setRentalMessage('');
@@ -11214,6 +11265,22 @@ function PrivateListingMatchStudio({ onRentalPrefill }: {
                 <ul>{outcome.rules.map(rule => <li key={rule.label}>
                   {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight})
                 </li>)}</ul>
+                <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:10}}>
+                  <button type="button" onClick={()=>{
+                    setFirstCostId(outcome.listing.id);
+                    if(secondCostId===outcome.listing.id)setSecondCostId(null);
+                    setCostHandoff(null);setCostApproved(false);
+                  }} aria-pressed={firstCostId===outcome.listing.id}>
+                    {firstCostId===outcome.listing.id?'✓ Als kostenwoning A':'Kies als kostenwoning A'}
+                  </button>
+                  <button type="button" onClick={()=>{
+                    setSecondCostId(outcome.listing.id);
+                    if(firstCostId===outcome.listing.id)setFirstCostId(null);
+                    setCostHandoff(null);setCostApproved(false);
+                  }} aria-pressed={secondCostId===outcome.listing.id}>
+                    {secondCostId===outcome.listing.id?'✓ Als kostenwoning B':'Kies als kostenwoning B'}
+                  </button>
+                </div>
                 <button type="button" disabled={!onRentalPrefill}
                   onClick={() => previewRentalHandoff(outcome)}
                   style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #1b6c5f' }}>
@@ -11225,6 +11292,49 @@ function PrivateListingMatchStudio({ onRentalPrefill }: {
                     van €100–€10.000 vereist. De woning blijft wel in deze vergelijking staan.</p> : null}
               </article>
             ))}
+            <section aria-labelledby="woonmatch-cost-pair-title"
+              style={{borderTop:'1px solid #ccdcd7',padding:'14px 0'}}>
+              <h3 id="woonmatch-cost-pair-title">Twee woningmatches naar de echte kostenvergelijking</h3>
+              <p>Kies hierboven bewust één optie als <strong>A</strong> en een andere als <strong>B</strong>.
+                Bekijk ze samen voordat je alleen de twee zelf genoteerde labels en <strong>kale huren</strong>
+                als onopgeslagen voorstel aan de kostenvergelijker doorgeeft. Service, energie,
+                vervoer en startkosten worden daar <strong>niet</strong> overgenomen of geraden.</p>
+              <p>Geselecteerd: A — {ordered.find(x=>x.listing.id===firstCostId)?.listing.name||'nog niet gekozen'}
+                {' '}· B — {ordered.find(x=>x.listing.id===secondCostId)?.listing.name||'nog niet gekozen'}</p>
+              <button type="button" disabled={!onCostPrefill||firstCostId===null||secondCostId===null}
+                onClick={previewCostPair}>Bekijk twee kale huren vóór overname…</button>
+              {costMessage && <p role="status">{costMessage}
+                {costMessage.startsWith('Twee kale huren') &&
+                  <> <a href="#private-budget-title">Ga naar kostenvergelijking ↓</a></>}</p>}
+              {costHandoff && !costHandoffValid && <p role="status">
+                Deze preview is vervallen omdat je brongegevens veranderden. Bekijk eerst een actuele selectie.
+              </p>}
+              {costHandoff && costHandoffValid && <div style={{background:'#f2faf7',padding:14,marginTop:12,borderRadius:8}}>
+                <p><strong>Overdrachtsvoorbeeld (onopgeslagen)</strong></p>
+                <ul>
+                  <li>A: {costHandoff.pair.first.label} · kale huur {WoonMatchMoney(costHandoff.pair.first.rent)}
+                    {' '}· {costHandoff.first.met} van 4 eigen grenzen gehaald; score {costHandoff.first.score}%</li>
+                  <li>B: {costHandoff.pair.second.label} · kale huur {WoonMatchMoney(costHandoff.pair.second.rent)}
+                    {' '}· {costHandoff.second.met} van 4 eigen grenzen gehaald; score {costHandoff.second.score}%</li>
+                </ul>
+                <p>De hier getoonde scores en ontbrekende andere maandkosten gaan <strong>niet mee</strong>.
+                  De bestemmingsdesk vraagt apart toestemming om jouw twee bestaande tijdelijke
+                  kostenscenario&apos;s te vervangen en zal geen onbekende bedragen verzinnen.</p>
+                <label style={{display:'block',marginBottom:12}}>
+                  <input type="checkbox" checked={costApproved}
+                    onChange={event=>setCostApproved(event.target.checked)} />
+                  {' '}Ik wil uitsluitend de twee labels en kale huurbedragen aanbieden voor een
+                  <em> aparte, nog te bevestigen </em>kostenvergelijking.
+                </label>
+                <button type="button" disabled={!costApproved} onClick={acceptCostPair}>
+                  Ja, bereid deze twee kostenwoningen voor
+                </button>{' '}
+                <button type="button" onClick={()=>{setCostHandoff(null);setCostApproved(false);
+                  setCostMessage('Niet overgenomen. Je woonvergelijking is ongewijzigd.');}}>
+                  Annuleren
+                </button>
+              </div>}
+            </section>
             <section aria-labelledby="woonmatch-rental-handoff-title" style={{borderTop:'1px solid #ccdcd7',paddingTop:14}}>
               <h3 id="woonmatch-rental-handoff-title">Bewust overnemen naar Huurvoorstellen</h3>
               <p>Neem uitsluitend een zelf ingevuld <strong>woninglabel en kale huur</strong> over als tijdelijk
