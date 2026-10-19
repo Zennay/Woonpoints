@@ -200,3 +200,29 @@ ongeldig; alleen **Begin nieuw scenario** maakt een nieuwe momentopname.
 Ongeldige scenariogrenzen geven een invoermelding en geen uitslag.
 Sluiten gooit alleen de tijdelijke scenario-invoer weg. Er wordt niets
 automatisch opgeslagen, doorgestuurd of op WoningNet uitgevoerd.
+
+
+## Zevenkoloms privéwoninglijst downloaden en opnieuw plakken
+
+Na het handmatig invoeren of wijzigen van twee tot vijf woningopties kun je nu
+onder **Eigen woninglijst plakken** ook **Bekijk volledige eigen CSV vóór downloaden**
+kiezen. Eerst worden de exacte zeven puntkomma-gescheiden kolommen als gewone
+tekst getoond; pas na apart aanvinken ontstaat een lokale CSV-download.
+
+De tekst gebruikt precies het bestaande, begrensde importschema:
+label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie.
+Het exportpad weigert onvolledige cijfers, gebroken UTF-16, verborgen
+besturingstekens, dubbele labels, puntkomma's of regeleindes in labels/
+notities, onverwachte randspaties en afwijkende geheelgetalvelden. Een
+interne ronde door de bestaande importparser moet alle zeven waarden
+exact zonder verlies herstellen. Bij een probleem wordt niet geraden,
+gequote of stilzwijgend ingekort: de gebruiker kan invoer corrigeren of
+de volledige JSON-export gebruiken.
+
+**Bewuste grens:** Dit tekstformaat heeft geen kolom voor bekende loting-/
+inschrijfduurmethode, methodevoorkeur, eigen grenswaarden of relatieve
+gewichten. Bij opnieuw plakken worden methoden uitsluitend **Onbekend**;
+de huidige criteria blijven staan. Wie de hele werkmap wil bewaren
+kiest de bestaande versiegebonden JSON-back-up. Geen automatische
+bestandsopslag, browseropslag, API, advertentielezer of woningreactie.
+Iedere bewerking maakt een eerdere CSV-preview ongeldig.

@@ -10734,6 +10734,41 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
 }
 
 
+
+/** Export only faithfully round-trippable, explicitly private seven-field text. */
+function woonMatchEncodeCsv(listings: WoonMatchListing[]): { text: string; error: string } {
+  const fail = (error: string) => ({ text: '', error });
+  if (listings.length < 2 || listings.length > 5) return fail('Alleen twee tot vijf opties kunnen worden geëxporteerd.');
+  const names = new Set<string>();
+  for (const [index, row] of listings.entries()) {
+    if (!woonMatchSafeText(row.name, 80) || !woonMatchSafeText(row.note, 200) ||
+        !row.name.trim() || row.name !== row.name.trim() || row.note !== row.note.trim() ||
+        /[;\r\n\t]/.test(row.name + row.note)) {
+      return fail('Optie ' + (index + 1) + ': label of notitie is leeg, te lang, heeft randspaties of bevat een scheidingsteken. Pas dit eerst zelf aan.');
+    }
+    const key = row.name.toLocaleLowerCase('nl-NL');
+    if (names.has(key)) return fail('Gebruik unieke woninglabels vóór export.');
+    names.add(key);
+    if ([row.monthlyRent,row.utilities,row.area,row.bedrooms,row.commute].some((v, i) =>
+        !woonMatchSafeText(v, 20) || WoonMatchNumeric(v, [100000,100000,100000,100,10000][i]) === null) ||
+        !/^\d+$/.test(row.bedrooms) || !/^\d+$/.test(row.commute)) {
+      return fail('Optie ' + (index + 1) + ': vul eerst alle geldige bedragen, m², hele slaapkamers en hele reisminuten in.');
+    }
+  }
+  const fields: Array<keyof Omit<WoonMatchListing, 'id' | 'allocation'>> =
+    ['name','monthlyRent','utilities','area','bedrooms','commute','note'];
+  const text = [WOON_MATCH_CSV_HEADER, ...listings.map(row =>
+    fields.map(key => row[key]).join(';'))].join('\n') + '\n';
+  if (text.length > 4096) return fail('De tekst is langer dan de toegestane 4.096 tekens.');
+  const imported = parsePrivateMatchCsv(text);
+  if (imported.error || imported.rows.length !== listings.length ||
+      imported.rows.some((item,index) =>
+        fields.some(key => item[key] !== listings[index][key]))) {
+    return fail('De zeven-koloms tekst kan niet zonder verlies terug worden ingelezen. Gebruik de volledige JSON-back-up.');
+  }
+  return { text, error: '' };
+}
+
 type WoonMatchPortable = {
   format: 'woonpoints.private-match.v2';
   criteria: WoonMatchCriteria;
@@ -10859,6 +10894,8 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
   const [confirmCsv, setConfirmCsv] = useState(false);
   const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
+  const [csvExportPreview, setCsvExportPreview] = useState<{ source: string; text: string } | null>(null);
+  const [csvExportApproved, setCsvExportApproved] = useState(false);
   const [showPreview, setShowPreview] = useState<{ source: string; text: string } | null>(null);
   const [allowDownload, setAllowDownload] = useState(false);
   const [rentalHandoff, setRentalHandoff] = useState<WoonMatchRentalHandoff | null>(null);
@@ -10944,6 +10981,21 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       item.listing.name===costHandoff.pair.second.label &&
       woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.second.rent);
   const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
+  const csvExport = woonMatchEncodeCsv(listings);
+  const csvExportValid = !!csvExportPreview && csvExportPreview.source === currentSource &&
+    !csvExport.error && csvExportPreview.text === csvExport.text;
+  const downloadOwnCsv = () => {
+    if (!csvExportValid || !csvExportApproved || !csvExportPreview) return;
+    const url = URL.createObjectURL(new Blob([csvExportPreview.text], { type: 'text/csv;charset=utf-8' }));
+    const element = document.createElement('a');
+    element.href = url;
+    element.download = 'woonpoints-eigen-woninglijst.csv';
+    document.body.appendChild(element);
+    element.click();
+    element.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   const previewPastedCsv = () => {
     setConfirmCsv(false);
     const result = parsePrivateMatchCsv(csvText);
@@ -11265,6 +11317,38 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         {undoCsv && <p><button type="button" onClick={undoPastedCsv}>
           Draai mijn laatste lijstvervanging één keer terug
         </button></p>}
+
+        <div style={{ borderTop: '1px solid #ccdcd7', marginTop: 22, paddingTop: 16 }}>
+          <h3>Mijn zevenkoloms woninglijst zelf exporteren</h3>
+          <p>Maak van je <strong>eigen</strong> twee tot vijf opties hetzelfde puntkommaformaat als hierboven.
+            Bekijk de volledige tekst en geef apart toestemming vóór lokaal downloaden.
+            <strong> Dit compacte formaat bevat geen toewijzingsmethode, methodevoorkeur,
+              prioriteiten of persoonlijke grenzen.</strong> Bij opnieuw plakken is iedere methode
+            daarom weer <em>Onbekend</em>. Gebruik de volledige JSON-back-up hieronder
+            om ook deze gegevens te behouden.</p>
+          {csvExport.error ? <p role="status">{csvExport.error}</p> : null}
+          <button type="button" disabled={!!csvExport.error} onClick={() => {
+            setCsvExportPreview({ source: currentSource, text: csvExport.text });
+            setCsvExportApproved(false);
+          }}>Bekijk volledige eigen CSV vóór downloaden</button>
+          {csvExportPreview && !csvExportValid && <p role="status">
+            De CSV-preview is ongeldig geworden doordat je brongegevens veranderd zijn.
+            Bekijk de actuele woninglijst opnieuw.
+          </p>}
+          {csvExportValid && csvExportPreview && <div style={{ marginTop: 12 }}>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240,
+              overflow: 'auto', padding: 14, background: '#f2faf7', borderRadius: 8 }}>{csvExportPreview.text}</pre>
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <input type="checkbox" checked={csvExportApproved}
+                onChange={event => setCsvExportApproved(event.target.checked)} />
+              {' '}Ik heb alle zeven kolommen en het verlies van methodegegevens bekeken.
+              Ik wil deze privétekst zelf lokaal bewaren.
+            </label>
+            <button type="button" disabled={!csvExportApproved} onClick={downloadOwnCsv}>
+              Download deze bekeken CSV
+            </button>
+          </div>}
+        </div>
       </section>
 
       <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="result-heading">
