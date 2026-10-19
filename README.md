@@ -1,5 +1,16 @@
 # Woonpoints
 
+## Nieuw: complete woningaanbodwerkmap zelf veilig bewaren en terugzetten
+
+De [aanbodcheck](/#private-offer-safety-heading) biedt nu een vrijwillige
+**versiegebonden JSON-back-up** van maximaal vijf privé-werkbladen, inclusief
+antwoorden en zelf afgevinkte acties. Je ziet de exacte inhoud vóór download.
+Later kun je een zelfgekozen JSON (maximaal 10 KiB) openen; onbekende velden,
+ongeldige vragen, afwijkende versies en inconsistente vinkjes worden afgewezen
+vóórdat er iets verandert. Na een aparte vervangingsbevestiging is het herstel
+eenmalig ongedaan te maken tot de volgende wijziging. Er gaat geen bestand of
+accountinformatie naar een server. De leesbare TXT-export blijft apart.
+
 ## Nieuw: maximaal vijf woningaanbiedingen privé vergelijken
 
 De bestaande [Woningaanbodcheck](/#private-offer-safety-heading) is nu een
