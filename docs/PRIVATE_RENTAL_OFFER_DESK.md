@@ -129,3 +129,15 @@ netwerkrequest, energiecontract-API of nieuwe toestemmingsgate. De
 bronprijs blijft **een persoonlijke schatting**, geen geverifieerde
 leveranciersfactuur of verantwoord financieel advies. Een geannuleerde
 overdracht behoudt de bestaande invoer exact.
+
+### Automatisch intrekken bij bronwijziging
+
+Wanneer na een aangeboden maandraming het stroom-/gasverbruik, de gekozen
+gevoeligheid, een tarief, of de hele tariefset wordt gewijzigd of gewist,
+trekt Woonpoints een nog **openstaand** voorstel in het huurformulier
+meteen in. Een bevestigingspaneel met bedragen die inmiddels niet meer
+bij de eigen bron horen blijft dan niet bestaan. De al eerder expliciet
+ingevulde en opgeslagen huurvoorstellen blijven altijd onaangetast.
+Bij een wijziging die alleen het **niet opgeslagen** editformulier van de
+energievergelijker betreft, verandert de actuele berekening nog niet; pas
+bij tariefopslaan wordt een pending handoff ingetrokken.
