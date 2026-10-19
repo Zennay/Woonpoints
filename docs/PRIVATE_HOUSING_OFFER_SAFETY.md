@@ -49,6 +49,29 @@ Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, 
 - De tijdelijke suggestie blijft alleen in React-geheugen binnen hetzelfde
   tabblad. Geen browseropslag, WoningNet-API, externe partij of queue-write.
 
+## Eigen gecontroleerde JSON-werkbladen toevoegen zonder te overschrijven
+
+- De eigen .json-werkmapimport biedt nu **twee afzonderlijke keuzes**:
+  **Voeg deze werkbladen toe — behoud bestaande** of
+  **Vervang in plaats daarvan alle huidige werkbladen**.
+- Toevoegen is alleen beschikbaar als bestaande en inkomende werkbladen samen
+  maximaal vijf unieke werkbladen opleveren. Antwoorden en afvinkingen van de
+  bestaande werkbladen worden dan nooit aangepast. Bij dubbele numerieke
+  werkblad-ID's wordt aan het nieuwe geïmporteerde werkblad een eerstvolgend
+  vrij nummer toegekend, zichtbaar in een **vooraf getoond ID-overzicht**.
+- Bij overschrijding van vijf is de toevoegknop niet beschikbaar en
+  wordt de reden expliciet getoond; de gebruiker kan dan kiezen voor
+  afzonderlijk **alles vervangen** of import annuleren.
+- Zowel vervangen als toevoegen kunnen eenmalig volledig ongedaan worden
+  gemaakt zolang de gebruiker daarna nog niets aan de werkmap wijzigt.
+- De bestandslezer is generatiedichtgezet: als een andere import begint of
+  de gebruiker de werkmap wijzigt terwijl `File.text()` nog bezig is, wordt
+  het oudere leesresultaat genegeerd. Een laat inkomend bestand toont dan
+  geen misleidend 'gereed'-scherm en kan niet alsnog bevestigd worden.
+- Ook dit werkt zonder automatische opslag, netwerk, bestandsupload,
+  frauderisicoscore of formele woonactie; volledige versie-/schema-
+  validatie en expliciete bevestiging blijven verplicht.
+
 ## Eigen herstelbare werkmap — geen automatische opslag
 
 - **Bekijk complete privé-JSON** toont de exacte versiegebonden werkmap voordat een
