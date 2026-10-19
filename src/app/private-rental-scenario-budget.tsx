@@ -112,7 +112,15 @@ function reportText(results:Result[],monthlyBudget:number):string{
   return lines.join('\n')+'\n';
 }
 
-export default function PrivateRentalScenarioBudget(){
+type RentalSourceProposal={
+  label:string;rentCents:number;serviceCents:number;
+  utilitiesCents:number;depositCents:number
+};
+export default function PrivateRentalScenarioBudget({
+  proposal,onProposalHandled
+}:{
+  proposal?:RentalSourceProposal|null;onProposalHandled?:()=>void
+}={}){
   const [scenarios,setScenarios]=useState<RentalScenario[]>(initial);
   const [budget,setBudget]=useState('');
   const [preview,setPreview]=useState<{fingerprint:string;text:string}|null>(null);
@@ -140,6 +148,22 @@ export default function PrivateRentalScenarioBudget(){
   function updateBudget(raw:string){
     if(raw!==''&&(!valuePattern.test(raw)||raw.length>9))return;
     setBudget(raw);invalidateEdits();
+  }
+  function applyOfferProposal(){
+    if(!proposal)return;
+    const money=[proposal.rentCents,proposal.serviceCents,proposal.utilitiesCents,proposal.depositCents];
+    if(money.some(value=>!Number.isSafeInteger(value)||value<0||value>5_000_000)||
+      typeof proposal.label!=='string'||!proposal.label.trim())return;
+    const format=(value:number)=>(value/100).toFixed(2);
+    setScenarios(items=>items.map(row=>row.id==='a'?{
+      ...newScenario('a',proposal.label.trim().slice(0,40)),
+      rent:format(proposal.rentCents),
+      service:format(proposal.serviceCents),
+      utilities:format(proposal.utilitiesCents),
+      deposit:format(proposal.depositCents)
+    }:row));
+    invalidateEdits();setStatus('Eigen huurvoorstel na jouw bevestiging overgenomen in woning A; reis- en verhuiskosten blijven op 0 om zelf in te vullen.');
+    onProposalHandled?.();
   }
   function openPreview(){
     if(!results||monthlyBudget===null)return;
@@ -207,6 +231,21 @@ export default function PrivateRentalScenarioBudget(){
       <p className="eyebrow">EIGEN KEUZES · ALLEEN DIT TABBLAD</p>
       <h2 id="rental-scenarios-heading">Wat kost verhuizen naar woning A, B of C?</h2>
       <p>Vergelijk je eigen maandlasten, eenmalige verhuiskosten en het geld dat je voor borg moet reserveren. De borg is <strong>geen berekende uitgave</strong>, maar wel geld dat je voorlopig beschikbaar moet hebben. Alle bedragen zijn eigen schattingen, niet gecontroleerde aanbiedingen of een oordeel over betaalbaarheid.</p>
+      {proposal&&<div className="private-rental-budget-preview">
+        <h3>Eigen huurvoorstel overnemen? Eerst controleren</h3>
+        <p>Dit voorstel komt uit je lokale tabblad **Huurvoorstellen**, niet van WoningNet.
+          Bij bevestiging wordt alleen woning A vervangen; jouw woning B/C en maandgrens blijven staan.
+          Zelf ingevoerde reis- en verhuiskosten voor A worden op 0 gezet.</p>
+        <dl>
+          <dt>Eigen label</dt><dd>{proposal.label.slice(0,40)}</dd>
+          <dt>Kale huur</dt><dd>{euro.format(proposal.rentCents/100)}</dd>
+          <dt>Servicekosten</dt><dd>{euro.format(proposal.serviceCents/100)}</dd>
+          <dt>Energie en overige lasten</dt><dd>{euro.format(proposal.utilitiesCents/100)}</dd>
+          <dt>Borg (gereserveerd, geen jaaruitgave)</dt><dd>{euro.format(proposal.depositCents/100)}</dd>
+        </dl>
+        <button type="button" onClick={applyOfferProposal}>Ja, vervang woning A met dit eigen voorstel</button>
+        <button type="button" onClick={onProposalHandled}>Nee, behoud mijn scenario's</button>
+      </div>}
       <label className="private-rental-budget-label" htmlFor="rental-monthly-budget">
         Mijn eigen maandgrens in euro
         <input id="rental-monthly-budget" value={budget} onChange={e=>updateBudget(e.target.value)}
