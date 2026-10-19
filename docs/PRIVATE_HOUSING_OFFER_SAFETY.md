@@ -1,6 +1,6 @@
 # Privé woningaanbodcheck
 
-Route: `/woningaanbod-check` (ook bereikbaar via de vaste Woonpoints-navigatie).
+Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, ook bereikbaar via de vaste navigatie.
 
 ## Wat werkt
 
