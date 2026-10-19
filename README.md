@@ -14,7 +14,10 @@ De uitkomsten zijn uitsluitend jouw eigen schattingen, geen officiële
 woningtoewijzingskans, geverifieerde huurprijs, inkomenscheck of huuradvies.
 Alles staat alleen in het huidige tabblad. Downloaden van een privé-TXT vergt
 eerst volledige preview en aparte toestemming; elke wijziging maakt de
-oude preview ongeldig. Geen WoningNet-koppeling, opslag of automatische actie.
+oude preview ongeldig. Je kunt ook expliciet een eigen versie 1 JSON-back-up
+bekijken en downloaden, later selecteren, inhoud vooraf lezen en pas na een
+tweede bevestiging terugzetten. Eenmalig ongedaan maken behoudt je vorige
+tabbladinvoer. Geen WoningNet-koppeling, opslag of automatische actie.
 [Handleiding](docs/PRIVATE_RENTAL_SCENARIO_BUDGET.md).
 
 
