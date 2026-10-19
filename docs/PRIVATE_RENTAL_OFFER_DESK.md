@@ -95,3 +95,37 @@ Onjuist ingevulde bedragen (maximaal € 50.000 met twee decimalen) zorgen ervoo
 dat berekeningen stoppen, in plaats van ongemerkt naar € 0 te worden afgerond.
 Voor een realistische beslissing blijven belastingen, verzekering, indexaties,
 woninggebreken en actuele contractvoorwaarden handmatig te controleren.
+
+
+## Energie-maandraming uit dezelfde Woonpoints-pagina
+
+
+
+## Gecontroleerde overdracht van eigen energieraming naar huurvoorstel
+
+De energievergelijker biedt bij elke echt zelf ingevoerde tariefkaart nu
+**Gebruik eigen maandraming voor huurvoorstel…**. Deze actie berekent uitsluitend
+het *basis*-maandgemiddelde van de geselecteerde tariefkaart (niet de +10/+20%
+gevoeligheidsvariant), met de huidige handmatig opgegeven kWh, m³,
+tarieven en vaste leveringskosten. De gebruiker moet het bedrag eerst
+afzonderlijk bevestigen; wijziging van de bronraming blokkeert een
+verouderde preview. Een waarde boven de bestaande veilige
+huurformuliergrens van € 50.000 kan niet worden overgedragen.
+
+Na bevestiging scrollt Woonpoints naar de bestaande huurvoorstelvergelijker.
+Daar verschijnt een **tweede expliciete keuze** met de oorspronkelijke
+tariefnaam, het exacte eurobedrag en de **huidige** waarde van het tijdelijke
+energie/internetveld. Alleen bij de tweede bevestiging wordt de
+**nog niet opgeslagen** energiekostenraming in het huidige huurformulier gezet.
+Bestaande kale huur, servicekosten, borg, startdatum, eigen vragen,
+bestaande opgeslagen voorstelscenario's en WoningNet-data blijven
+ongemoeid. Een lopend huurvoorstel wordt nooit automatisch ingediend of
+opgeslagen. De gebruiker moet internet, water en onbekende contractkosten
+zelf alsnog toevoegen en daarna het formulier afzonderlijk opslaan.
+
+Deze overdracht passeert uitsluitend React-parentprops en callbacks
+binnen dezelfde browserpagina; geen localStorage, database, backend,
+netwerkrequest, energiecontract-API of nieuwe toestemmingsgate. De
+bronprijs blijft **een persoonlijke schatting**, geen geverifieerde
+leveranciersfactuur of verantwoord financieel advies. Een geannuleerde
+overdracht behoudt de bestaande invoer exact.
