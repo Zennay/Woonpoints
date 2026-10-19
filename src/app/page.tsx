@@ -11121,7 +11121,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       lines.push('Eigen voorwaarden: ' + (item.pass ? 'Alle vier gehaald' : 'Een of meer niet gehaald') +
         ' · gewogen indicatie ' + (item.score === null ? 'onvolledig' : item.score + '%') + ' (geen toewijzingskans)');
       item.rules.forEach(rule => lines.push(' - ' + rule.label + ': ' + (rule.met === null ? 'onbekend' : rule.met ? 'voldoet' : 'voldoet niet') +
-        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')' + (WoonMatchGap(rule) ? ' · verschil: ' + WoonMatchGap(rule) : '') + ')'));
+        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')' + (WoonMatchGap(rule) ? ' · verschil: ' + WoonMatchGap(rule) : '')));
       if (item.listing.note.trim()) lines.push('Eigen notitie: ' + item.listing.note.trim());
     });
     lines.push('', 'Alleen eigen getallen en notities. Niet gebruiken als bewijs van woninggeschiktheid, identiteit, inkomen of reservering.',
