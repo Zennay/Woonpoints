@@ -817,6 +817,13 @@ code { background: #edf2ee; padding: 2px 6px; border-radius: 6px; }
 .private-rental-budget-actions { display:flex; flex-wrap:wrap; margin:13px 0; }
 .private-rental-budget-what-if { margin:25px 0; padding:18px; border:1px solid #9ab29f; background:#f2f8f3; border-radius:12px; }
 .private-rental-budget-what-if h3 { margin:2px 0 9px; }
+.private-rental-budget-savings { background:#f5f7fc; border-color:#a4adc5; }
+.private-rental-budget-savings .private-rental-budget-grid { margin-bottom:14px; }
+.private-rental-budget-savings table th { background:#eff2fa; }
+.private-rental-budget-savings table td { white-space:normal; min-width:135px; }
+.private-rental-budget-savings input:focus-visible,
+.private-rental-budget-savings select:focus-visible { outline:3px solid #145b78; outline-offset:3px; }
+
 .private-rental-budget-what-if .private-rental-budget-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr)); gap:12px; margin:10px 0 16px; }
 .private-rental-budget-preview { background:#eef5f0; border:1px solid #789785; border-radius:10px; padding:12px 18px; margin:14px 0; }
 .private-rental-budget-preview pre { background:#fff; white-space:pre-wrap; overflow-wrap:anywhere; max-height:320px; overflow:auto; padding:14px; font-size:13px; }
