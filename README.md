@@ -10,6 +10,17 @@ reserveren borg. Naast de eigen maandgrens zie je maandlasten,
 twaalfmaandskosten exclusief terug te vragen borg en de kasbehoefte voor
 de eerste maand en het eerste jaar inclusief voorlopig gereserveerde borg.
 
+Nieuw in dezelfde privévergelijker: **Mijn verhuisspaarplan**. Voer zelf
+beschikbaar spaargeld, een geplande maandelijkse inleg en de maanden tot
+jouw eigen verhuisdoel in. Per woning zie je de gewenste som voor de
+eerste maand inclusief borg en verhuizing **plus** je apart gekozen
+noodbuffer, het geprojecteerde saldo bij vertrek, het eventuele tekort,
+de benodigde spaarmaanden en welk maandbedrag je voor je eigen gekozen
+datum zou moeten sparen. De berekening is hypothetisch, zonder
+bankverbinding, rendement, salarisgegevens of officiële normen.
+Alleen na preview kan dit ook in je privé-TXT komen; spaardata worden
+niet in de bestaande versie 1 JSON terugzet-back-up opgenomen.
+
 De vergelijking heeft nu een apart **wat-als-paneel**: voeg zelf een fictieve
 extra maandlast van maximaal € 1.000 toe, probeer 0/10/20/30% hogere
 energie-/water-/internetkosten en kies een eigen reserve van 1, 2, 3 of
