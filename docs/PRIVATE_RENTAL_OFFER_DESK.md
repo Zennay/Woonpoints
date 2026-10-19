@@ -42,3 +42,20 @@ Bronvelden worden opnieuw gecontroleerd op geldig label en oorspronkelijke kale-
 De bestaande Woonpoints-snelkoppelingen voor kosten, verhuizing, bezichtiging en
 planner blijven ongewijzigd. Handoff bestaat uitsluitend in React-geheugen van
 dezelfde pagina; geen browserstorage, WoningNet-verzoek of gedeelde accountdata.
+
+## Controleerbare gesprekssamenvatting (TXT)
+
+Bij een gekozen huurvoorstel kan de gebruiker nu **Bekijk gespreksoverzicht als tekst**
+openen: dit toont de **complete exacte tekst** met zelf opgegeven kale huur,
+servicekosten, geschatte energie/internet, borg, overige startkosten, verwachte
+ingangsdatum, status, eigen vragen en alle zes eigen afvinkbare contractpunten.
+Berekeningen onderscheiden maandbedrag, startgeld inclusief borg en eerstejaarsbedrag
+exclusief eventueel terugbetaalbare borg. Alle gegevens zijn handmatig en niet
+geverifieerd; er wordt nooit een acceptatie, toewijzing of verhuurderbericht verstuurd.
+
+De gebruiker kiest daarna afzonderlijk **Ja, download dit gecontroleerde TXT-bestand**
+of **Annuleren**. Als de kandidaat intussen is gewijzigd, wordt de oude preview
+geblokkeerd tot hij opnieuw wordt samengesteld. Tekst wordt beperkt tot 8 KiB en
+wordt uitsluitend op expliciet verzoek lokaal als Blob aangeboden. Er wordt
+geen backend, account, portaal, contactpersoon of automatische opslag gebruikt.
+Zelfgekozen bestandsproviders kunnen de TXT buiten de browser synchroniseren.

@@ -1469,13 +1469,55 @@ const totals=(row:Offer)=>{
     firstYear:monthly*12+row.otherCents
   };
 };
+/** Build a private, human-reviewed interview checklist without claiming source verification. */
+function rentalInterviewBrief(row:Offer):string|null {
+  if(!validOffer(row))return null;
+  const cost=totals(row);
+  const lines=[
+    'WOONPOINTS · MIJN EIGEN GESPREKSCHECKLIST',
+    'Zelf ingevoerde, niet-geverifieerde woninggegevens. Geen officieel aanbod of juridische controle.',
+    '',
+    'Eigen woninglabel: '+row.label,
+    'Eigen verwachte startdatum: '+(row.startDate||'nog onbekend'),
+    'Eigen status: '+statuses[row.status],
+    '',
+    'EIGEN BEDRAGEN (NIET GECONTROLEERD)',
+    'Kale huur/maand: '+euro(row.rentCents),
+    'Servicekosten/maand: '+euro(row.serviceCents),
+    'Geschatte energie/internet/maand: '+euro(row.utilitiesCents),
+    'Totaal eigen maandlasten: '+euro(cost.monthly),
+    'Zelf ingevoerde borg: '+euro(row.depositCents),
+    'Overige eigen eenmalige kosten: '+euro(row.otherCents),
+    'Eigen startgeld inclusief eerste maand en borg: '+euro(cost.initial),
+    'Eerste 12 maanden exclusief terugbetaalbare borg: '+euro(cost.firstYear),
+    '',
+    'ZELF TE CONTROLEREN BIJ DE VERHUURDER',
+    ...checklist.map((item,i)=>(
+      (i+1)+'. '+(row.checked.includes(item.id)?'[zelf nagekeken] ':'[nog open] ')+item.name
+    )),
+    '',
+    'EIGEN OPEN VRAGEN (NIET AUTOMATISCH VERSTUURD)',
+    row.questions||'Nog geen vragen ingevuld.',
+    '',
+    'NOTITIES',
+    '____________________________________________________________',
+    '____________________________________________________________',
+    '',
+    'Geen rekening gehouden met dubbele huur, indexatie, verzekeringen, gemeentelijke',
+    'lasten, verhuizing, belasting of individuele contractrechten. Controleer echte',
+    'documenten en voorwaarden bij de aanbieder; Woonpoints doet geen accountacties.',
+    'Een bestand kan persoonlijke gegevens bevatten en extern gesynchroniseerd worden.'
+  ];
+  const content=lines.join('\n')+'\n';
+  return new TextEncoder().encode(content).length<=8192?content:null;
+}
 let nextLocalId=0;
 function generateId(){
   nextLocalId++;
   return 'offer-'+Date.now().toString(36)+'-'+nextLocalId.toString(36);
 }
-function saveDownload(filename:string,content:string){
-  const url=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
+function saveDownload(filename:string,content:string,mime='application/json;charset=utf-8'){
+  const url=URL.createObjectURL(new Blob([content],{type:mime}));
   try{
     const link=document.createElement('a');
     link.href=url;link.download=filename;
@@ -1497,6 +1539,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
   const [pendingImport,setPendingImport]=useState<Offer[]|null>(null);
   const [undoImport,setUndoImport]=useState<Offer[]|null>(null);
   const [pendingDelete,setPendingDelete]=useState<string|null>(null);
+  const [briefPreview,setBriefPreview]=useState<{id:string;source:string;text:string}|null>(null);
   const [confirmClear,setConfirmClear]=useState(false);
   const fileRef=useRef<HTMLInputElement>(null);
   const ranked=useMemo(()=>[...offers].sort((a,b)=>
@@ -1511,7 +1554,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
   const resetDraft=()=>{setDraft(newDraft());setEditing(null);};
   const resetTransient=()=>{
     setPendingImport(null);setUndoImport(null);setExportPreview(null);
-    setPendingDelete(null);setConfirmClear(false);
+    setPendingDelete(null);setConfirmClear(false);setBriefPreview(null);
   };
   function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault();
@@ -1684,7 +1727,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
               {below?'Binnen eigen maandgrens':'Boven eigen maandgrens'}
               {' · '}{euro(Math.abs(budgetCents!-result.monthly))} verschil
             </p>}
-            <button type="button" onClick={()=>setSelected(row.id)}
+            <button type="button" onClick={()=>{setSelected(row.id);setBriefPreview(null);}}
               aria-pressed={chosen?.id===row.id}>Bekijk voorstel en checklist</button>
           </li>;
         })}</ol>}
@@ -1711,6 +1754,34 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
           {item.name}</label>
       </li>)}</ul>
       <p><strong>Eigen open vragen:</strong> {chosen.questions||'Nog niet ingevuld.'}</p>
+      <div className={styles.portable}>
+        <h4>Neem je persoonlijke gesprekspunten mee</h4>
+        <p>Maak een eigen tekstbestand met bedragen, nog open contractvragen en een
+          afvinklijst. Bekijk de exacte inhoud voordat je iets downloadt; geen
+          e-mail of verhuurder wordt automatisch benaderd.</p>
+        <button type="button" onClick={()=>{
+          const text=rentalInterviewBrief(chosen);
+          if(!text){setNotice('Het persoonlijke overzicht is ongeldig of te groot.');return;}
+          setBriefPreview({id:chosen.id,source:JSON.stringify(chosen),text});
+          setNotice('Inhoud klaar ter controle; nog geen bestand gemaakt.');
+        }}>Bekijk gespreksoverzicht als tekst…</button>
+        {briefPreview?.id===chosen.id&&<div>
+          <pre className={styles.preview}>{briefPreview.text}</pre>
+          <div className={styles.buttons}>
+            <button type="button" disabled={briefPreview.source!==JSON.stringify(chosen)}
+              onClick={()=>{
+                if(briefPreview.source!==JSON.stringify(chosen))return;
+                saveDownload('woonpoints-eigen-huurgesprek.txt',briefPreview.text,
+                  'text/plain;charset=utf-8');
+                setBriefPreview(null);
+                setNotice('Eigen gespreksnotitie aangeboden; de gekozen opslaglocatie kan synchroniseren.');
+              }}>Ja, download dit gecontroleerde TXT-bestand</button>
+            <button type="button" onClick={()=>setBriefPreview(null)}>Annuleren</button>
+          </div>
+          {briefPreview.source!==JSON.stringify(chosen)&&<p role="status">
+            Het voorstel is intussen veranderd. Maak een nieuw overzicht.</p>}
+        </div>}
+      </div>
       {pendingDelete===chosen.id?<div className={styles.warnbox}>
         <p>Dit verwijdert uitsluitend deze eigen notitie uit dit tabblad.</p>
         <button type="button" onClick={()=>remove(chosen.id)}>Ja, verwijder dit voorstel</button>
