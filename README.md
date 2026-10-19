@@ -1,5 +1,16 @@
 # Woonpoints
 
+## Nieuw: maximaal vijf woningaanbiedingen privé vergelijken
+
+De bestaande [Woningaanbodcheck](/#private-offer-safety-heading) is nu een
+**volwaardige sessie-werkmap** voor één tot vijf afzonderlijke voorstellen.
+Kies een werkblad, beantwoord de vragen en vink alleen zelf nagelopen acties af.
+Het overzicht vergelijkt aantallen *door jou gemelde* signalen, ontbrekende
+informatie en opvolging — **geen** betrouwbaarheidsrangorde. Wisselen behoudt
+de eigen antwoorden; verwijderen en reset werken per werkblad, met bevestiging.
+Controleer de privé-TXT eerst: exporteer alleen het huidige voorstel of alle
+voorstellen samen, zonder naam/adres/document-velden en zonder automatische opslag.
+
 ## Nieuw: woningaanbodcheck vóór betalen of gegevens delen
 
 Open **[Woningaanbodcheck](/#private-offer-safety-heading)** vanuit de vaste navigatie
