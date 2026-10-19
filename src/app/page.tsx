@@ -10615,6 +10615,12 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
 // Self-contained, non-authorizing client-only comparison inside the approved app source.
 type WoonMatchListing = { id: number; name: string; monthlyRent: string; utilities: string; area: string; bedrooms: string; commute: string; note: string };
 type WoonMatchCriteria = { budget: string; area: string; bedrooms: string; commute: string };
+type WoonMatchWeights = Record<keyof WoonMatchCriteria, number>;
+const WOON_MATCH_DEFAULT_WEIGHTS: WoonMatchWeights = { budget: 4, area: 3, bedrooms: 2, commute: 2 };
+const WOON_MATCH_PRIORITY_LABELS: Array<{ key: keyof WoonMatchCriteria; label: string }> = [
+  { key: 'budget', label: 'Totale maandlasten' }, { key: 'area', label: 'Woonoppervlak' },
+  { key: 'bedrooms', label: 'Slaapkamers' }, { key: 'commute', label: 'Reistijd' }
+];
 type WoonMatchRule = { label: string; weight: number; observed: number | null; required: number | null; met: boolean | null; detail: string };
 type WoonMatchOutcome = { listing: WoonMatchListing; monthly: number | null; rules: WoonMatchRule[]; complete: boolean; pass: boolean; met: number; known: number; score: number | null };
 
@@ -10633,7 +10639,7 @@ const WoonMatchScalar = (value: string, label: string, cap: number, required: bo
     ? label + ' moet een getal tussen 0 en ' + cap + ' zijn.'
     : required && WoonMatchNumeric(value, cap) === null ? 'Vul ' + label.toLowerCase() + ' in.' : null;
 
-function WoonMatchCalculate(listing: WoonMatchListing, criteria: WoonMatchCriteria): WoonMatchOutcome {
+function WoonMatchCalculate(listing: WoonMatchListing, criteria: WoonMatchCriteria, weights: WoonMatchWeights): WoonMatchOutcome {
   const rent = WoonMatchNumeric(listing.monthlyRent, 100000);
   const utility = WoonMatchNumeric(listing.utilities, 100000);
   const monthly = rent !== null && utility !== null ? rent + utility : null;
@@ -10641,10 +10647,10 @@ function WoonMatchCalculate(listing: WoonMatchListing, criteria: WoonMatchCriter
   const bedrooms = WoonMatchNumeric(listing.bedrooms, 100);
   const commute = WoonMatchNumeric(listing.commute, 10000);
   const pairs: Array<[string, number, number | null, number | null, 'max' | 'min', string]> = [
-    ['Totale maandkosten', 4, monthly, WoonMatchNumeric(criteria.budget, 100000), 'max', '€ per maand, inclusief eigen service/energie-inschatting'],
-    ['Woonoppervlak', 3, area, WoonMatchNumeric(criteria.area, 100000), 'min', 'm²'],
-    ['Slaapkamers', 2, bedrooms, WoonMatchNumeric(criteria.bedrooms, 100), 'min', 'kamers'],
-    ['Reistijd enkele reis', 2, commute, WoonMatchNumeric(criteria.commute, 10000), 'max', 'minuten']
+    ['Totale maandkosten', weights.budget, monthly, WoonMatchNumeric(criteria.budget, 100000), 'max', '€ per maand, inclusief eigen service/energie-inschatting'],
+    ['Woonoppervlak', weights.area, area, WoonMatchNumeric(criteria.area, 100000), 'min', 'm²'],
+    ['Slaapkamers', weights.bedrooms, bedrooms, WoonMatchNumeric(criteria.bedrooms, 100), 'min', 'kamers'],
+    ['Reistijd enkele reis', weights.commute, commute, WoonMatchNumeric(criteria.commute, 10000), 'max', 'minuten']
   ];
   const rules: WoonMatchRule[] = pairs.map(([label, weight, observed, required, direction, detail]) => ({
     label, weight, observed, required, detail,
@@ -10703,6 +10709,7 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
 
 function PrivateListingMatchStudio() {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
+  const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
   const [listings, setListings] = useState<WoonMatchListing[]>([WoonMatchBlank(1), WoonMatchBlank(2)]);
   const nextId = useRef(3);
   const [csvText, setCsvText] = useState('');
@@ -10718,8 +10725,8 @@ function PrivateListingMatchStudio() {
     setListings(prev => prev.map(row => row.id === id ? { ...row, [key]: value } : row));
   };
 
-  const currentSource = JSON.stringify({ schema: 1, criteria, listings });
-  const outcomes = useMemo(() => listings.map(item => WoonMatchCalculate(item, criteria)), [listings, criteria]);
+  const currentSource = JSON.stringify({ schema: 1, criteria, weights, listings });
+  const outcomes = useMemo(() => listings.map(item => WoonMatchCalculate(item, criteria, weights)), [listings, criteria, weights]);
   const criteriaErrors = [
     WoonMatchScalar(criteria.budget, 'Maandgrens', 100000, true),
     WoonMatchScalar(criteria.area, 'Minimum oppervlak', 100000, true),
@@ -10774,6 +10781,8 @@ function PrivateListingMatchStudio() {
       '', 'EIGEN GRENZEN',
       'Maximale maandkosten: ' + criteria.budget + ' EUR; minimaal oppervlak: ' + criteria.area + ' m²;',
       'Minimaal slaapkamers: ' + criteria.bedrooms + '; maximaal enkele-reisminuten: ' + criteria.commute,
+      'Zelf gekozen relatieve wegingspunten (1=licht, 5=zwaar): ' +
+        WOON_MATCH_PRIORITY_LABELS.map(entry => entry.label + ' ' + weights[entry.key]).join('; '),
       '', 'ZELF INGEVOERDE OPTIES (GEEN GECONTROLEERDE ADVERTENTIES)'
     ];
     ordered.forEach((item, index) => {
@@ -10782,7 +10791,7 @@ function PrivateListingMatchStudio() {
       lines.push('Eigen voorwaarden: ' + (item.pass ? 'Alle vier gehaald' : 'Een of meer niet gehaald') +
         ' · gewogen indicatie ' + (item.score === null ? 'onvolledig' : item.score + '%') + ' (geen toewijzingskans)');
       item.rules.forEach(rule => lines.push(' - ' + rule.label + ': ' + (rule.met === null ? 'onbekend' : rule.met ? 'voldoet' : 'voldoet niet') +
-        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + ')'));
+        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')'));
       if (item.listing.note.trim()) lines.push('Eigen notitie: ' + item.listing.note.trim());
     });
     lines.push('', 'Alleen eigen getallen en notities. Niet gebruiken als bewijs van woninggeschiktheid, identiteit, inkomen of reservering.',
@@ -10815,8 +10824,33 @@ function PrivateListingMatchStudio() {
           <WoonMatchField label="Min. slaapkamers" value={criteria.bedrooms} setValue={v => changeCriteria('bedrooms', v)} placeholder="Bijv. 1" />
           <WoonMatchField label="Max. enkele-reisminuten" value={criteria.commute} setValue={v => changeCriteria('commute', v)} placeholder="Bijv. 45" />
         </div>
-        <p style={{ marginBottom: 0, fontSize: 14 }}>Vaste transparante weging: totale maandkosten 4, oppervlak 3,
-          slaapkamers 2, reistijd 2. Een niet gehaald criterium blijft zichtbaar; hoge andere scores verbergen dat niet.</p>
+        <fieldset style={{ marginTop: 20, border: '1px solid #c1d7d0', borderRadius: 9, padding: 12 }}>
+          <legend style={{ fontWeight: 700 }}>Wat telt voor mij het zwaarst?</legend>
+          <p style={{ marginTop: 0, fontSize: 14 }}>Stel per criterium een gewicht van 1 (licht) tot 5 (zwaar) in.
+            Alle vier eigen grenzen blijven harde voorwaarden, ook als een gewicht laag is.
+            Startwaarden: geld 4, oppervlak 3, slaapkamers 2, reistijd 2.</p>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+            {WOON_MATCH_PRIORITY_LABELS.map(entry => <label key={entry.key} style={{ display: 'block', fontWeight: 650, fontSize: 14 }}>
+              <span style={{ display: 'block', marginBottom: 5 }}>{entry.label}</span>
+              <select style={WoonMatchInputStyle} value={weights[entry.key]} onChange={event => {
+                const next = Number(event.currentTarget.value);
+                if (Number.isInteger(next) && next >= 1 && next <= 5) {
+                  setWeights(prev => ({ ...prev, [entry.key]: next }));
+                }
+              }}>
+                {[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>
+                  {value} — {value === 1 ? 'licht' : value === 5 ? 'zwaar' : 'gemiddeld'}
+                </option>)}
+              </select>
+            </label>)}
+          </div>
+          <button type="button" style={{ marginTop: 12 }} onClick={() => setWeights({ ...WOON_MATCH_DEFAULT_WEIGHTS })}>
+            Herstel startweging
+          </button>
+        </fieldset>
+        <p style={{ marginBottom: 0, fontSize: 14 }}>De expliciete gewichten bepalen alleen de indicatieve
+          percentages en de volgorde van woningen die niet aan alle voorwaarden voldoen.
+          Niets hiervan is een voorspelling van woningtoewijzing.</p>
       </section>
 
       <section aria-labelledby="options-heading">
@@ -10898,7 +10932,7 @@ function PrivateListingMatchStudio() {
                 <strong>{outcome.pass ? 'Alle 4 eigen grenzen gehaald' : outcome.met + ' van 4 grenzen gehaald'}</strong>
                 <p style={{ marginTop: 4 }}>Gewogen criteriascore: {outcome.score}% · Geschatte maandlasten: {outcome.monthly === null ? 'Onbekend' : WoonMatchMoney(outcome.monthly)}</p>
                 <ul>{outcome.rules.map(rule => <li key={rule.label}>
-                  {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail})
+                  {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight})
                 </li>)}</ul>
               </article>
             ))}
