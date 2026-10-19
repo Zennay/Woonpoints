@@ -8433,10 +8433,13 @@ const offerSignals: readonly OfferSignal[] = [
 const offerGroups = ['Identiteit en kanaal', 'Betalen en documenten', 'Afspraak en overeenkomst'] as const;
 const offerLabels: Record<OfferAnswer, string> = { yes: 'Ja, dit speelt', no: 'Nee', unknown: 'Weet ik niet' };
 
-function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: string, reviewed: Record<string, boolean>): string {
+type OfferSafetyCase = { id: number; answers: Record<string, OfferAnswer>; reviewed: Record<string, boolean> };
+const MAX_OFFER_SAFETY_CASES = 5;
+function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: string, reviewed: Record<string, boolean>, caseName: string): string {
   const lines = [
     'WOONPOINTS · PRIVÉ WONINGAANBODCHECK',
     'Zelf ingevulde aandachtspunten (geen identiteits- of fraudecontrole)',
+    'Eigen werkblad: ' + caseName,
     'Gecontroleerd op: ' + checkedAt,
     '',
     ...offerSignals.flatMap(signal => [
@@ -8455,10 +8458,44 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
 }
 
 function PrivateOfferSafety() {
-  const [answers, setAnswers] = useState<Record<string, OfferAnswer>>({});
-  const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
+  const [caseItems, setCaseItems] = useState<OfferSafetyCase[]>([{ id: 1, answers: {}, reviewed: {} }]);
+  const [currentCaseId, setCurrentCaseId] = useState(1);
   const [preview, setPreview] = useState(false);
+  const [allPreview, setAllPreview] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const currentCase = caseItems.find(item => item.id === currentCaseId) ?? caseItems[0];
+  const answers = currentCase.answers;
+  const reviewed = currentCase.reviewed;
+  const caseLabel = (id: number) => 'Voorstel ' + id;
+  const today = new Date().toLocaleDateString('nl-NL');
+  const combinedReport = caseItems.map(item =>
+    offerSafetyExport(item.answers, today, item.reviewed, caseLabel(item.id))
+  ).join('\n\n' + '='.repeat(46) + '\n\n');
+
+  function updateCurrentCase(change: (current: OfferSafetyCase) => OfferSafetyCase) {
+    setCaseItems(current => current.map(item => item.id === currentCaseId ? change(item) : item));
+  }
+  function selectCase(id: number) {
+    if (!caseItems.some(item => item.id === id)) return;
+    setCurrentCaseId(id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
+  function addCase() {
+    if (caseItems.length >= MAX_OFFER_SAFETY_CASES) return;
+    const id = Math.max(...caseItems.map(item => item.id)) + 1;
+    setCaseItems(current => [...current, { id, answers: {}, reviewed: {} }]);
+    setCurrentCaseId(id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
+  function deleteCase() {
+    if (caseItems.length <= 1) return;
+    const next = caseItems.filter(item => item.id !== currentCaseId);
+    setCaseItems(next);
+    setCurrentCaseId(next[0].id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
 
   const findings = useMemo(() => {
     const flagged = offerSignals.filter(signal => answers[signal.id] === 'yes');
@@ -8472,7 +8509,7 @@ function PrivateOfferSafety() {
   }, [answers]);
   const reviewActions = [...findings.flagged, ...findings.unknown];
   const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
-  const report = offerSafetyExport(answers, new Date().toLocaleDateString('nl-NL'), reviewed);
+  const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
   const status = findings.urgent.length > 0
     ? 'Eerst stoppen en onafhankelijk controleren'
     : findings.flagged.length > 0 || findings.unknown.length > 0 || findings.unanswered.length > 0
@@ -8480,22 +8517,24 @@ function PrivateOfferSafety() {
       : 'Geen signalen door jou gemeld — géén verificatie';
 
   function setAnswer(id: string, value: OfferAnswer) {
-    setAnswers(current => ({ ...current, [id]: value }));
-    setReviewed(current => current[id] ? { ...current, [id]: false } : current);
-    setPreview(false);
-    setConfirmReset(false);
+    updateCurrentCase(current => ({
+      ...current,
+      answers: { ...current.answers, [id]: value },
+      reviewed: { ...current.reviewed, [id]: false }
+    }));
+    setPreview(false); setAllPreview(false); setConfirmReset(false);
   }
 
-  function downloadReport() {
-    const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }));
+  function downloadLocal(content: string, filename: string) {
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'woonpoints-eigen-woningaanbodcheck.txt';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setPreview(false);
+    setPreview(false); setAllPreview(false);
   }
 
   return (
@@ -8509,7 +8548,67 @@ function PrivateOfferSafety() {
           geen account, opslag, externe aanvraag of WoningNet-reactie.</p>
       </header>
 
+      <section className="card" aria-label="Mijn afzonderlijke aanbodcontroles" style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 24, marginBottom: 12 }}>Mijn eigen voorstellen — {caseItems.length} van {MAX_OFFER_SAFETY_CASES}</h2>
+        <p>Vergelijk maximaal vijf afzonderlijke controles naast elkaar. Elk voorstel heeft alleen een
+          automatisch nummer: er worden geen woningadressen, verhuurders of contactgegevens gevraagd of bewaard.</p>
+        <div role="group" aria-label="Kies een eigen werkblad" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          {caseItems.map(item => <button key={item.id} type="button"
+            aria-pressed={currentCase.id === item.id}
+            onClick={() => selectCase(item.id)} style={{ minHeight: 44, padding: '8px 12px',
+              background: currentCase.id === item.id ? '#355e42' : 'white',
+              color: currentCase.id === item.id ? 'white' : '#355e42',
+              border: '2px solid #355e42', borderRadius: 9 }}>
+            {caseLabel(item.id)} {currentCase.id === item.id ? '· actief' : ''}
+          </button>)}
+          <button type="button" disabled={caseItems.length >= MAX_OFFER_SAFETY_CASES}
+            onClick={addCase} style={{ minHeight: 44, padding: '8px 12px', borderRadius: 9 }}>
+            + Nieuw voorstel
+          </button>
+        </div>
+        {caseItems.length > 1 && <div>
+          <button type="button" onClick={() => { setConfirmDelete(true); setConfirmReset(false); setPreview(false); setAllPreview(false); }}
+            style={{ minHeight: 44, padding: '9px 12px' }}>Verwijder {caseLabel(currentCase.id)}</button>
+          {confirmDelete && <div role="group" aria-label="Voorstel verwijderen">
+            <p>Dit verwijdert uitsluitend {caseLabel(currentCase.id)} en alle antwoorden en afvinkingen ervan uit
+              dit tabblad. Andere voorstellen blijven intact.</p>
+            <button type="button" onClick={deleteCase} style={{ minHeight: 44, padding: '9px 12px' }}>Ja, verwijder voorstel</button>
+            <button type="button" onClick={() => setConfirmDelete(false)}
+              style={{ minHeight: 44, padding: '9px 12px', marginLeft: 8 }}>Annuleren</button>
+          </div>}
+        </div>}
+        <div style={{ overflowX: 'auto', marginTop: 18 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 590, textAlign: 'left' }}>
+            <caption style={{ textAlign: 'left', marginBottom: 9 }}>
+              Alleen zelf ingevulde signalen. Minder signalen is geen betrouwbaarder woningaanbod.
+            </caption>
+            <thead><tr>
+              {['Werkblad', 'Urgent gemeld', 'Overige gemeld', 'Onbekend', 'Niet ingevuld', 'Zelf nagekeken'].map(label =>
+                <th key={label} scope="col" style={{ padding: 8, borderBottom: '1px solid #dce5df' }}>{label}</th>)}
+            </tr></thead>
+            <tbody>{caseItems.map(item => {
+              const yes = offerSignals.filter(signal => item.answers[signal.id] === 'yes');
+              const unknown = offerSignals.filter(signal => item.answers[signal.id] === 'unknown');
+              const remaining = offerSignals.filter(signal => !item.answers[signal.id]);
+              const reviewedActions = [...yes, ...unknown].filter(signal => item.reviewed[signal.id]);
+              return <tr key={item.id}>
+                <th scope="row" style={{ padding: 8, borderBottom: '1px solid #e7eee9' }}>
+                  <button type="button" onClick={() => selectCase(item.id)}
+                    style={{ padding: 6, minHeight: 44 }}>{caseLabel(item.id)}</button>
+                </th>
+                <td style={{ padding: 8 }}>{yes.filter(signal => signal.severity === 'urgent').length}</td>
+                <td style={{ padding: 8 }}>{yes.filter(signal => signal.severity !== 'urgent').length}</td>
+                <td style={{ padding: 8 }}>{unknown.length}</td>
+                <td style={{ padding: 8 }}>{remaining.length}</td>
+                <td style={{ padding: 8 }}>{reviewedActions.length}/{yes.length + unknown.length}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="card" aria-label="Resultaatoverzicht" style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 22 }}>Controle voor {caseLabel(currentCase.id)}</h2>
         <p aria-live="polite" role="status"><strong>{status}</strong></p>
         <p>{findings.checked} van {offerSignals.length} vragen beantwoord · {findings.flagged.length} gemelde signalen ·
           {' '}{findings.unknown.length} onbekend · {findings.unanswered.length} open.</p>
@@ -8558,8 +8657,11 @@ function PrivateOfferSafety() {
                   <input type="checkbox" checked={reviewed[signal.id] === true}
                     aria-label={'Zelf nagelopen: ' + signal.question}
                     onChange={() => {
-                      setReviewed(current => ({ ...current, [signal.id]: !current[signal.id] }));
-                      setPreview(false);
+                      updateCurrentCase(current => ({
+                        ...current,
+                        reviewed: { ...current.reviewed, [signal.id]: !current.reviewed[signal.id] }
+                      }));
+                      setPreview(false); setAllPreview(false);
                     }} style={{ marginTop: 7 }} />
                   <span>{answers[signal.id] === 'yes' ? signal.next :
                     'Verzamel onafhankelijke informatie: ' + signal.question}
@@ -8581,6 +8683,8 @@ function PrivateOfferSafety() {
 
       <section className="card" style={{ marginTop: 20, marginBottom: 32 }}>
         <h2 style={{ fontSize: 24 }}>Zelf meenemen of opnieuw beginnen</h2>
+        <p>Je kijkt en downloadt nu uitsluitend {caseLabel(currentCase.id)}, tenzij je
+          bewust de aparte complete vergelijking exporteert.</p>
         <button type="button" onClick={() => { setPreview(value => !value); setConfirmReset(false); }}
           style={{ minHeight: 44, padding: '9px 14px', margin: '12px 8px 12px 0' }}>
           {preview ? 'Sluit voorbeeld' : 'Bekijk mijn privé-TXT'}
@@ -8588,15 +8692,35 @@ function PrivateOfferSafety() {
         {preview && <div>
           <p>Alleen bovenstaande keuzes en bijbehorende algemene adviezen; geen persoonlijke documenten.</p>
           <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 330, overflow: 'auto', padding: 16, background: '#f3f6f3' }}>{report}</pre>
-          <button type="button" onClick={downloadReport} style={{ minHeight: 44, padding: '9px 14px' }}>
+          <button type="button" onClick={() => downloadLocal(report, 'woonpoints-' + caseLabel(currentCase.id).toLowerCase().replace(' ', '-') + '.txt')} style={{ minHeight: 44, padding: '9px 14px' }}>
             Download gecontroleerd TXT-bestand
           </button>
         </div>}
-        <button type="button" onClick={() => { setConfirmReset(true); setPreview(false); }}
+        <button type="button" onClick={() => { setConfirmReset(true); setPreview(false); setAllPreview(false); }}
           style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Wis antwoorden</button>
+        {caseItems.length > 1 && <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid #dbe6dd' }}>
+          <h3>Alle werkbladen exporteren</h3>
+          <p>In één bestand staan alle {caseItems.length} zelf ingevulde voorstellen met nummers,
+            algemene signalen en eigen opvolgstatus. Lees het eerst na: een door jou gekozen
+            bestandslocatie kan buiten Woonpoints synchroniseren.</p>
+          <button type="button" onClick={() => { setAllPreview(value => !value); setPreview(false); setConfirmReset(false); }}
+            style={{ minHeight: 44, padding: '9px 14px' }}>
+            {allPreview ? 'Sluit alle voorbeelden' : 'Bekijk complete privévergelijking'}
+          </button>
+          {allPreview && <div>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 330, overflow: 'auto',
+              padding: 16, background: '#f3f6f3' }}>{combinedReport}</pre>
+            <button type="button" onClick={() => downloadLocal(combinedReport, 'woonpoints-aanbodcontroles-prive.txt')}
+              style={{ minHeight: 44, padding: '9px 14px' }}>Download deze complete TXT</button>
+          </div>}
+        </div>}
         {confirmReset && <div role="group" aria-label="Antwoorden wissen" style={{ paddingTop: 12 }}>
-          <p>Alle {findings.checked} antwoorden en {reviewedCount} zelf afgevinkte vervolgstappen in dit tabblad wissen?</p>
-          <button type="button" onClick={() => { setAnswers({}); setReviewed({}); setConfirmReset(false); setPreview(false); }}
+          <p>Alle {findings.checked} antwoorden en {reviewedCount} zelf afgevinkte vervolgstappen
+            voor {caseLabel(currentCase.id)} wissen? Andere voorstellen blijven intact.</p>
+          <button type="button" onClick={() => {
+              updateCurrentCase(current => ({ ...current, answers: {}, reviewed: {} }));
+              setConfirmReset(false); setPreview(false); setAllPreview(false);
+            }}
             style={{ minHeight: 44, padding: '9px 14px' }}>Ja, wis alles</button>
           <button type="button" onClick={() => setConfirmReset(false)}
             style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
