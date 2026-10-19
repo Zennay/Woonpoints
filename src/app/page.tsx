@@ -10700,6 +10700,11 @@ function WoonMatchField({ label, value, setValue, placeholder, maxLength = 20 }:
 
 const WOON_MATCH_CSV_HEADER = 'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie';
 
+// A CSV opened in desktop spreadsheet software can interpret a text cell as
+// a formula. Refuse ambiguous leading formula prefixes rather than adding
+// escape characters that silently change the seven-field import contract.
+const woonMatchCsvFormulaCell = (value: string): boolean => /^[=+@-]/u.test(value.trimStart());
+
 /** Only locally pasted, seven-column Dutch semicolon records; no spreadsheet parser or network. */
 function parsePrivateMatchCsv(source: string, minRows: 1 | 2 = 2): { rows: Omit<WoonMatchListing, 'id'>[]; error: string } {
   if (!source || source.length > 4096 || /[^\S\n\r\t ]/.test(source)) {
@@ -10716,6 +10721,10 @@ function parsePrivateMatchCsv(source: string, minRows: 1 | 2 = 2): { rows: Omit<
     const cols = lines[index].split(';');
     if (cols.length !== 7) return { rows: [], error: 'Rij ' + (index + 1) + ': verwacht precies 7 met puntkomma gescheiden velden; geen quotes of puntkomma in notities.' };
     const [name, monthlyRent, utilities, area, bedrooms, commute, note] = cols.map(value => value.trim());
+    if (woonMatchCsvFormulaCell(name) || woonMatchCsvFormulaCell(note)) {
+      return { rows: [], error: 'Rij ' + (index + 1) +
+        ': label of notitie begint met een spreadsheet-formuleteken (=, +, - of @). Gebruik eigen platte tekst.' };
+    }
     if (!name || name.length > 80 || note.length > 200 || /[\u0000-\u001f\u007f]/.test(name + note)) {
       return { rows: [], error: 'Rij ' + (index + 1) + ': naam of notitie ontbreekt, is te lang of bevat besturingstekens.' };
     }
@@ -10741,6 +10750,9 @@ function woonMatchEncodeCsv(listings: WoonMatchListing[]): { text: string; error
   if (listings.length < 2 || listings.length > 5) return fail('Alleen twee tot vijf opties kunnen worden geëxporteerd.');
   const names = new Set<string>();
   for (const [index, row] of listings.entries()) {
+    if (woonMatchCsvFormulaCell(row.name) || woonMatchCsvFormulaCell(row.note))
+      return fail('Optie ' + (index + 1) +
+        ': label of notitie mag niet beginnen met =, +, - of @ bij CSV-export. Pas die eigen tekst eerst aan.');
     if (!woonMatchSafeText(row.name, 80) || !woonMatchSafeText(row.note, 200) ||
         !row.name.trim() || row.name !== row.name.trim() || row.note !== row.note.trim() ||
         /[;\r\n\t]/.test(row.name + row.note)) {
