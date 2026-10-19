@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 /**
  * Private comparison of user-entered rental scenarios. These values are not
@@ -27,6 +27,41 @@ const newScenario=(id:string,title:string):RentalScenario=>({
   id,title,rent:'',service:'0',utilities:'0',commute:'0',moving:'0',deposit:'0'
 });
 const initial=()=>[newScenario('a','Woning A'),newScenario('b','Woning B')];
+type RentalBackup={scenarios:RentalScenario[];budget:string};
+const PRIVATE_BACKUP_KIND='woonpoints-rental-scenarios';
+const BACKUP_LIMIT=8192;
+const exactKeys=(value:Record<string,unknown>,expected:string[])=>
+  Object.keys(value).sort().join(',')===expected.slice().sort().join(',');
+function decodeRentalBackup(raw:string):RentalBackup|null{
+  if(raw.length<16||raw.length>BACKUP_LIMIT)return null;
+  try{
+    const data:unknown=JSON.parse(raw);
+    if(!data||typeof data!=='object'||Array.isArray(data))return null;
+    const doc=data as Record<string,unknown>;
+    // Accept only the canonical, app-exported JSON encoding. This additionally
+    // refuses repeated JSON keys, invisible extra whitespace and alternatives.
+    if(JSON.stringify(doc)!==raw||!exactKeys(doc,['kind','version','budget','scenarios'])||
+       doc.kind!==PRIVATE_BACKUP_KIND||doc.version!==1||typeof doc.budget!=='string'||
+       !Array.isArray(doc.scenarios)||!([2,3].includes(doc.scenarios.length)))return null;
+    if(doc.budget!==''&&cents(doc.budget)===null)return null;
+    const ids=['a','b','c'];
+    const restored:RentalScenario[]=[];
+    for(let i=0;i<doc.scenarios.length;i++){
+      const row=doc.scenarios[i];
+      if(!row||typeof row!=='object'||Array.isArray(row))return null;
+      const r=row as Record<string,unknown>;
+      if(!exactKeys(r,['id','title','rent','service','utilities','commute','moving','deposit'])||
+         r.id!==ids[i]||typeof r.title!=='string'||!r.title.trim()||r.title.length>40||
+         /[\\u0000-\\u001f\\u007f]/u.test(r.title))return null;
+      if(prices.some(p=>typeof r[p.key]!=='string'||(r[p.key]!==''&&cents(r[p.key] as string)===null)))return null;
+      restored.push({...r} as RentalScenario);
+    }
+    return {scenarios:restored,budget:doc.budget};
+  }catch{return null;}
+}
+function encodeRentalBackup(scenarios:RentalScenario[],budget:string):string{
+  return JSON.stringify({kind:PRIVATE_BACKUP_KIND,version:1,budget,scenarios});
+}
 const valuePattern=/^(?:[0-9]{1,5})(?:[.,][0-9]{0,2})?$/;
 
 /** Parse only short decimal euro inputs; compute exclusively with integer cents. */
@@ -81,38 +116,85 @@ export default function PrivateRentalScenarioBudget(){
   const [scenarios,setScenarios]=useState<RentalScenario[]>(initial);
   const [budget,setBudget]=useState('');
   const [preview,setPreview]=useState<{fingerprint:string;text:string}|null>(null);
+  const [backupPreview,setBackupPreview]=useState<{fingerprint:string;text:string}|null>(null);
+  const [incoming,setIncoming]=useState<{data:RentalBackup;raw:string}|null>(null);
+  const [undo,setUndo]=useState<RentalBackup|null>(null);
+  const fileGeneration=useRef(0);
   const [clearRequested,setClearRequested]=useState(false);
   const [status,setStatus]=useState('');
   const fingerprint=JSON.stringify([scenarios,budget]);
   const results=useMemo(()=>makeResults(scenarios,budget),[scenarios,budget]);
   const monthlyBudget=cents(budget);
+  function invalidateEdits(){
+    fileGeneration.current++;
+    setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
+    setClearRequested(false);setStatus('');
+  }
   function updateScenario(id:string,field:AmountKey|'title',raw:string){
     if(field==='title'){
       if(raw.length>40||/[\u0000-\u001f\u007f]/u.test(raw))return;
     }else if(raw!==''&&(!valuePattern.test(raw)||raw.length>9))return;
     setScenarios(items=>items.map(row=>row.id===id?{...row,[field]:raw}:row));
-    setPreview(null);setClearRequested(false);setStatus('');
+    invalidateEdits();
   }
   function updateBudget(raw:string){
     if(raw!==''&&(!valuePattern.test(raw)||raw.length>9))return;
-    setBudget(raw);setPreview(null);setClearRequested(false);setStatus('');
+    setBudget(raw);invalidateEdits();
   }
   function openPreview(){
     if(!results||monthlyBudget===null)return;
     setPreview({fingerprint,text:reportText(results,monthlyBudget)});
     setStatus('Lees de hele tekst en kies pas daarna bewust voor downloaden.');
   }
-  function download(){
-    if(!preview||preview.fingerprint!==fingerprint)return;
-    const url=URL.createObjectURL(new Blob([preview.text],{type:'text/plain;charset=utf-8'}));
+  async function loadBackup(event:ChangeEvent<HTMLInputElement>){
+    const file=event.currentTarget.files?.[0];
+    if(!file)return;
+    const ticket=++fileGeneration.current;
+    setIncoming(null);setUndo(null);setBackupPreview(null);setPreview(null);
+    try{
+      if(file.size<16||file.size>BACKUP_LIMIT)throw Error('too large');
+      const raw=await file.text();
+      if(ticket!==fileGeneration.current)return;
+      const data=decodeRentalBackup(raw);
+      if(!data)throw Error('format');
+      setIncoming({data,raw});
+      setStatus('Controleer de volledige eigen JSON hieronder. Niets is vervangen.');
+    }catch{
+      if(ticket===fileGeneration.current)setStatus('Privé-herstel geweigerd: bestand te groot of geen exacte Woonpoints-versie 1 back-up.');
+    }finally{event.currentTarget.value='';}
+  }
+  function applyImport(){
+    if(!incoming)return;
+    fileGeneration.current++;
+    setUndo({scenarios:scenarios.map(x=>({...x})),budget});
+    setScenarios(incoming.data.scenarios.map(x=>({...x})));
+    setBudget(incoming.data.budget);
+    setIncoming(null);setPreview(null);setBackupPreview(null);
+    setStatus('Eigen back-up in dit tabblad hersteld. Je kunt dit eenmaal ongedaan maken.');
+  }
+  function restorePrevious(){
+    if(!undo)return;
+    fileGeneration.current++;
+    setScenarios(undo.scenarios.map(x=>({...x})));setBudget(undo.budget);
+    setUndo(null);setPreview(null);setBackupPreview(null);
+    setStatus('Je vorige tabbladinvoer is hersteld.');
+  }
+  function previewBackup(){
+    setBackupPreview({fingerprint,text:encodeRentalBackup(scenarios,budget)});
+    setPreview(null);setStatus('Bekijk de volledige privé-JSON en kies daarna zelf voor downloaden.');
+  }
+  function downloadFile(filename:string,text:string,type:string){
+    const url=URL.createObjectURL(new Blob([text],{type}));
     try{
       const link=document.createElement('a');
-      link.href=url;link.download='woonpoints-mijn-huurscenarios.txt';
+      link.href=url;link.download=filename;
       document.body.appendChild(link);link.click();link.remove();
-      setStatus('Privé-TXT aangeboden aan je browser. Geen gegevens verstuurd door Woonpoints.');
-    }finally{
-      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-    }
+      setStatus('Privébestand aangeboden aan de browser; Woonpoints heeft niets verzonden.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
+  function download(){
+    if(!preview||preview.fingerprint!==fingerprint)return;
+    downloadFile('woonpoints-mijn-huurscenarios.txt',preview.text,'text/plain;charset=utf-8');
   }
   return <section className="panel private-rental-budget" aria-labelledby="rental-scenarios-heading">
     <div className="private-rental-budget-full">
@@ -138,12 +220,12 @@ export default function PrivateRentalScenarioBudget(){
               aria-label={p.label+' van '+row.title}/>
           </label>)}
           {row.id==='c'&&<button type="button" onClick={()=>{
-            setScenarios(items=>items.filter(s=>s.id!=='c'));setPreview(null);setStatus('');
+            setScenarios(items=>items.filter(s=>s.id!=='c'));invalidateEdits();
           }}>Verwijder woning C</button>}
         </fieldset>)}
       </div>
       {scenarios.length<3&&<button type="button" onClick={()=>{
-        setScenarios(items=>[...items,newScenario('c','Woning C')]);setPreview(null);setStatus('');
+        setScenarios(items=>[...items,newScenario('c','Woning C')]);invalidateEdits();
       }}>+ Vergelijk ook woning C</button>}
       <h3>Jouw rekenoverzicht</h3>
       {!results?<p role="status">Vul een maandgrens en voor elke woning een geldige kale huur in. Je kunt andere kosten bewust op 0 laten staan. Maximaal € 50.000 per invoerveld.</p>:
@@ -168,12 +250,14 @@ export default function PrivateRentalScenarioBudget(){
       <p>De berekening neemt iedere maand dezelfde bedragen aan. Geen huurtoeslag, inflatie, borgteruggave, jaarlijkse wijzigingen, regelgeving of toekomstige energieprijzen meegerekend.</p>
       <div className="private-rental-budget-actions">
         <button type="button" disabled={!results} onClick={openPreview}>Bekijk mijn privé-TXT vóór downloaden</button>
-        <button type="button" onClick={()=>{setClearRequested(true);setPreview(null);}}>Wis alle eigen scenario's…</button>
+        <button type="button" onClick={()=>{setClearRequested(true);setPreview(null);setBackupPreview(null);}}>Wis alle eigen scenario's…</button>
       </div>
       {clearRequested&&<div role="group" aria-label="Scenario's wissen">
         <p>Alle ingevulde scenario's en de maandgrens uit dit tabblad wissen?</p>
         <button type="button" onClick={()=>{
-          setScenarios(initial());setBudget('');setPreview(null);setClearRequested(false);setStatus('Invoer uit dit tabblad gewist.');
+          fileGeneration.current++;setScenarios(initial());setBudget('');
+          setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
+          setClearRequested(false);setStatus('Invoer uit dit tabblad gewist.');
         }}>Ja, wis mijn invoer</button>{' '}
         <button type="button" onClick={()=>setClearRequested(false)}>Behoud mijn invoer</button>
       </div>}
@@ -182,6 +266,32 @@ export default function PrivateRentalScenarioBudget(){
         <pre>{preview.text}</pre>
         <button type="button" onClick={download}>Download precies deze privé-TXT</button>
       </div>}
+      <div className="private-rental-budget-transfer">
+        <h3>Mijn eigen invoer tijdelijk meenemen</h3>
+        <p>Bewaar desgewenst je huidige 2–3 scenario's en budget als privé-JSON.
+          Een geïmporteerd bestand wordt pas overgenomen na een aparte, zichtbare bevestiging.
+          Zonder eigen download blijft alles in dit tabblad.</p>
+        <button type="button" onClick={previewBackup}>Bekijk mijn JSON vóór bewaren</button>
+        {backupPreview?.fingerprint===fingerprint&&<div className="private-rental-budget-preview">
+          <p>Deze JSON bevat alle zelfgekozen labels en geldbedragen. Controleer het bestand vóór download.</p>
+          <pre>{backupPreview.text}</pre>
+          <button type="button" onClick={()=>downloadFile('woonpoints-prive-huurscenarios.json',backupPreview.text,'application/json;charset=utf-8')}>
+            Download precies deze privé-JSON</button>
+        </div>}
+        <label className="private-rental-budget-label">Open een eerdere eigen Woonpoints-JSON (maximaal 8 KiB)
+          <input type="file" accept=".json,application/json" onChange={loadBackup} />
+        </label>
+        {incoming&&<div className="private-rental-budget-preview">
+          <p>Vervangen is nog niet uitgevoerd. Je huidige scenario's blijven intact tot je bevestigt.
+            Nieuw budget: {incoming.data.budget||'niet ingevuld'}; woningen:
+            {' '}{incoming.data.scenarios.map(x=>x.title).join(' · ')}.</p>
+          <pre>{incoming.raw}</pre>
+          <button type="button" onClick={applyImport}>Ja, vervang mijn scenario's door deze back-up</button>
+          <button type="button" onClick={()=>{setIncoming(null);setStatus('Import geannuleerd; eigen invoer behouden.');}}>
+            Behoud mijn huidige invoer</button>
+        </div>}
+        {undo&&<button type="button" onClick={restorePrevious}>Herstel mijn vorige tabbladinvoer</button>}
+      </div>
       {status&&<p role="status" aria-live="polite">{status}</p>}
       <p><small>Er is geen serveropslag, browseropslag, cookie, upload, API-verzoek of WoningNet-reactie. Sluiten van dit tabblad wist de ingevulde scenario's; zelf gedownloade bestanden blijven onder jouw beheer.</small></p>
     </div>
