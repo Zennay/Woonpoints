@@ -10719,9 +10719,10 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
 
 
 type WoonMatchPortable = {
-  format: 'woonpoints.private-match.v1';
+  format: 'woonpoints.private-match.v2';
   criteria: WoonMatchCriteria;
   weights: WoonMatchWeights;
+  preference: WoonMatchPreference;
   listings: Omit<WoonMatchListing, 'id'>[];
 };
 const WOON_MATCH_BACKUP_LIMIT = 12288;
@@ -10746,8 +10747,15 @@ function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; 
   if (new TextEncoder().encode(text).length > WOON_MATCH_BACKUP_LIMIT) return fail('Het bestand is groter dan 12 KiB.');
   let value: unknown;
   try { value = JSON.parse(text); } catch { return fail('Dit is geen geldige JSON-back-up.'); }
-  if (!woonMatchRecord(value) || !woonMatchKeys(value, ['format','criteria','weights','listings']) ||
-      value.format !== 'woonpoints.private-match.v1') return fail('Onbekende versie of extra back-upvelden.');
+  if (!woonMatchRecord(value)) return fail('Onbekende versie of extra back-upvelden.');
+  const v2 = value.format === 'woonpoints.private-match.v2';
+  const v1 = value.format === 'woonpoints.private-match.v1';
+  if ((!v1 && !v2) || !woonMatchKeys(value, v2
+    ? ['format','criteria','weights','preference','listings']
+    : ['format','criteria','weights','listings'])) return fail('Onbekende versie of extra back-upvelden.');
+  if (v2 && value.preference !== 'any' && value.preference !== 'lottery' && value.preference !== 'queue') {
+    return fail('Ongeldige eigen toewijzingsmethodevoorkeur.');
+  }
   const c = value.criteria, w = value.weights, items = value.listings;
   const fields: Array<keyof WoonMatchCriteria> = ['budget','area','bedrooms','commute'];
   if (!woonMatchRecord(c) || !woonMatchKeys(c, fields) ||
@@ -10762,11 +10770,16 @@ function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; 
   if (!Array.isArray(items) || items.length < 2 || items.length > 5) return fail('Alleen twee tot vijf opties worden ondersteund.');
   const names = new Set<string>();
   for (const [index,item] of items.entries()) {
-    if (!woonMatchRecord(item) || !woonMatchKeys(item, ['name','monthlyRent','utilities','area','bedrooms','commute','note'])) {
+    if (!woonMatchRecord(item) || !woonMatchKeys(item, v2
+      ? ['name','monthlyRent','utilities','area','bedrooms','commute','note','allocation']
+      : ['name','monthlyRent','utilities','area','bedrooms','commute','note'])) {
       return fail('Optie '+(index+1)+': onbekende of ontbrekende velden.');
     }
     for (const [key,cap] of [['name',80],['note',200]] as const) {
       if (!woonMatchSafeText(item[key], cap)) return fail('Optie '+(index+1)+': ongeldige '+key+'.');
+    }
+    if (v2 && item.allocation !== 'unknown' && item.allocation !== 'lottery' && item.allocation !== 'queue') {
+      return fail('Optie '+(index+1)+': ongeldige zelf ingevoerde toewijzingsmethode.');
     }
     const name = (item.name as string).trim().toLocaleLowerCase('nl-NL');
     if (name && names.has(name)) return fail('Dubbele labels in het herstelbestand.');
@@ -10780,7 +10793,21 @@ function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; 
       return fail('Optie '+(index+1)+': kamers en reistijd moeten gehele getallen zijn.');
     }
   }
-  return { data: value as WoonMatchPortable, error: '' };
+  // Original v1 backups remain restorable. Never invent lottery evidence
+  // for a listing in an older backup that carried no such field.
+  return {
+    data: {
+      format: 'woonpoints.private-match.v2',
+      criteria: c as WoonMatchCriteria,
+      weights: w as WoonMatchWeights,
+      preference: v2 ? value.preference as WoonMatchPreference : 'any',
+      listings: items.map(item => ({
+        ...item,
+        allocation: v2 ? item.allocation as WoonMatchAllocation : 'unknown'
+      })) as Array<Omit<WoonMatchListing, 'id'>>
+    },
+    error: ''
+  };
 }
 
 function PrivateListingMatchStudio() {
@@ -10795,7 +10822,7 @@ function PrivateListingMatchStudio() {
   const [pendingRestore, setPendingRestore] = useState<{ source: string; data: WoonMatchPortable; label: string } | null>(null);
   const [restoreApproved, setRestoreApproved] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState('');
-  const [undoRestore, setUndoRestore] = useState<{ criteria: WoonMatchCriteria; weights: WoonMatchWeights; listings: WoonMatchListing[] } | null>(null);
+  const [undoRestore, setUndoRestore] = useState<{ criteria: WoonMatchCriteria; weights: WoonMatchWeights; preference: WoonMatchPreference; listings: WoonMatchListing[] } | null>(null);
   const [csvText, setCsvText] = useState('');
   const [csvError, setCsvError] = useState('');
   const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
@@ -10815,7 +10842,7 @@ function PrivateListingMatchStudio() {
 
   const currentSource = JSON.stringify({ schema: 2, criteria, weights, preference, listings });
   const portableBackup: WoonMatchPortable = {
-    format: 'woonpoints.private-match.v1', criteria, weights,
+    format: 'woonpoints.private-match.v2', criteria, weights, preference,
     listings: listings.map(({ id, ...fields }) => fields)
   };
   const portableBackupText = JSON.stringify(portableBackup, null, 2);
@@ -10880,7 +10907,7 @@ function PrivateListingMatchStudio() {
     const url = URL.createObjectURL(new Blob([backupPreview.text], { type: 'application/json;charset=utf-8' }));
     const element = document.createElement('a');
     element.href = url;
-    element.download = 'woonpoints-prive-woningmatch-v1.json';
+    element.download = 'woonpoints-prive-woningmatch-v2.json';
     document.body.appendChild(element);
     element.click();
     element.remove();
@@ -10913,10 +10940,11 @@ function PrivateListingMatchStudio() {
     if (!pendingRestore || !restoreApproved || !restorePreviewValid) return;
     const copy = pendingRestore.data;
     setUndoRestore({
-      criteria: { ...criteria }, weights: { ...weights }, listings: listings.map(item => ({ ...item }))
+      criteria: { ...criteria }, weights: { ...weights }, preference, listings: listings.map(item => ({ ...item }))
     });
     setCriteria({ ...copy.criteria });
     setWeights({ ...copy.weights });
+    setPreference(copy.preference);
     setListings(copy.listings.map(item => ({ ...item, id: nextId.current++ })));
     setPendingRestore(null);
     setRestoreApproved(false);
@@ -10932,6 +10960,7 @@ function PrivateListingMatchStudio() {
     if (!undoRestore) return;
     setCriteria(undoRestore.criteria);
     setWeights(undoRestore.weights);
+    setPreference(undoRestore.preference);
     setListings(undoRestore.listings);
     setUndoRestore(null);
     setPendingRestore(null);
