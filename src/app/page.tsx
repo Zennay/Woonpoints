@@ -6,6 +6,7 @@ import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteCompariso
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
+import { PrivateOfferActionBoard } from './private-offer-actions';
 
 type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
 const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
@@ -8664,6 +8665,22 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
     setBackupPreview(false);
     setBackupMessage('');
   }
+  function toggleCaseReview(caseId: number, signalId: string) {
+    // An action in another workblad is still an edit of the same private workbook.
+    // Invalidate any pending asynchronous import and its one-time undo receipt.
+    backupReadGeneration.current++;
+    setCaseItems(current => current.map(item => {
+      if (item.id !== caseId ||
+        (item.answers[signalId] !== 'yes' && item.answers[signalId] !== 'unknown'))
+        return item;
+      return { ...item, reviewed: {
+        ...item.reviewed, [signalId]: !item.reviewed[signalId]
+      } };
+    }));
+    setUndoBackup(null); setPendingBackup(null);
+    setBackupPreview(false); setBackupMessage('');
+    setPreview(false); setAllPreview(false); setFinancialPreview(false);
+  }
   function selectCase(id: number) {
     if (!caseItems.some(item => item.id === id)) return;
     setFinancialPreview(false);
@@ -8968,6 +8985,9 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
         </div>
       </section>
 
+      <PrivateOfferActionBoard cases={caseItems} signals={offerSignals}
+        onSelect={selectCase} onToggle={toggleCaseReview} />
+
       <section className="card" aria-label="Resultaatoverzicht" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 22 }}>Controle voor {caseLabel(currentCase.id)}</h2>
         <p aria-live="polite" role="status"><strong>{status}</strong></p>
@@ -8982,7 +9002,8 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
       {offerGroups.map((group, index) => <section className="card" key={group} style={{ marginTop: 18 }}>
         <h2 style={{ fontSize: 25, marginBottom: 12 }}>{index + 1}. {group}</h2>
         {offerSignals.filter(signal => signal.group === group).map(signal => (
-          <fieldset key={signal.id} style={{ border: '1px solid #dbe6dd', borderRadius: 12, padding: '12px 14px', margin: '12px 0' }}>
+          <fieldset key={signal.id} id={'offer-question-' + signal.id}
+            style={{ border: '1px solid #dbe6dd', borderRadius: 12, padding: '12px 14px', margin: '12px 0' }}>
             <legend style={{ fontWeight: 750, padding: '0 5px', maxWidth: '100%' }}>{signal.question}</legend>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 8 }}>
               {(['yes', 'no', 'unknown'] as const).map(value => <label key={value} style={{ display: 'flex', gap: 7, alignItems: 'center', minHeight: 44, cursor: 'pointer' }}>
