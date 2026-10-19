@@ -2,6 +2,25 @@
 
 Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, ook bereikbaar via de vaste navigatie.
 
+## Vrijwillige koppeling naar bestaande huurvoorstellen
+
+- Vanuit één gekozen aanbodcheck-werkblad kan de gebruiker voor alle zelf
+  gemelde of onbekende signalen een begrensde lijst **vaste algemene vragen**
+  voorbereiden. Er worden nooit antwoorden, werkbladnummers, bedragen,
+  verhuurders, labels, documenten of identiteit naar het huurvoorstel gestuurd.
+- De gebruiker klikt eerst **Toon deze vragen bij mijn huurvoorstellen**.
+  De bestaande huurvoorstellendesk toont de vraagteksten afzonderlijk vóór
+  overname. Pas met **Ja, voeg toe aan mijn tijdelijke vragenveld** verandert
+  alleen de nog niet opgeslagen draft van het huurformulier.
+- Reeds ingevoerde eigen vragen blijven staan. Als de combinatie langer
+  dan 400 tekens wordt, weigert de UI de overname volledig en vraagt de
+  gebruiker eerst zelf ruimte te maken. Afwijzen laat het formulier ongewijzigd.
+- Zelfs na toevoegen moet de gebruiker zijn eigen huurvoorstel afzonderlijk
+  opslaan; er is géén automatische huurstatus, rechtsclaim, acceptatie,
+  netwerkbericht of koppeling aan een officiële woning- of contractpartij.
+- De tijdelijke suggestie blijft alleen in React-geheugen binnen hetzelfde
+  tabblad. Geen browseropslag, WoningNet-API, externe partij of queue-write.
+
 ## Eigen herstelbare werkmap — geen automatische opslag
 
 - **Bekijk complete privé-JSON** toont de exacte versiegebonden werkmap voordat een

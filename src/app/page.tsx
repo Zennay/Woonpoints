@@ -1701,11 +1701,14 @@ function saveDownload(filename:string,content:string,mime='application/json;char
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
 
-function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandled}: {
+function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandled,
+  safetyQuestions,onSafetyQuestionsHandled}: {
   prefill?: {label:string;rent:number}|null;
   onPrefillHandled?:()=>void;
   energyPrefill?:PrivateEnergyRentalOfferProposal|null;
   onEnergyHandled?:()=>void;
+  safetyQuestions?: string|null;
+  onSafetyQuestionsHandled?:()=>void;
 } = {}){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [draft,setDraft]=useState<Draft>(newDraft);
@@ -1819,9 +1822,41 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
         <a href="#housing-shortlist-heading">Woningen vergelijken</a>
         <a href="#private-budget-title">Woonbudget</a>
         <a href="#private-document-readiness-heading">Documenten</a>
+        <a href="#private-offer-safety-heading">Aanbodcheck: afzender en betaalverzoek</a>
       </div>
     </header>
 
+    {safetyQuestions&&<aside className={styles.warnbox} aria-label="Aanbodcheck eigen vragen overnemen">
+      <h3>Vragen uit de privé-aanbodcheck toevoegen?</h3>
+      <p>Alleen vaste algemene controlevragen, zonder adres, verhuurder, bedrag,
+        privénotities of accountgegevens. Er wordt nog niets naar dit voorstel,
+        een verhuurder of WoningNet gestuurd. Controleer hieronder vóór overnemen.</p>
+      <pre className={styles.preview} style={{whiteSpace:'pre-wrap'}}>{safetyQuestions}</pre>
+      <p>Huidig tijdelijk veld: {draft.questions.length}/400 tekens. Na overnemen moet je
+        je nieuwe of bestaande huurvoorstel nog <strong>zelf</strong> bewaren.</p>
+      <div className={styles.buttons}>
+        <button type="button" onClick={()=>{
+          if(safetyQuestions.length>400||!safetyQuestions.trim()||
+            /[^\x20-\x7E\u00C0-\u024F\u2013\u2014\n?]/u.test(safetyQuestions)){
+            setNotice('Onverwachte controlevragen; niets overgenomen.');
+            onSafetyQuestionsHandled?.();return;
+          }
+          const combined=draft.questions.trim() ?
+            draft.questions.trim()+'\n'+safetyQuestions : safetyQuestions;
+          if(combined.length>400){
+            setNotice('Het formulier heeft maximaal 400 tekens. Maak in het formulier zelf ruimte en probeer opnieuw; bestaande vragen blijven intact.');
+            return;
+          }
+          setDraft(current=>({...current,questions:combined}));
+          resetTransient();
+          setNotice('Alleen het tijdelijke vragenveld is aangevuld. Controleer en bewaar je huurvoorstel zelf als je dat wilt.');
+          onSafetyQuestionsHandled?.();
+        }}>Ja, voeg toe aan mijn tijdelijke vragenveld</button>
+        <button type="button" onClick={()=>{
+          onSafetyQuestionsHandled?.();setNotice('Controlevragen niet overgenomen.');
+        }}>Nee, behoud mijn eigen invoer</button>
+      </div>
+    </aside>}
 
     {energyPrefill&&<aside className={styles.warnbox} aria-label="Eigen energieraming overnemen">
       <h3>Eigen maandraming uit energievergelijker overnemen?</h3>
@@ -2378,6 +2413,7 @@ export default function HomePage() {
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
   const [energyRentalProposal,setEnergyRentalProposal]=useState<PrivateEnergyRentalOfferProposal|null>(null);
+  const [safetyQuestionsProposal,setSafetyQuestionsProposal]=useState<string|null>(null);
   const cards = initialCards.map(([label,value,detail])=>{
     if(label==='Maanddoel' && personalOverview?.count!=null) return [
       label,personalOverview.count+' / 4 zelf genoteerd',
@@ -2820,7 +2856,9 @@ export default function HomePage() {
       <PrivateRentalOfferDesk prefill={rentalPrefill}
         onPrefillHandled={()=>setRentalPrefill(null)}
         energyPrefill={energyRentalProposal}
-        onEnergyHandled={()=>setEnergyRentalProposal(null)} />
+        onEnergyHandled={()=>setEnergyRentalProposal(null)}
+        safetyQuestions={safetyQuestionsProposal}
+        onSafetyQuestionsHandled={()=>setSafetyQuestionsProposal(null)} />
       <PrivateEnergyQuoteComparison
         onProposeRental={proposal=>setEnergyRentalProposal({...proposal})}
         onInvalidateRental={()=>setEnergyRentalProposal(null)} />
@@ -2870,7 +2908,7 @@ export default function HomePage() {
           <li>De huidige worker accepteert uitsluitend <code>BOT_DRY_RUN=true</code>.</li>
         </ul>
       </section>
-      <PrivateOfferSafety />
+      <PrivateOfferSafety onPrepareRentalQuestions={setSafetyQuestionsProposal} />
     </main>
   );
 }
@@ -8433,6 +8471,18 @@ const offerSignals: readonly OfferSignal[] = [
 const offerGroups = ['Identiteit en kanaal', 'Betalen en documenten', 'Afspraak en overeenkomst'] as const;
 const offerLabels: Record<OfferAnswer, string> = { yes: 'Ja, dit speelt', no: 'Nee', unknown: 'Weet ik niet' };
 
+const offerSafetyRentalQuestions: Record<string,string> = {
+  'unverified-contact': 'Wie is de officiële verhuurder?',
+  'moved-conversation': 'Waarom een ander contactkanaal?',
+  'upfront-payment': 'Welke betaalreden en aan wie?',
+  'identity-upload': 'Waarom zijn documenten/codes nodig?',
+  'odd-payment': 'Waarom wijkt de betaalontvanger af?',
+  'cannot-view': 'Wanneer kan ik aanbod en woning zien?',
+  'pressure': 'Krijg ik tijd voor eigen controle?',
+  'unclear-terms': 'Wat zijn alle schriftelijke voorwaarden?',
+  'different-offer': 'Waarom wijkt het aanbod af?'
+};
+
 type OfferSafetyCase = { id: number; answers: Record<string, OfferAnswer>; reviewed: Record<string, boolean> };
 const MAX_OFFER_SAFETY_CASES = 5;
 const MAX_OFFER_SAFETY_BACKUP_BYTES = 10 * 1024;
@@ -8523,7 +8573,9 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
   return lines.join('\n');
 }
 
-function PrivateOfferSafety() {
+function PrivateOfferSafety({onPrepareRentalQuestions}: {
+  onPrepareRentalQuestions?: (questions: string) => void
+} = {}) {
   const [caseItems, setCaseItems] = useState<OfferSafetyCase[]>([{ id: 1, answers: {}, reviewed: {} }]);
   const [currentCaseId, setCurrentCaseId] = useState(1);
   const [preview, setPreview] = useState(false);
@@ -8587,6 +8639,8 @@ function PrivateOfferSafety() {
     };
   }, [answers]);
   const reviewActions = [...findings.flagged, ...findings.unknown];
+  const suggestedRentalQuestions = reviewActions.map(item =>
+    offerSafetyRentalQuestions[item.id]).join('\n');
   const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
   const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
   const portableBackup = offerSafetyBackup(caseItems);
@@ -8797,6 +8851,26 @@ function PrivateOfferSafety() {
             </ol>}
         <p>Bij twijfel: gebruik zelf gevonden officiële contactgegevens, neem tijd voor advies en
           meld vermoedelijke fraude via de daarvoor bestemde officiële kanalen. Deze tool verstuurt niets.</p>
+        {reviewActions.length>0 && <div style={{padding:'14px 0'}}>
+          <h3>Stel vragen voor je eigen huurvoorstel voor</h3>
+          <p>Voor {caseLabel(currentCase.id)} zijn {reviewActions.length} algemene controlevragen
+            relevant. Alleen vaste vraagteksten (zonder antwoorden, bedragen, namen of documentinhoud)
+            gaan binnen dit tabblad als <em>voorstel</em> naar het tijdelijke huurformulier.
+            Het formulier neemt niets over zonder een tweede bevestiging.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:200,
+            overflow:'auto',padding:12,background:'#f3f6f3'}}>{suggestedRentalQuestions}</pre>
+          <button type="button" disabled={!onPrepareRentalQuestions ||
+            suggestedRentalQuestions.length>400}
+            onClick={()=>{
+              if(!onPrepareRentalQuestions||suggestedRentalQuestions.length>400) return;
+              onPrepareRentalQuestions(suggestedRentalQuestions);
+              document.getElementById('private-offer-desk-heading')?.scrollIntoView({behavior:'smooth'});
+            }} style={{minHeight:44,padding:'9px 14px'}}>
+            Toon deze vragen bij mijn huurvoorstellen
+          </button>
+          {suggestedRentalQuestions.length>400 && <p role="status">
+            Er zijn te veel vragen voor het korte huurformulier. Gebruik de eigen TXT-export.</p>}
+        </div>}
         <details>
           <summary style={{ cursor: 'pointer', fontWeight: 700, minHeight: 44 }}>Wat bewaren we van je antwoorden?</summary>
           <p>Niets op een server of in browseropslag. Alleen React-tabbladgeheugen totdat je dit tabblad
