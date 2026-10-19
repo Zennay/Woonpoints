@@ -6,6 +6,7 @@ import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteCompariso
 import PositionStats from './position-stats';
 import { PrivateMovingVolume, PrivateMovingHandover, PrivateMoveDocumentReadiness, PrivateMovingExpenseLedger, PrivateMovingQuoteComparison, PrivateMovingCostSplit, PrivateMovingWorkspace } from './manual-month-progress';
 import { ManualHousingDecisionWorkspace, PrivatePhotoComparison } from './position-stats';
+import PrivateRentalScenarioBudget from './private-rental-scenario-budget';
 
 type HomeNavCategory='essentieel'|'reacties'|'woning'|'verhuizen'|'inzichten';
 const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
@@ -20,6 +21,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-offer-safety-heading',title:'Aanbodcheck',category:'woning'},
   {id:'private-energy-quotes-heading',title:'Energietarieven vergelijken',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
+  {id:'rental-scenarios-heading',title:'Huurscenario’s vergelijken',category:'woning'},
   {id:'private-commute-heading',title:'Woon-werk',category:'woning'},
   {id:'private-longterm-title',title:'Meerjarenkosten',category:'woning'},
   {id:'private-viewing-title',title:'Bezichtiging',category:'woning'},
@@ -67,6 +69,7 @@ const homeNavAliases:Record<string,string[]>={
   'private-points-heading':['zoekpunten','puntenstand'],
   'housing-shortlist-heading':['woning kiezen','selectie'],
   'private-budget-title':['woonlasten','huur vergelijken'],
+  'rental-scenarios-heading':['huurscenario','budget woning','borg reserveren','eerstejaarskosten','verhuizen kosten'],
   'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
   'private-moving-day-heading':['dagplanning','tijdlijn','verhuisdag'],
   'private-packing-heading':['dozen','inpakken','uitpakken','inventaris'],
@@ -2894,6 +2897,7 @@ export default function HomePage() {
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
+      <PrivateRentalScenarioBudget />
       <PrivateRentalOfferDesk prefill={rentalPrefill}
         onPrefillHandled={()=>setRentalPrefill(null)}
         energyPrefill={energyRentalProposal}
