@@ -10701,7 +10701,7 @@ function WoonMatchField({ label, value, setValue, placeholder, maxLength = 20 }:
 const WOON_MATCH_CSV_HEADER = 'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie';
 
 /** Only locally pasted, seven-column Dutch semicolon records; no spreadsheet parser or network. */
-function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'id'>[]; error: string } {
+function parsePrivateMatchCsv(source: string, minRows: 1 | 2 = 2): { rows: Omit<WoonMatchListing, 'id'>[]; error: string } {
   if (!source || source.length > 4096 || /[^\S\n\r\t ]/.test(source)) {
     return { rows: [], error: 'Plak maximaal 4.096 tekens zonder verborgen besturingstekens.' };
   }
@@ -10709,7 +10709,7 @@ function parsePrivateMatchCsv(source: string): { rows: Omit<WoonMatchListing, 'i
   if (normalized.includes('\r')) return { rows: [], error: 'Gebruik gewone LF of CRLF-regels.' };
   const lines = normalized.trimEnd().split('\n');
   if (lines[0] !== WOON_MATCH_CSV_HEADER) return { rows: [], error: 'De zeven kolomnamen moeten exact overeenkomen met het getoonde sjabloon.' };
-  if (lines.length < 3 || lines.length > 6) return { rows: [], error: 'Voer precies twee tot vijf woningregels in.' };
+  if (lines.length < minRows + 1 || lines.length > 6) return { rows: [], error: 'Voer ' + (minRows === 1 ? 'één tot vijf' : 'twee tot vijf') + ' woningregels in.' };
   const rows: Omit<WoonMatchListing, 'id'>[] = [];
   const names = new Set<string>();
   for (let index = 1; index < lines.length; index++) {
@@ -11013,12 +11013,12 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   const previewPastedCsv = () => {
     setConfirmCsv(false);
     setConfirmCsvAppend(false);
-    const result = parsePrivateMatchCsv(csvText);
+    const result = parsePrivateMatchCsv(csvText, 1);
     setPendingCsv(result.error ? null : { rows: result.rows, source: currentSource, paste: csvText });
     setCsvError(result.error);
   };
   const acceptPastedCsv = () => {
-    if (!pendingCsvValid || !confirmCsv || !pendingCsv) return;
+    if (!pendingCsvValid || !confirmCsv || !pendingCsv || pendingCsv.rows.length < 2) return;
     const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
     setUndoRestore(null);
     setUndoCsv(listings.map(item => ({ ...item })));
@@ -11317,7 +11317,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
 
       <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="csv-intake-heading">
         <h2 id="csv-intake-heading">Optioneel: eigen woninglijst plakken</h2>
-        <p>Gebruik een zelf gemaakt, puntkomma-gescheiden tekstlijstje. Maximaal 4 KiB en twee tot vijf woningen;
+        <p>Gebruik een zelf gemaakt, puntkomma-gescheiden tekstlijstje. Maximaal 4 KiB; één tot vijf bij toevoegen, twee tot vijf bij vervangen;
           kolommen en volgorde liggen vast. Dit is geen advertentie-import, linkbezoek, CSV-export of accountkoppeling.
           <strong> Kies liever eigen labels dan adressen.</strong></p>
         <p><code style={{ overflowWrap: 'anywhere' }}>{WOON_MATCH_CSV_HEADER}</code></p>
@@ -11345,7 +11345,8 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
             <input type="checkbox" checked={confirmCsv} onChange={event => setConfirmCsv(event.target.checked)} />
             {' '}Ik heb alle regels bekeken; vervang alleen mijn huidige tijdelijke opties in dit tabblad.
           </label>
-          <button type="button" disabled={!confirmCsv} onClick={acceptPastedCsv}>Vervang met deze bekeken opties</button>
+          {pendingCsv.rows.length < 2 && <p role="status">Volledig vervangen kan alleen met minimaal twee regels. Eén regel kun je wel toevoegen aan je huidige lijst.</p>}
+          <button type="button" disabled={!confirmCsv || pendingCsv.rows.length < 2} onClick={acceptPastedCsv}>Vervang met deze bekeken opties</button>
 
           <div style={{ marginTop: 18, borderTop: '1px solid #ccdcd7', paddingTop: 12 }}>
             <h4>Of: veilig toevoegen zonder bestaande woningen te vervangen</h4>
