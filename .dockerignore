@@ -23,6 +23,9 @@ src/app/api/health/*
 !src/app/manual-month-progress.tsx
 !src/app/position-stats.tsx
 !src/app/page.tsx
+# Reviewed local-only rental-offer UI and scoped stylesheet; do not allow data files.
+!src/app/private-offer-desk.tsx
+!src/app/private-offer-desk.module.css
 !src/lib
 src/lib/*
 !src/lib/db-url-launcher.mjs
