@@ -12065,8 +12065,15 @@ function PrivateContractReview() {
     const previous=backupData;
     const candidate=importCandidate.data;
     if(!validPrivateContractBackup(candidate))return;
+    const normalizedAfter:PrivateContractBackup={
+      format:'woonpoints-private-contract',version:1,
+      values:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.values[id]])),
+      notes:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.notes[id]])),
+      rent:candidate.rent,service:candidate.service,deposit:candidate.deposit,
+      signingDate:candidate.signingDate,followUpDate:candidate.followUpDate
+    };
     loadContractBackup(candidate);
-    setImportUndo({before:previous,after:JSON.stringify(candidate)});
+    setImportUndo({before:previous,after:JSON.stringify(normalizedAfter)});
     setFeedback('Eigen gegevens na bevestiging vervangen. Eenmalig terugzetten blijft mogelijk tot de volgende wijziging.');
   }
   function undoContractImport(){
