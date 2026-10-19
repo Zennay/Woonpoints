@@ -1375,6 +1375,7 @@ function PrivateMovingReadinessBoard({rows,snapshots}:{
 }
 
 // Scoped feature, including private state and validation helpers; no external storage.
+type PrivateEnergyRentalOfferProposal={label:string;monthlyCents:number;sourceKey:string};
 const PrivateRentalOfferDesk = (() => {
   const styles = {budget: 'rental-budget', buttons: 'rental-buttons', checks: 'rental-checks', column: 'rental-column', desk: 'rental-desk', details: 'rental-details', footnote: 'rental-footnote', form: 'rental-form', header: 'rental-header', importLabel: 'rental-importLabel', links: 'rental-links', notice: 'rental-notice', ok: 'rental-ok', portable: 'rental-portable', preview: 'rental-preview', ranking: 'rental-ranking', rowhead: 'rental-rowhead', sections: 'rental-sections', summary: 'rental-summary', two: 'rental-two', warn: 'rental-warn', warnbox: 'rental-warnbox'};
 type OfferStatus = 'nog-bekijken'|'vragen-open'|'zelf-overwegen'|'afgewezen';
@@ -1699,9 +1700,11 @@ function saveDownload(filename:string,content:string,mime='application/json;char
   }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
 
-function PrivateOfferDesk({prefill,onPrefillHandled}: {
+function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandled}: {
   prefill?: {label:string;rent:number}|null;
   onPrefillHandled?:()=>void;
+  energyPrefill?:PrivateEnergyRentalOfferProposal|null;
+  onEnergyHandled?:()=>void;
 } = {}){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [draft,setDraft]=useState<Draft>(newDraft);
@@ -1817,6 +1820,35 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
         <a href="#private-document-readiness-heading">Documenten</a>
       </div>
     </header>
+
+
+    {energyPrefill&&<aside className={styles.warnbox} aria-label="Eigen energieraming overnemen">
+      <h3>Eigen maandraming uit energievergelijker overnemen?</h3>
+      <p><strong>{energyPrefill.label}</strong> · eigen geschatte stroom- en gaskosten:
+        {' '}{euro(energyPrefill.monthlyCents)} per maand.
+        Huidige veldwaarde voor energie/internet: <strong>{draft.utilities||'nog leeg'}</strong>.
+        De energievergelijking houdt geen rekening met internet, water of niet-opgegeven
+        heffingen. Voeg deze zelf toe waar nodig. Je wijzigt uitsluitend het nog niet
+        opgeslagen energie/internetveld na bevestiging, nooit de bestaande huurvoorstellen
+        of een officieel contract.</p>
+      <div className={styles.buttons}>
+        <button type="button" onClick={()=>{
+          if(!Number.isSafeInteger(energyPrefill.monthlyCents)||
+             energyPrefill.monthlyCents<0||energyPrefill.monthlyCents>MAX_CENTS||
+             !validLabel(energyPrefill.label,64)){
+            setNotice('De energieraming is niet geldig voor het huurformulier.');
+            onEnergyHandled?.();return;
+          }
+          setDraft(previous=>({...previous,
+            utilities:moneyText(energyPrefill.monthlyCents)}));
+          resetTransient();
+          setNotice('Alleen het tijdelijke energie/internetveld is vooringevuld. Controleer internet, water en overige kosten. Bewaar zelf je huurvoorstel als dat klopt.');
+          onEnergyHandled?.();
+        }}>Ja, gebruik alleen deze maandraming in mijn formulier</button>
+        <button type="button" onClick={()=>{onEnergyHandled?.();setNotice('Energieraming niet overgenomen.');}}>
+          Behoud de huidige invoer</button>
+      </div>
+    </aside>}
 
     {prefill&&<aside className={styles.warnbox} aria-label="Eigen woninggegevens overnemen">
       <h3>Woning uit jouw eigen shortlist overnemen?</h3>
@@ -2055,7 +2087,9 @@ const energyQuoteTotal=(row:EnergyQuote,kwh:number,gas:number)=>{
   return {electricity,gasCents,fixed,total:electricity+gasCents+fixed};
 };
 let energyQuoteSequence=0;
-function PrivateEnergyQuoteComparison(){
+function PrivateEnergyQuoteComparison({onProposeRental}: {
+  onProposeRental?:(proposal:PrivateEnergyRentalOfferProposal)=>void;
+}={}){
   const [kwh,setKwh]=useState('');
   const [gas,setGas]=useState('0');
   const [growth,setGrowth]=useState(0);
@@ -2065,6 +2099,7 @@ function PrivateEnergyQuoteComparison(){
   const [removeId,setRemoveId]=useState<string|null>(null);
   const [wipeConfirm,setWipeConfirm]=useState(false);
   const [exportView,setExportView]=useState<{signature:string;text:string}|null>(null);
+  const [handoffPreview,setHandoffPreview]=useState<{id:string;signature:string;monthlyCents:number;label:string}|null>(null);
   const [message,setMessage]=useState('');
   const annualKwh=energyUnits(kwh,50000);
   const annualGas=energyUnits(gas,10000);
@@ -2230,9 +2265,42 @@ function PrivateEnergyQuoteComparison(){
           {index>0&&<p>Verschil met goedkoopste eigen invoer:
             {' '}{energyEuro(annual.total-estimates[0].annual.total)} per jaar.</p>}
           <div className="woon-energy-buttons">
+            <button type="button" disabled={Math.round(annual.total/12)>5000000}
+              onClick={()=>{setHandoffPreview({id:row.id,signature,
+                monthlyCents:Math.round(annual.total/12),label:row.label});
+                setMessage('Controleer het maandbedrag voordat je het naar een tijdelijk huurformulier aanbiedt.');}}>
+              Gebruik eigen maandraming voor huurvoorstel…
+            </button>
             <button type="button" onClick={()=>startEdit(row)}>Bewerk tarief</button>
             <button type="button" onClick={()=>setRemoveId(row.id)}>Verwijder…</button>
           </div>
+          {handoffPreview?.id===row.id&&<div className="woon-energy-confirm">
+            <p><strong>{handoffPreview.label}</strong> geeft volgens je eigen invoer
+              {' '}{energyEuro(handoffPreview.monthlyCents)} per maand.
+              Dit is alleen stroom en gas plus opgegeven vaste kosten, geen internet
+              en geen officiële leverancierprijs. Je besluit zelf of je dit in het
+              huurformulier wilt voorstellen.</p>
+            <div className="woon-energy-buttons">
+              <button type="button" disabled={handoffPreview.signature!==signature}
+                onClick={()=>{
+                  if(handoffPreview.signature!==signature||
+                     !Number.isSafeInteger(handoffPreview.monthlyCents)||
+                     handoffPreview.monthlyCents<0||handoffPreview.monthlyCents>5000000){
+                    setMessage('De energieraming is verouderd of ongeldig. Kies de huidige berekening opnieuw.');
+                    setHandoffPreview(null);return;
+                  }
+                  onProposeRental?.({label:handoffPreview.label,
+                    monthlyCents:handoffPreview.monthlyCents,
+                    sourceKey:handoffPreview.signature});
+                  setHandoffPreview(null);
+                  setMessage('Maandraming aangeboden aan het huurformulier. Bevestig daar nogmaals voordat er iets wordt vooringevuld.');
+                  document.getElementById('private-offer-desk-heading')?.scrollIntoView({behavior:'smooth',block:'start'});
+                }}>
+                Ja, bied deze raming aan het huurformulier aan
+              </button>
+              <button type="button" onClick={()=>setHandoffPreview(null)}>Annuleer</button>
+            </div>
+          </div>}
           {removeId===row.id&&<div className="woon-energy-confirm">
             <p>Alleen deze handmatige vergelijking verwijderen?</p>
             <button type="button" onClick={()=>{setQuotes(items=>items.filter(x=>x.id!==row.id));
@@ -2300,6 +2368,7 @@ export default function HomePage() {
   ];
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
+  const [energyRentalProposal,setEnergyRentalProposal]=useState<PrivateEnergyRentalOfferProposal|null>(null);
   const cards = initialCards.map(([label,value,detail])=>{
     if(label==='Maanddoel' && personalOverview?.count!=null) return [
       label,personalOverview.count+' / 4 zelf genoteerd',
@@ -2740,8 +2809,11 @@ export default function HomePage() {
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
       <PrivateRentalOfferDesk prefill={rentalPrefill}
-        onPrefillHandled={()=>setRentalPrefill(null)} />
-      <PrivateEnergyQuoteComparison />
+        onPrefillHandled={()=>setRentalPrefill(null)}
+        energyPrefill={energyRentalProposal}
+        onEnergyHandled={()=>setEnergyRentalProposal(null)} />
+      <PrivateEnergyQuoteComparison
+        onProposeRental={proposal=>setEnergyRentalProposal({...proposal})} />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
