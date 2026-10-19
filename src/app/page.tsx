@@ -11210,8 +11210,8 @@ function PrivateListingMatchStudio() {
           <button type="button" disabled={!backupExportApproved} onClick={downloadBackup}>Download bekeken JSON</button>
         </>}
         <h3>Mijn eerdere privé-JSON terugzetten</h3>
-        <p>Selecteer uitsluitend je eigen \`woonpoints.private-match.v1\` JSON (maximaal 12 KiB).
-          Er wordt niets geüpload; onbekende velden en versies worden geweigerd.
+        <p>Selecteer een eigen <code>woonpoints.private-match.v2</code> JSON, of je eerdere <code>v1</code>-back-up (maximaal 12 KiB).
+          Oude v1-bestanden krijgen alleen een onbekende methode en geen methodevoorkeur: geen uitgevonden bronbewijs. Er wordt niets geüpload; onbekende velden en versies worden geweigerd.
           Je huidige invoer verandert pas na volledige preview en afzonderlijke bevestiging.</p>
         <input type="file" accept=".json,application/json"
           aria-label="Open eigen woningmatch-back-up" onChange={event => {
@@ -11231,10 +11231,11 @@ function PrivateListingMatchStudio() {
             {' '}max {pendingRestore.data.criteria.commute || '?'} minuten.
           </p>
           <p>Prioriteiten: {WOON_MATCH_PRIORITY_LABELS.map(x => x.label + ' ' + pendingRestore.data.weights[x.key]).join(' · ')}</p>
+          <p>Eigen methodevoorkeur: {WOON_MATCH_PREFERENCE_LABELS[pendingRestore.data.preference]}.</p>
           <ul>{pendingRestore.data.listings.map((row,index) => <li key={index}>
             <strong>{row.name || '(concept zonder naam)'}</strong> — huur {row.monthlyRent || '?'},
             {' '}extra {row.utilities || '?'}, {row.area || '?'} m², {row.bedrooms || '?'} slaapkamers,
-            {' '}{row.commute || '?'} min; notitie: {row.note || '(leeg)'}
+            {' '}{row.commute || '?'} min; methode: {WOON_MATCH_METHOD_LABELS[row.allocation]}; notitie: {row.note || '(leeg)'}
           </li>)}</ul>
           <label style={{ display: 'block', marginBottom: 12 }}>
             <input type="checkbox" checked={restoreApproved} onChange={event => setRestoreApproved(event.target.checked)} />
