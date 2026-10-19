@@ -10,6 +10,16 @@ reserveren borg. Naast de eigen maandgrens zie je maandlasten,
 twaalfmaandskosten exclusief terug te vragen borg en de kasbehoefte voor
 de eerste maand en het eerste jaar inclusief voorlopig gereserveerde borg.
 
+De vergelijking heeft nu een apart **wat-als-paneel**: voeg zelf een fictieve
+extra maandlast van maximaal € 1.000 toe, probeer 0/10/20/30% hogere
+energie-/water-/internetkosten en kies een eigen reserve van 1, 2, 3 of
+6 maanden. Je ziet voor elke woning of de doorgerekende maandlasten nog
+binnen jouw opgegeven maandgrens vallen en hoeveel geld je zelf als
+noodbuffer zou willen reserveren. De buffer is geen echte betaling of
+bankbalans. Een vrijwillige TXT bevat basis- én wat-als-uitkomsten; de
+bestaande privé-JSON blijft compatibel en bewaart alleen de basiswoningen.
+Er worden geen prijzen voorspeld of automatisch opgehaald.
+
 De uitkomsten zijn uitsluitend jouw eigen schattingen, geen officiële
 woningtoewijzingskans, geverifieerde huurprijs, inkomenscheck of huuradvies.
 Alles staat alleen in het huidige tabblad. Downloaden van een privé-TXT vergt
