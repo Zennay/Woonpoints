@@ -37,8 +37,10 @@ niet verstopt zit in een alleen via directe URL bereikbare subpagina.
 
 ## Vrijgeven
 
-De change bestaat uit een nieuwe client-only pagina, één expliciete
-navigatielink en deze documentatie. Geen wijzigingen in worker, `BOT_DRY_RUN`,
+De change bestaat uit een nieuwe client-only sectie binnen het bestaande
+reviewed `src/app/page.tsx`, één expliciete navigatielink en deze documentatie.
+De exacte Docker COPY-allowlist blijft intact: geen nieuwe source roots of
+credentialbestanden worden in de app/worker images opgenomen. Geen wijzigingen in worker, `BOT_DRY_RUN`,
 database, credentials, WoningNet-actiepad, VPS of externe diensten.
 
 Een broncommit is geen productiedeploy. Volg verplichte bestaande exacte
