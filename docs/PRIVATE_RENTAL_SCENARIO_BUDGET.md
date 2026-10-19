@@ -45,3 +45,28 @@ Dit is een vrije productfunctie en verandert geen `BOT_DRY_RUN`,
 WoningNet-integratie of production admission. De bestaande GitHub-hosted
 CI/review/releasevoorwaarden blijven gelden voordat iets naar productie kan.
 Geen QA- of regressiesuites zijn toegevoegd of handmatig gedraaid.
+
+## Versiegebonden privé-JSON terugzetten
+
+Naast de tekstsamenvatting bestaat **Bekijk mijn JSON vóór bewaren**:
+een exacte, korte `woonpoints-rental-scenarios` versie 1 back-up van
+je eigen twee of drie woningen en maandgrens. Je moet de volledige
+JSON eerst bekijken en daarna bewust op de downloadknop klikken.
+Onvolledige decimalen, ongeldige labels en onherstelbare waarden
+worden geweigerd voordat de downloadknop verschijnt.
+
+**Open een eerdere eigen Woonpoints-JSON** leest uitsluitend een
+zelfgekozen bestand van maximaal 8 KiB. Onbekende velden, dubbele
+JSON-sleutels, niet-canonieke serialisatie, afwijkende versie,
+verkeerde woningvolgorde en bedragen buiten de grenzen worden
+geweigerd. Een geldige import krijgt eerst een volledige preview,
+met een aparte expliciete vervangingsknop. De bestaande invoer wordt
+pas daarna aangepast. Eén keer **Herstel mijn vorige tabbladinvoer**
+maakt die import ongedaan, totdat je verder bewerkt. Een oudere
+asynchrone bestandslezing mag latere wijzigingen of een nieuwere
+bestandskeuze niet alsnog overschrijven.
+
+De JSON is privé: eigen woninglabels en bedragen kunnen zichtbaar
+zijn als je het bestand deelt of in een cloudgesynchroniseerde map
+plaatst. Woonpoints gebruikt geen server, mail, cookies, automatische
+accountsynchronisatie of opslag in de browser voor deze workflow.
