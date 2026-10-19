@@ -280,3 +280,22 @@ overschrijven. Er wordt niets automatisch opgeslagen en er ontstaat
 geen provider- of WoningNet-koppeling. CSV bewaart géén
 toewijzingsmethode, persoonlijke grenzen of wegingsfactoren:
 gebruik voor volledig herstel nog steeds de bestaande JSON-back-up.
+
+
+## CSV-veiligheid bij openen in spreadsheetsoftware
+
+CSV is gewone tekst. Excel en andere spreadsheetprogramma's kunnen
+echter een tekstveld dat met `=`, `+`, `-` of `@` begint als formule
+interpreteren. Daarom weigert **Mijn woningmatch** dergelijke
+labels en notities bij **lokaal CSV openen/plakken** en bij **CSV
+downloaden**. De blokkade geldt vóór het opnemen in het formulier of
+het aanbieden van een nieuwe download. Andere handmatige schermen,
+een reeds opgeslagen JSON-back-up en het volledig brongebonden
+TXT-overzicht zijn niet stiekem herschreven.
+
+Een veilige werkwijze is om het eigen label of de notitie te laten
+beginnen met normale beschrijvende tekst, bijvoorbeeld `Woning A`
+in plaats van `=Woning A`. De app zet geen verborgen quote of apostrof
+voor een waarde: dat zou de strikte 7-koloms heen-en-teruggarantie
+veranderen. De overige bestands-, preview-, privacy- en
+toestemmingscontroles blijven ongewijzigd.
