@@ -8540,6 +8540,8 @@ type OfferSafetyCase = {
   reviewed: Record<string, boolean>;
   // Local-only planning. Not included in either the TXT/JSON safety evidence.
   reviewDate?: string;
+  decision?: OfferDecision;
+  decisionReason?: OfferReason;
 };
 const MAX_OFFER_SAFETY_CASES = 5;
 const MAX_OFFER_SAFETY_BACKUP_BYTES = 10 * 1024;
@@ -8636,6 +8638,8 @@ type Workblad = {
   answers: Record<string, Answer>;
   reviewed: Record<string, boolean>;
   reviewDate?: string;
+  decision?: OfferDecision;
+  decisionReason?: OfferReason;
 };
 type Signal = {
   id: string;
@@ -8650,6 +8654,150 @@ type Action = {
   answer: Answer | undefined;
   reviewed: boolean;
 };
+
+type OfferDecision = 'investigate' | 'pause' | 'decline';
+type OfferReason = 'costs' | 'conditions' | 'sender' | 'timing' | 'other';
+const offerDecisionStages: readonly {value: OfferDecision; label: string}[] = [
+  { value: 'investigate', label: 'Zelf verder onderzoeken' },
+  { value: 'pause', label: 'Voorlopig parkeren' },
+  { value: 'decline', label: 'Zelf van dit voorstel afzien' }
+];
+const offerDecisionReasons: readonly {value: OfferReason; label: string}[] = [
+  { value: 'costs', label: 'Eigen woonkosten' },
+  { value: 'conditions', label: 'Onbekende voorwaarden' },
+  { value: 'sender', label: 'Afzender en contact' },
+  { value: 'timing', label: 'Eigen planning' },
+  { value: 'other', label: 'Andere persoonlijke reden' }
+];
+
+function PrivateOfferDecisionDesk({
+  cases, signals, onUpdate, onSelect
+}: {
+  cases: readonly Workblad[];
+  signals: readonly Signal[];
+  onUpdate: (caseId: number, stage: OfferDecision | undefined,
+    reason: OfferReason | undefined) => void;
+  onSelect: (caseId: number) => void;
+}) {
+  const [preview, setPreview] = useState<{source: string; text: string} | null>(null);
+  const count = cases.filter(item => item.decision !== undefined).length;
+  const report = [
+    'WOONPOINTS · MIJN EIGEN BESLUITVOORBEREIDING',
+    'Alleen mijn eigen lokale keuzes; geen contract-, woning- of verhuurderverificatie.',
+    'Geen keuze in deze lijst verleent toestemming voor betaling of een woonactie.',
+    '',
+    ...cases.flatMap(item => {
+      const urgent = signals.filter(signal =>
+        signal.severity === 'urgent' && item.answers[signal.id] === 'yes').length;
+      const missing = signals.filter(signal => !item.answers[signal.id]).length;
+      return [
+        'Voorstel ' + item.id,
+        'Mijn voorlopige keuze: ' + (offerDecisionStages.find(stage =>
+          stage.value === item.decision)?.label || 'Nog niet gekozen'),
+        'Eigen aandachtspunt: ' + (offerDecisionReasons.find(reason =>
+          reason.value === item.decisionReason)?.label || 'Niet ingevuld'),
+        'Urgent zelf gemeld: ' + urgent + ' · vragen nog open: ' + missing,
+        'Geen officiële toets: controleer echte identiteit, voorwaarden en gegevens onafhankelijk.',
+        ''
+      ];
+    })
+  ].join('\n');
+  const visiblePreview = preview?.source === report ? preview.text : null;
+  function download() {
+    if (!visiblePreview) return;
+    const url = URL.createObjectURL(new Blob([visiblePreview], {
+      type: 'text/plain;charset=utf-8'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-mijn-besluitvoorbereiding-prive.txt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setPreview(null);
+  }
+  return <section className="card" aria-label="Mijn voorlopige keuze per voorstel"
+    style={{ marginTop: 24 }}>
+    <h2 style={{ fontSize: 24 }}>Mijn eigen besluitvoorbereiding</h2>
+    <p>Geef elk van je voorstellen een voorlopige, persoonlijke vervolgrichting:
+      verder onderzoeken, parkeren of zelf ervan afzien. Leg desgewenst één
+      algemene reden vast, zonder namen, adressen, bedragen of documenten.
+      Dit is géén acceptatie, afwijzing namens een aanbieder of fraudetoets.</p>
+    <p aria-live="polite" role="status">
+      <strong>{count} van {cases.length} voorlopige keuzes ingevuld.</strong>
+      {' '}Alle keuzes blijven uitsluitend tijdens deze browsersessie zichtbaar.
+    </p>
+    <div style={{ display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(250px,1fr))', gap: 12 }}>
+      {cases.map(item => {
+        const urgent = signals.filter(signal =>
+          signal.severity === 'urgent' && item.answers[signal.id] === 'yes').length;
+        return <div key={item.id} style={{
+          border: '1px solid #dbe6dd', borderRadius: 10, padding: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Voorstel {item.id}</h3>
+          {urgent > 0 && <p role="status"><strong>{urgent} urgent zelf gemeld.</strong>
+            {' '}Ga niet verder met betalen, tekenen of delen van gegevens
+            zonder onafhankelijke controle.</p>}
+          <label htmlFor={'offer-stage-' + item.id} style={{ display: 'block',
+            fontWeight: 700 }}>Mijn voorlopige keuze</label>
+          <select id={'offer-stage-' + item.id} value={item.decision || ''}
+            onChange={event => {
+              const stage = offerDecisionStages.find(choice =>
+                choice.value === event.target.value)?.value;
+              onUpdate(item.id, stage, stage ? item.decisionReason : undefined);
+              setPreview(null);
+            }} style={{ width: '100%', minHeight: 44, margin: '7px 0 12px' }}>
+            <option value="">Nog geen keuze</option>
+            {offerDecisionStages.map(stage => <option key={stage.value}
+              value={stage.value}>{stage.label}</option>)}
+          </select>
+          <label htmlFor={'offer-reason-' + item.id} style={{ display: 'block',
+            fontWeight: 700 }}>Mijn algemene reden (optioneel)</label>
+          <select id={'offer-reason-' + item.id} value={item.decisionReason || ''}
+            disabled={!item.decision} onChange={event => {
+              const reason = offerDecisionReasons.find(choice =>
+                choice.value === event.target.value)?.value;
+              onUpdate(item.id, item.decision, reason);
+              setPreview(null);
+            }} style={{ width: '100%', minHeight: 44, margin: '7px 0 12px' }}>
+            <option value="">Geen reden vastgelegd</option>
+            {offerDecisionReasons.map(reason => <option key={reason.value}
+              value={reason.value}>{reason.label}</option>)}
+          </select>
+          <button type="button" style={{ minHeight: 44, padding: '7px 12px' }}
+            onClick={() => {
+              onSelect(item.id);
+              document.getElementById('offer-workbladen')?.scrollIntoView({
+                behavior: 'smooth', block: 'start'
+              });
+            }}>
+            Open de oorspronkelijke aanbodcheck
+          </button>
+        </div>;
+      })}
+    </div>
+    <h3>Optionele privé-samenvatting</h3>
+    <p>Bekijk de hele tekst vóór downloaden. Een gekozen bestandslocatie
+      of eigen cloudmap kan buiten Woonpoints synchroniseren.
+      De JSON-back-up van de veiligheidsvragen bevat deze keuzes niet.</p>
+    <button type="button" onClick={() =>
+      setPreview(visiblePreview ? null : {source: report, text: report})}
+      style={{ minHeight: 44, padding: '8px 12px' }}>
+      {visiblePreview ? 'Sluit beslisvoorbeeld' : 'Bekijk complete privé-samenvatting'}
+    </button>
+    {visiblePreview && <div>
+      <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+        maxHeight: 280, overflow: 'auto', padding: 12, background: '#f3f6f3' }}>
+        {visiblePreview}
+      </pre>
+      <button type="button" onClick={download}
+        style={{ minHeight: 44, padding: '8px 12px' }}>
+        Download deze bekeken privésamenvatting
+      </button>
+    </div>}
+  </section>;
+}
 
 function PrivateOfferActionBoard({
   cases, signals, onSelect, onToggle, onSetDate
@@ -9269,7 +9417,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
           </div>}
         </div>}
       </section>}
-      <section className="card" aria-label="Mijn afzonderlijke aanbodcontroles" style={{ marginTop: 24 }}>
+      <section id="offer-workbladen" className="card" aria-label="Mijn afzonderlijke aanbodcontroles" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 24, marginBottom: 12 }}>Mijn eigen voorstellen — {caseItems.length} van {MAX_OFFER_SAFETY_CASES}</h2>
         <p>Vergelijk maximaal vijf afzonderlijke controles naast elkaar. Elk voorstel heeft alleen een
           automatisch nummer: er worden geen woningadressen, verhuurders of contactgegevens gevraagd of bewaard.</p>
@@ -9327,6 +9475,15 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
           </table>
         </div>
       </section>
+
+      <PrivateOfferDecisionDesk cases={caseItems} signals={offerSignals}
+        onSelect={selectCase} onUpdate={(id, decision, reason) => {
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => item.id === id
+            ? { ...item, decision, decisionReason: reason } : item));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} />
 
       <PrivateOfferActionBoard cases={caseItems} signals={offerSignals}
         onSelect={selectCase} onToggle={toggleCaseReview}
