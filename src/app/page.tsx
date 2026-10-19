@@ -8988,6 +8988,130 @@ function PrivateOfferDecisionDesk({
   </section>;
 }
 
+function PrivateOfferQuestionDraft({
+  cases, signals
+}: {
+  cases: readonly Workblad[];
+  signals: readonly Signal[];
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [excluded, setExcluded] = useState<readonly string[]>([]);
+  const [preview, setPreview] = useState<{source: string; text: string} | null>(null);
+  const [message, setMessage] = useState('');
+  const current = cases.find(item => item.id === selectedId) || cases[0];
+  if (!current) return null;
+  const candidates = signals.filter(signal => current.answers[signal.id] !== 'no');
+  const included = candidates.filter(signal =>
+    !excluded.includes(current.id + ':' + signal.id));
+  const topic = (signal: Signal) => offerSafetyRentalQuestions[signal.id] || signal.question;
+  const report = [
+    'MIJN VRAAGVOORBEREIDING · Woningaanbodcheck',
+    'Eigen concept voor een onafhankelijk bevestigd officieel contactkanaal.',
+    'Er zijn geen persoonsgegevens of documenten aan dit concept toegevoegd.',
+    '',
+    'Goedendag,',
+    '',
+    'Ik wil de aangeboden woning en de voorwaarden zelf zorgvuldig beoordelen.',
+    'Kunt u onderstaande punten schriftelijk toelichten?',
+    '',
+    ...included.map((signal, index) =>
+      (index + 1) + '. ' + topic(signal)),
+    '',
+    'Ik controleer uw identiteit en dit aanbod onafhankelijk via een officieel kanaal.',
+    'Dit concept is geen toezegging, betaling of akkoord.',
+    '',
+    'Met vriendelijke groet'
+  ].join('\n');
+  const shown = preview?.source === report ? preview.text : null;
+  function download() {
+    if (!shown || !included.length) return;
+    const url = URL.createObjectURL(new Blob([shown], {
+      type: 'text/plain;charset=utf-8'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'woonpoints-eigen-vragen-voorstel-' + current.id + '.txt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setPreview(null);
+    setMessage('Je eigen vraagconcept is lokaal gedownload. Er is niets verstuurd.');
+  }
+  return <section className="card" style={{ marginTop: 24 }}
+    aria-label="Mijn eigen vragen over een woningvoorstel voorbereiden">
+    <h2 style={{ fontSize: 24 }}>Vragen voor een officieel contactmoment</h2>
+    <p>Maak uit zelf gemelde, onbekende en nog niet ingevulde onderwerpen
+      een neutraal vragenconcept. Je kiest zelf wat je wilt vragen, bekijkt
+      de tekst eerst en neemt die vervolgens alleen op eigen initiatief mee.
+      Woonpoints zoekt geen ontvanger, verstuurt niets en controleert geen identiteit.</p>
+    <p><strong>Bij urgent gemelde signalen:</strong> geen betaling, documenten of codes
+      delen voordat je de betrokken partij en voorwaarden onafhankelijk hebt bevestigd.</p>
+    <label htmlFor="offer-questions-selected-case"
+      style={{ display: 'block', fontWeight: 700 }}>Mijn werkblad</label>
+    <select id="offer-questions-selected-case" value={current.id}
+      onChange={event => {
+        setSelectedId(Number(event.target.value));
+        setPreview(null);
+        setMessage('');
+      }} style={{ display: 'block', width: '100%', maxWidth: 350,
+        margin: '8px 0 16px', minHeight: 44 }}>
+      {cases.map(item => <option key={item.id} value={item.id}>
+        Voorstel {item.id}
+      </option>)}
+    </select>
+    <p aria-live="polite">{candidates.length} mogelijke vragen,
+      {' '}{included.length} door jou geselecteerd. Antwoord ‘Nee’ wordt
+      niet als open vraag toegevoegd.</p>
+    {candidates.length === 0 ? <p>Je hebt alle risico-onderwerpen met
+      ‘Nee’ beantwoord. Dit bevestigt niet dat het aanbod veilig is.
+      Controleer de officiële informatie nog steeds zelfstandig.</p>
+    : <div style={{ display: 'grid', gap: 9 }}>
+      {candidates.map(signal => {
+        const id = current.id + ':' + signal.id;
+        const checked = !excluded.includes(id);
+        const answer = current.answers[signal.id];
+        return <label key={signal.id} style={{ display: 'flex', gap: 10,
+          padding: 12, border: '1px solid #dbe6dd', borderRadius: 9,
+          minHeight: 44, alignItems: 'flex-start' }}>
+          <input type="checkbox" checked={checked}
+            onChange={() => {
+              setExcluded(old => checked ? [...old, id] :
+                old.filter(item => item !== id));
+              setPreview(null);
+              setMessage('');
+            }} style={{ marginTop: 5 }} />
+          <span><strong>{topic(signal)}</strong><br />
+            <small>{signal.group} · {answer === 'yes'
+              ? 'Zelf gemeld' : answer === 'unknown'
+                ? 'Nog onbekend' : 'Nog niet ingevuld'}</small></span>
+        </label>;
+      })}
+    </div>}
+    <p style={{ marginTop: 14 }}>Het concept bevat alleen vaste, algemene
+      controlevragen. Voeg vóór gebruik zelf de juiste context toe nadat je
+      de officiële contactgegevens onafhankelijk hebt bevestigd. Een opgeslagen
+      TXT kan buiten Woonpoints synchroniseren.</p>
+    <button type="button" disabled={!included.length}
+      onClick={() => { setPreview(shown ? null : {source: report, text: report});
+        setMessage(''); }}
+      style={{ minHeight: 44, padding: '8px 12px' }}>
+      {shown ? 'Sluit mijn vragenconcept' : 'Bekijk mijn vragenconcept'}
+    </button>
+    {shown && <div>
+      <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+        maxHeight: 290, overflow: 'auto', background: '#f3f6f3',
+        padding: 13, borderRadius: 9 }}>{shown}</pre>
+      <button type="button" onClick={download}
+        style={{ minHeight: 44, padding: '8px 12px' }}>
+        Download precies deze bekeken vragen
+      </button>
+    </div>}
+    {message && <p role="status">{message}</p>}
+  </section>;
+}
+
+
 function PrivateOfferActionBoard({
   cases, signals, onSelect, onToggle, onSetDate
 }: {
@@ -9695,6 +9819,8 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
           setUndoBackup(null); setPendingBackup(null);
           setBackupPreview(false); setBackupMessage('');
         }} />
+
+      <PrivateOfferQuestionDraft cases={caseItems} signals={offerSignals} />
 
       <section className="card" aria-label="Resultaatoverzicht" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 22 }}>Controle voor {caseLabel(currentCase.id)}</h2>
