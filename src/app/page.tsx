@@ -11896,6 +11896,42 @@ function parseContractMoney(input: string): number | null {
 }
 const contractEuro = (cents: number): string =>
   new Intl.NumberFormat('nl-NL', {style:'currency',currency:'EUR'}).format(cents / 100);
+/** Portable, opt-in document: never includes offer credentials or third-party responses. */
+type PrivateContractBackup = {
+  format:'woonpoints-private-contract';version:1;
+  values:Record<string,ContractTopicChoice>;
+  notes:Record<string,string>;
+  rent:string;service:string;deposit:string;signingDate:string;followUpDate:string;
+};
+function validPrivateContractBackup(input:unknown): input is PrivateContractBackup {
+  if(!input||typeof input!=='object'||Array.isArray(input))return false;
+  const o=input as Record<string,unknown>;
+  const keys=['format','version','values','notes','rent','service','deposit','signingDate','followUpDate'];
+  if(Object.keys(o).sort().join('|')!==keys.sort().join('|')||
+     o.format!=='woonpoints-private-contract'||o.version!==1||
+     !o.values||typeof o.values!=='object'||Array.isArray(o.values)||
+     !o.notes||typeof o.notes!=='object'||Array.isArray(o.notes))return false;
+  const status=o.values as Record<string,unknown>, notes=o.notes as Record<string,unknown>;
+  const ids=PRIVATE_CONTRACT_TOPICS.map(([id])=>id);
+  if(Object.keys(status).sort().join('|')!==[...ids].sort().join('|')||
+     Object.keys(notes).sort().join('|')!==[...ids].sort().join('|'))return false;
+  if(ids.some(id=>!['open','gevonden','vraag'].includes(status[id] as string)||
+     typeof notes[id]!=='string'||(notes[id] as string).length>180||
+     /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(notes[id] as string)))return false;
+  for(const name of ['rent','service','deposit'] as const){
+    if(typeof o[name]!=='string'||o[name].length>10||
+      (o[name].trim()!==''&&parseContractMoney(o[name])===null))return false;
+  }
+  for(const name of ['signingDate','followUpDate'] as const){
+    const value=o[name];
+    if(typeof value!=='string')return false;
+    if(value==='')continue;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    if(y<2000||y>2100||new Date(Date.UTC(y,m-1,d)).toISOString().slice(0,10)!==value)return false;
+  }
+  return true;
+}
 function PrivateContractReview({acceptedRentalDecision}: {
   acceptedRentalDecision?: {caseId:number;offer:PrivateRentalDecisionSnapshot}|null
 } = {}) {
@@ -11909,6 +11945,1930 @@ function PrivateContractReview({acceptedRentalDecision}: {
   const [followUpDate, setFollowUpDate] = useState('');
   const [calendarPreview, setCalendarPreview] = useState<{source:string;content:string}|null>(null);
   const [calendarAccepted, setCalendarAccepted] = useState(false);
+  const [backupPreview, setBackupPreview] = useState(false);
+  const [pendingBackup, setPendingBackup] = useState<OfferSafetyCase[] | null>(null);
+  const [backupMessage, setBackupMessage] = useState('');
+  const [undoBackup, setUndoBackup] = useState<{ cases: OfferSafetyCase[]; selected: number } | null>(null);
+  // Invalidate incomplete File.text() promises when the user changes this workmap
+  // or chooses another import. Never replace newer user edits with stale previews.
+  const backupReadGeneration = useRef(0);
+
+  const currentCase = caseItems.find(item => item.id === currentCaseId) ?? caseItems[0];
+  const answers = currentCase.answers;
+  const reviewed = currentCase.reviewed;
+  const caseLabel = (id: number) => 'Voorstel ' + id;
+  const today = new Date().toLocaleDateString('nl-NL');
+  const combinedReport = caseItems.map(item =>
+    offerSafetyExport(item.answers, today, item.reviewed, caseLabel(item.id))
+  ).join('\n\n' + '='.repeat(46) + '\n\n');
+
+  function updateCurrentCase(change: (current: OfferSafetyCase) => OfferSafetyCase) {
+    backupReadGeneration.current++;
+    setCaseItems(current => current.map(item => item.id === currentCaseId ? change(item) : item));
+    setUndoBackup(null);
+    setPendingBackup(null);
+    setBackupPreview(false);
+    setBackupMessage('');
+  }
+  function toggleCaseReview(caseId: number, signalId: string) {
+    // An action in another workblad is still an edit of the same private workbook.
+    // Invalidate any pending asynchronous import and its one-time undo receipt.
+    backupReadGeneration.current++;
+    setCaseItems(current => current.map(item => {
+      if (item.id !== caseId ||
+        (item.answers[signalId] !== 'yes' && item.answers[signalId] !== 'unknown'))
+        return item;
+      return { ...item, reviewed: {
+        ...item.reviewed, [signalId]: !item.reviewed[signalId]
+      } };
+    }));
+    setUndoBackup(null); setPendingBackup(null);
+    setBackupPreview(false); setBackupMessage('');
+    setPreview(false); setAllPreview(false); setFinancialPreview(false);
+  }
+  function selectCase(id: number) {
+    if (!caseItems.some(item => item.id === id)) return;
+    setFinancialPreview(false);
+    setCurrentCaseId(id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
+  function addCase() {
+    if (caseItems.length >= MAX_OFFER_SAFETY_CASES) return;
+    backupReadGeneration.current++;
+    // Imported workbooks may contain large safe IDs; reserve a fresh small ID
+    // rather than overflowing the versioned backup's integer admission bound.
+    let id = 1;
+    while (caseItems.some(item => item.id === id)) id++;
+    setCaseItems(current => [...current, { id, answers: {}, reviewed: {} }]);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
+    setCurrentCaseId(id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
+  function deleteCase() {
+    if (caseItems.length <= 1) return;
+    backupReadGeneration.current++;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
+    const next = caseItems.filter(item => item.id !== currentCaseId);
+    setCaseItems(next);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
+    setCurrentCaseId(next[0].id);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+  }
+
+  const findings = useMemo(() => {
+    const flagged = offerSignals.filter(signal => answers[signal.id] === 'yes');
+    const unknown = offerSignals.filter(signal => answers[signal.id] === 'unknown');
+    const unanswered = offerSignals.filter(signal => !answers[signal.id]);
+    return {
+      flagged, unknown, unanswered,
+      urgent: flagged.filter(signal => signal.severity === 'urgent'),
+      checked: offerSignals.length - unanswered.length
+    };
+  }, [answers]);
+  const reviewActions = [...findings.flagged, ...findings.unknown];
+  const suggestedRentalQuestions = reviewActions.map(item =>
+    offerSafetyRentalQuestions[item.id]).join('\n');
+  const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
+  const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
+  const portableBackup = offerSafetyBackup(caseItems);
+  // A merge never edits an existing workblad, only appends complete imported
+  // cases. Conflicting numeric IDs get the first available positive ID.
+  const mergePreview = useMemo(() => {
+    if (!pendingBackup || caseItems.length + pendingBackup.length > MAX_OFFER_SAFETY_CASES)
+      return null;
+    const used = new Set(caseItems.map(item => item.id));
+    const incoming = pendingBackup.map(item => {
+      let targetId = item.id;
+      if (used.has(targetId)) {
+        targetId = 1;
+        while (used.has(targetId)) targetId++;
+      }
+      used.add(targetId);
+      return { sourceId: item.id, targetId, item: {
+        id: targetId, answers: { ...item.answers }, reviewed: { ...item.reviewed }
+      } as OfferSafetyCase };
+    });
+    return incoming;
+  }, [caseItems, pendingBackup]);
+  const acceptedForCase=acceptedRentalDecision?.caseId===currentCase.id
+    ? acceptedRentalDecision.offer:null;
+  const euros=(cents:number)=>new Intl.NumberFormat('nl-NL',{
+    style:'currency',currency:'EUR'
+  }).format(cents/100);
+  // Export of personal financial data requires a dedicated preview/confirmation.
+  // The existing safety TXT and versioned JSON intentionally exclude this snapshot.
+  const combinedFinancialReport = acceptedForCase ? [
+    report,'','EIGEN FINANCIËLE MOMENTOPNAME — NIET GEVERIFIEERD',
+    'Eigen maandlasten: '+euros(acceptedForCase.monthlyCents),
+    'Eigen benodigd startgeld: '+euros(acceptedForCase.initialCents),
+    'Eigen eerste jaar, excl. terugbetaalbare borg: '+euros(acceptedForCase.firstYearCents),
+    'Eigen maandgrens: '+(acceptedForCase.budgetCents===null?'Niet ingevuld':euros(acceptedForCase.budgetCents)),
+    'Zelf nagelopen huurvragen: '+acceptedForCase.checked+'/6',
+    'Dit is een verouderbare momentopname. Na bewerking van het huurvoorstel opnieuw aanmaken.',
+    'Geldbedragen zijn eigen invoer; geen officiële huurprijs, bewijs van betaalbaarheid of geldige aanbieding.'
+  ].join('\n'):null;
+  const [financialPreview,setFinancialPreview]=useState(false);
+  const status = findings.urgent.length > 0
+    ? 'Eerst stoppen en onafhankelijk controleren'
+    : findings.flagged.length > 0 || findings.unknown.length > 0 || findings.unanswered.length > 0
+      ? 'Nog aandachtspunten of ontbrekende informatie'
+      : 'Geen signalen door jou gemeld — géén verificatie';
+
+  function setAnswer(id: string, value: OfferAnswer) {
+    updateCurrentCase(current => ({
+      ...current,
+      answers: { ...current.answers, [id]: value },
+      reviewed: { ...current.reviewed, [id]: false }
+    }));
+    setPreview(false); setAllPreview(false); setConfirmReset(false);
+  }
+
+  function downloadLocal(content: string, filename: string) {
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+  }
+
+  async function readOwnBackup(file?: File) {
+    const generation = ++backupReadGeneration.current;
+    setPendingBackup(null);
+    setBackupMessage('');
+    setBackupPreview(false);
+    if (!file) return;
+    if (file.size > MAX_OFFER_SAFETY_BACKUP_BYTES ||
+      file.size < 20 || !file.name.toLocaleLowerCase('nl-NL').endsWith('.json')) {
+      setBackupMessage('Bestand geweigerd: kies een eigen JSON-back-up tot 10 KiB.');
+      return;
+    }
+    try {
+      const raw = await file.text();
+      if (generation !== backupReadGeneration.current) return;
+      const restored = decodeOfferSafetyBackup(raw);
+      if (!restored) {
+        setBackupMessage('Bestand geweigerd: schema, versie, vragen of afvinkingen zijn ongeldig.');
+        return;
+      }
+      setPendingBackup(restored);
+      setBackupMessage('Eigen bestand gecontroleerd. Niets vervangen totdat je apart bevestigt.');
+    } catch {
+      if (generation === backupReadGeneration.current)
+        setBackupMessage('Bestand kon niet veilig worden gelezen; huidige werkmap ongewijzigd.');
+    }
+  }
+
+  function applyOwnBackup() {
+    if (!pendingBackup) return;
+    backupReadGeneration.current++;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
+    setUndoBackup({ cases: caseItems, selected: currentCaseId });
+    setCaseItems(pendingBackup);
+    setCurrentCaseId(pendingBackup[0].id);
+    setPendingBackup(null);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+    setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Eigen werkmap hersteld. Eenmalig terugdraaien mogelijk zolang je niets wijzigt.');
+  }
+
+  function mergeOwnBackup() {
+    if (!mergePreview || !pendingBackup) return;
+    backupReadGeneration.current++;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
+    setUndoBackup({cases:caseItems, selected:currentCaseId});
+    setCaseItems([...caseItems, ...mergePreview.map(entry => entry.item)]);
+    setPendingBackup(null);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+    setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Werkbladen toegevoegd zonder je bestaande invoer te wijzigen. Eenmalig terugdraaien mogelijk zolang je niets wijzigt.');
+  }
+
+  function undoOwnBackup() {
+    if (!undoBackup) return;
+    backupReadGeneration.current++;
+    onClearRentalDecision?.();
+    setFinancialPreview(false);
+    setCaseItems(undoBackup.cases);
+    setCurrentCaseId(undoBackup.selected);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Vorige tabbladwerkmap teruggezet.');
+  }
+
+  return (
+    <section id="private-offer-safety-heading" style={{ maxWidth: 940, paddingTop: 28, margin: '40px auto' }}>
+      <a href="#projectstatus-heading" style={{ color: '#075e57', fontWeight: 700 }}>← Terug naar Woonpoints</a>
+      <header className="hero">
+        <p className="eyebrow" style={{ marginTop: 26 }}>PRIVÉ CONTROLE · GEEN AUTOMATISCHE ACTIES</p>
+        <h1 style={{ fontSize: 'clamp(34px, 6vw, 54px)' }}>Woningaanbodcheck</h1>
+        <p className="lede">Controleer in drie stappen of je een woningaanbod, bericht of huurvoorstel
+          eerst onafhankelijk moet verifiëren. De vragen werken volledig in dit tabblad:
+          geen account, opslag, externe aanvraag of WoningNet-reactie.</p>
+      </header>
+
+      {(rentalDecisionProposal || acceptedForCase) && <section className="card"
+        aria-label="Persoonlijk financieel beslisblad" style={{marginTop:24}}>
+        <h2 style={{fontSize:24}}>Mijn eigen huurkosten naast de aanbodcheck</h2>
+        {rentalDecisionProposal && <div>
+          <p><strong>Voorgestelde momentopname uit Huurvoorstellen:</strong>
+            {' '}{rentalDecisionProposal.label}. Het betreft zelf ingevulde bedragen,
+            zonder onafhankelijke huurprijs-, verhuurder- of contractcontrole.</p>
+          <p>Maandlasten {euros(rentalDecisionProposal.monthlyCents)} ·
+            benodigd startgeld {euros(rentalDecisionProposal.initialCents)} ·
+            eigen maandgrens {rentalDecisionProposal.budgetCents===null?
+              'onbekend':euros(rentalDecisionProposal.budgetCents)}.</p>
+          <button type="button" onClick={()=>{
+            if(!onAcceptRentalDecision)return;
+            onAcceptRentalDecision({caseId:currentCase.id,offer:rentalDecisionProposal});
+            setFinancialPreview(false);
+            onClearRentalProposal?.();
+          }} disabled={!onAcceptRentalDecision} style={{minHeight:44,padding:'9px 14px'}}>
+            Koppel deze momentopname aan {caseLabel(currentCase.id)}
+          </button>
+          <button type="button" onClick={onClearRentalDecision}
+            style={{minHeight:44,padding:'9px 14px',marginLeft:8}}>
+            Niet overnemen</button>
+        </div>}
+        {acceptedForCase && <div>
+          <p><strong>{caseLabel(currentCase.id)} · eigen financiële momentopname</strong>
+            {' '}(bron: {acceptedForCase.label}). Het gaat om je eigen invoer,
+            geen officiële financiële toets.</p>
+          <dl style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:14}}>
+            <div><dt>Geschatte maandlasten</dt><dd><strong>{euros(acceptedForCase.monthlyCents)}</strong></dd></div>
+            <div><dt>Benodigd startgeld</dt><dd><strong>{euros(acceptedForCase.initialCents)}</strong></dd></div>
+            <div><dt>Eerste jaar excl. borg</dt><dd><strong>{euros(acceptedForCase.firstYearCents)}</strong></dd></div>
+            <div><dt>Eigen maandgrens</dt><dd><strong>{acceptedForCase.budgetCents===null?'Niet ingevuld':euros(acceptedForCase.budgetCents)}</strong></dd></div>
+          </dl>
+          <p role="status">
+            {acceptedForCase.budgetCents===null?
+              'Geen eigen maandgrens ingesteld: betaalbaarheid niet beoordeeld.':
+              acceptedForCase.monthlyCents>acceptedForCase.budgetCents?
+                'Boven je zelf ingestelde maandgrens. Onderzoek de woonkosten voor je besluit.':
+                'Binnen je eigen maandgrens, maar overige vaste lasten en onverwachte kosten kunnen ontbreken.'}
+            {' '}{findings.urgent.length} urgent door jou gemeld,
+            {' '}{findings.unknown.length+findings.unanswered.length} onbekend of open.
+            De controlevragen en huurkosten zijn onafhankelijk; nul signalen betekent niet dat de aanbieding veilig is.
+          </p>
+          <button type="button" onClick={()=>setFinancialPreview(value=>!value)}
+            style={{minHeight:44,padding:'9px 14px'}}>
+            {financialPreview?'Sluit gecombineerd voorbeeld':'Bekijk gecombineerd privéverslag'}
+          </button>
+          {financialPreview && combinedFinancialReport && <div>
+            <p>Dit extra verslag bevat je eigen financiële bedragen. Lees de exacte tekst
+              vóór je bewust downloadt; een gekozen opslaglocatie kan elders synchroniseren.</p>
+            <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:240,overflow:'auto',
+              padding:12,background:'#f3f6f3'}}>{combinedFinancialReport}</pre>
+            <button type="button" onClick={()=>downloadLocal(combinedFinancialReport,
+              'woonpoints-woonbesluit-prive.txt')}
+              style={{minHeight:44,padding:'9px 14px'}}>Download dit bekeken privéverslag</button>
+          </div>}
+        </div>}
+      </section>}
+      <section id="offer-workbladen" className="card" aria-label="Mijn afzonderlijke aanbodcontroles" style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 24, marginBottom: 12 }}>Mijn eigen voorstellen — {caseItems.length} van {MAX_OFFER_SAFETY_CASES}</h2>
+        <p>Vergelijk maximaal vijf afzonderlijke controles naast elkaar. Elk voorstel heeft alleen een
+          automatisch nummer: er worden geen woningadressen, verhuurders of contactgegevens gevraagd of bewaard.</p>
+        <div role="group" aria-label="Kies een eigen werkblad" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          {caseItems.map(item => <button key={item.id} type="button"
+            aria-pressed={currentCase.id === item.id}
+            onClick={() => selectCase(item.id)} style={{ minHeight: 44, padding: '8px 12px',
+              background: currentCase.id === item.id ? '#355e42' : 'white',
+              color: currentCase.id === item.id ? 'white' : '#355e42',
+              border: '2px solid #355e42', borderRadius: 9 }}>
+            {caseLabel(item.id)} {currentCase.id === item.id ? '· actief' : ''}
+          </button>)}
+          <button type="button" disabled={caseItems.length >= MAX_OFFER_SAFETY_CASES}
+            onClick={addCase} style={{ minHeight: 44, padding: '8px 12px', borderRadius: 9 }}>
+            + Nieuw voorstel
+          </button>
+        </div>
+        {caseItems.length > 1 && <div>
+          <button type="button" onClick={() => { setConfirmDelete(true); setConfirmReset(false); setPreview(false); setAllPreview(false); }}
+            style={{ minHeight: 44, padding: '9px 12px' }}>Verwijder {caseLabel(currentCase.id)}</button>
+          {confirmDelete && <div role="group" aria-label="Voorstel verwijderen">
+            <p>Dit verwijdert uitsluitend {caseLabel(currentCase.id)} en alle antwoorden en afvinkingen ervan uit
+              dit tabblad. Andere voorstellen blijven intact.</p>
+            <button type="button" onClick={deleteCase} style={{ minHeight: 44, padding: '9px 12px' }}>Ja, verwijder voorstel</button>
+            <button type="button" onClick={() => setConfirmDelete(false)}
+              style={{ minHeight: 44, padding: '9px 12px', marginLeft: 8 }}>Annuleren</button>
+          </div>}
+        </div>}
+        <div style={{ overflowX: 'auto', marginTop: 18 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 590, textAlign: 'left' }}>
+            <caption style={{ textAlign: 'left', marginBottom: 9 }}>
+              Alleen zelf ingevulde signalen. Minder signalen is geen betrouwbaarder woningaanbod.
+            </caption>
+            <thead><tr>
+              {['Werkblad', 'Urgent gemeld', 'Overige gemeld', 'Onbekend', 'Niet ingevuld', 'Zelf nagekeken'].map(label =>
+                <th key={label} scope="col" style={{ padding: 8, borderBottom: '1px solid #dce5df' }}>{label}</th>)}
+            </tr></thead>
+            <tbody>{caseItems.map(item => {
+              const yes = offerSignals.filter(signal => item.answers[signal.id] === 'yes');
+              const unknown = offerSignals.filter(signal => item.answers[signal.id] === 'unknown');
+              const remaining = offerSignals.filter(signal => !item.answers[signal.id]);
+              const reviewedActions = [...yes, ...unknown].filter(signal => item.reviewed[signal.id]);
+              return <tr key={item.id}>
+                <th scope="row" style={{ padding: 8, borderBottom: '1px solid #e7eee9' }}>
+                  <button type="button" onClick={() => selectCase(item.id)}
+                    style={{ padding: 6, minHeight: 44 }}>{caseLabel(item.id)}</button>
+                </th>
+                <td style={{ padding: 8 }}>{yes.filter(signal => signal.severity === 'urgent').length}</td>
+                <td style={{ padding: 8 }}>{yes.filter(signal => signal.severity !== 'urgent').length}</td>
+                <td style={{ padding: 8 }}>{unknown.length}</td>
+                <td style={{ padding: 8 }}>{remaining.length}</td>
+                <td style={{ padding: 8 }}>{reviewedActions.length}/{yes.length + unknown.length}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <PrivateOfferDecisionDesk cases={caseItems} signals={offerSignals}
+        onSelect={selectCase} onRestore={(rows) => {
+          const byId = new Map(rows.map(row => [row.id, row]));
+          if (rows.length !== caseItems.length ||
+            caseItems.some(item => !byId.has(item.id))) return;
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => {
+            const next = byId.get(item.id);
+            return next ? { ...item, decision: next.stage ?? undefined,
+              decisionReason: next.reason ?? undefined } : item;
+          }));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} onUpdate={(id, decision, reason) => {
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => item.id === id
+            ? { ...item, decision, decisionReason: reason } : item));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} />
+
+      <PrivateOfferActionBoard cases={caseItems} signals={offerSignals}
+        onSelect={selectCase} onToggle={toggleCaseReview}
+        onSetDate={(caseId, date) => {
+          backupReadGeneration.current++;
+          setCaseItems(items => items.map(item => item.id === caseId
+            ? { ...item, reviewDate: date } : item));
+          setUndoBackup(null); setPendingBackup(null);
+          setBackupPreview(false); setBackupMessage('');
+        }} />
+
+      <PrivateOfferQuestionDraft cases={caseItems} signals={offerSignals} />
+
+      <section className="card" aria-label="Resultaatoverzicht" style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 22 }}>Controle voor {caseLabel(currentCase.id)}</h2>
+        <p aria-live="polite" role="status"><strong>{status}</strong></p>
+        <p>{findings.checked} van {offerSignals.length} vragen beantwoord · {findings.flagged.length} gemelde signalen ·
+          {' '}{findings.unknown.length} onbekend · {findings.unanswered.length} open.</p>
+        {findings.urgent.length > 0 && <p><strong>Actie vóór betaling, delen of ondertekening:</strong>
+          {' '}ga niet verder op basis van dit bericht alleen. Controleer onafhankelijk de betrokken partij en de voorwaarden.</p>}
+        <p style={{ fontSize: 14 }}>Deze zelfcheck controleert géén echt aanbod, identiteit, huurrecht,
+          adres, website, bankrekening of documenten. Ook nul signalen is geen bewijs van betrouwbaarheid.</p>
+      </section>
+
+      {offerGroups.map((group, index) => <section className="card" key={group} style={{ marginTop: 18 }}>
+        <h2 style={{ fontSize: 25, marginBottom: 12 }}>{index + 1}. {group}</h2>
+        {offerSignals.filter(signal => signal.group === group).map(signal => (
+          <fieldset key={signal.id} id={'offer-question-' + signal.id}
+            style={{ border: '1px solid #dbe6dd', borderRadius: 12, padding: '12px 14px', margin: '12px 0' }}>
+            <legend style={{ fontWeight: 750, padding: '0 5px', maxWidth: '100%' }}>{signal.question}</legend>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 8 }}>
+              {(['yes', 'no', 'unknown'] as const).map(value => <label key={value} style={{ display: 'flex', gap: 7, alignItems: 'center', minHeight: 44, cursor: 'pointer' }}>
+                <input type="radio" name={'offer-' + signal.id} value={value}
+                  checked={answers[signal.id] === value} onChange={() => setAnswer(signal.id, value)} />
+                {offerLabels[value]}
+              </label>)}
+            </div>
+            {answers[signal.id] === 'yes' && <div style={{ background: '#fff7e5', borderRadius: 9, padding: 12 }}>
+              <p><strong>Waarom controleren?</strong> {signal.why}</p>
+              <p><strong>Volgende stap:</strong> {signal.next}</p>
+            </div>}
+            {answers[signal.id] === 'unknown' && <p style={{ marginBottom: 0 }}>
+              Zoek deze informatie eerst via een onafhankelijk, vertrouwd kanaal op.
+            </p>}
+          </fieldset>
+        ))}
+      </section>)}
+
+      <section className="card" style={{ marginTop: 22 }}>
+        <h2 style={{ fontSize: 25 }}>Jouw concrete vervolg</h2>
+        {reviewActions.length > 0 && <p aria-live="polite" role="status">
+          <strong>{reviewedCount} van {reviewActions.length} vervolgstappen zelf nagelopen.</strong>
+          Afvinken betekent alleen dat je zelf een stap hebt nagekeken, niet dat
+          de woning, overeenkomst of afzender betrouwbaar is bevestigd.
+        </p>}
+        {findings.flagged.length === 0 && findings.unknown.length === 0 && findings.unanswered.length === 0
+          ? <p>Je hebt zelf geen van de signalen gemeld. Controleer desondanks de aanbieder, het schriftelijke
+              aanbod en de betaalinstructies buiten dit scherm.</p>
+          : <ol style={{ lineHeight: 1.7, paddingLeft: 22 }}>
+              {reviewActions.map(signal => <li key={signal.id} style={{ marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'start', gap: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={reviewed[signal.id] === true}
+                    aria-label={'Zelf nagelopen: ' + signal.question}
+                    onChange={() => {
+                      updateCurrentCase(current => ({
+                        ...current,
+                        reviewed: { ...current.reviewed, [signal.id]: !current.reviewed[signal.id] }
+                      }));
+                      setPreview(false); setAllPreview(false);
+                    }} style={{ marginTop: 7 }} />
+                  <span>{answers[signal.id] === 'yes' ? signal.next :
+                    'Verzamel onafhankelijke informatie: ' + signal.question}
+                  </span>
+                </label>
+              </li>)}
+              {findings.unanswered.length > 0 && <li>Beantwoord de {findings.unanswered.length}
+                {' '}open {findings.unanswered.length === 1 ? 'vraag' : 'vragen'} voordat je op deze check vertrouwt.</li>}
+            </ol>}
+        <p>Bij twijfel: gebruik zelf gevonden officiële contactgegevens, neem tijd voor advies en
+          meld vermoedelijke fraude via de daarvoor bestemde officiële kanalen. Deze tool verstuurt niets.</p>
+        {reviewActions.length>0 && <div style={{padding:'14px 0'}}>
+          <h3>Stel vragen voor je eigen huurvoorstel voor</h3>
+          <p>Voor {caseLabel(currentCase.id)} zijn {reviewActions.length} algemene controlevragen
+            relevant. Alleen vaste vraagteksten (zonder antwoorden, bedragen, namen of documentinhoud)
+            gaan binnen dit tabblad als <em>voorstel</em> naar het tijdelijke huurformulier.
+            Het formulier neemt niets over zonder een tweede bevestiging.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:200,
+            overflow:'auto',padding:12,background:'#f3f6f3'}}>{suggestedRentalQuestions}</pre>
+          <button type="button" disabled={!onPrepareRentalQuestions ||
+            suggestedRentalQuestions.length>400}
+            onClick={()=>{
+              if(!onPrepareRentalQuestions||suggestedRentalQuestions.length>400) return;
+              onPrepareRentalQuestions(suggestedRentalQuestions);
+              document.getElementById('private-offer-desk-heading')?.scrollIntoView({behavior:'smooth'});
+            }} style={{minHeight:44,padding:'9px 14px'}}>
+            Toon deze vragen bij mijn huurvoorstellen
+          </button>
+          {suggestedRentalQuestions.length>400 && <p role="status">
+            Er zijn te veel vragen voor het korte huurformulier. Gebruik de eigen TXT-export.</p>}
+        </div>}
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 700, minHeight: 44 }}>Wat bewaren we van je antwoorden?</summary>
+          <p>Niets op een server of in browseropslag. Alleen React-tabbladgeheugen totdat je dit tabblad
+            sluit of herlaadt. Er wordt geen formulier, adres, bedrag, identiteitsbewijs, URL of rekeningnummer gevraagd.
+            Een eigen gedownload TXT-bestand kun je buiten Woonpoints bewaren of delen; controleer zelf de opslaglocatie.</p>
+        </details>
+      </section>
+
+      <section className="card" style={{ marginTop: 20, marginBottom: 32 }}>
+        <h2 style={{ fontSize: 24 }}>Zelf meenemen of opnieuw beginnen</h2>
+        <p>Je kijkt en downloadt nu uitsluitend {caseLabel(currentCase.id)}, tenzij je
+          bewust de aparte complete vergelijking exporteert.</p>
+        <button type="button" onClick={() => { setPreview(value => !value); setConfirmReset(false); }}
+          style={{ minHeight: 44, padding: '9px 14px', margin: '12px 8px 12px 0' }}>
+          {preview ? 'Sluit voorbeeld' : 'Bekijk mijn privé-TXT'}
+        </button>
+        {preview && <div>
+          <p>Alleen bovenstaande keuzes en bijbehorende algemene adviezen; geen persoonlijke documenten.</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 330, overflow: 'auto', padding: 16, background: '#f3f6f3' }}>{report}</pre>
+          <button type="button" onClick={() => downloadLocal(report, 'woonpoints-' + caseLabel(currentCase.id).toLowerCase().replace(' ', '-') + '.txt')} style={{ minHeight: 44, padding: '9px 14px' }}>
+            Download gecontroleerd TXT-bestand
+          </button>
+        </div>}
+        <button type="button" onClick={() => { setConfirmReset(true); setPreview(false); setAllPreview(false); }}
+          style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Wis antwoorden</button>
+        {caseItems.length > 1 && <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid #dbe6dd' }}>
+          <h3>Alle werkbladen exporteren</h3>
+          <p>In één bestand staan alle {caseItems.length} zelf ingevulde voorstellen met nummers,
+            algemene signalen en eigen opvolgstatus. Lees het eerst na: een door jou gekozen
+            bestandslocatie kan buiten Woonpoints synchroniseren.</p>
+          <button type="button" onClick={() => { setAllPreview(value => !value); setPreview(false); setConfirmReset(false); }}
+            style={{ minHeight: 44, padding: '9px 14px' }}>
+            {allPreview ? 'Sluit alle voorbeelden' : 'Bekijk complete privévergelijking'}
+          </button>
+          {allPreview && <div>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 330, overflow: 'auto',
+              padding: 16, background: '#f3f6f3' }}>{combinedReport}</pre>
+            <button type="button" onClick={() => downloadLocal(combinedReport, 'woonpoints-aanbodcontroles-prive.txt')}
+              style={{ minHeight: 44, padding: '9px 14px' }}>Download deze complete TXT</button>
+          </div>}
+        </div>}
+        {confirmReset && <div role="group" aria-label="Antwoorden wissen" style={{ paddingTop: 12 }}>
+          <p>Alle {findings.checked} antwoorden en {reviewedCount} zelf afgevinkte vervolgstappen
+            voor {caseLabel(currentCase.id)} wissen? Andere voorstellen blijven intact.</p>
+          <button type="button" onClick={() => {
+              updateCurrentCase(current => ({ ...current, answers: {}, reviewed: {} }));
+              setConfirmReset(false); setPreview(false); setAllPreview(false);
+            }}
+            style={{ minHeight: 44, padding: '9px 14px' }}>Ja, wis alles</button>
+          <button type="button" onClick={() => setConfirmReset(false)}
+            style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
+        </div>}
+      </section>
+
+      <section className="card" aria-label="Zelf privéwerkmap bewaren en herstellen" style={{ marginTop: 20, marginBottom: 32 }}>
+        <h2 style={{ fontSize: 24 }}>Privéwerkmap back-up en herstel</h2>
+        <p>Je kunt de complete {caseItems.length} {caseItems.length === 1 ? 'werkblad' : 'werkbladen'}
+          optioneel als eigen JSON bewaren om later bewust terug te zetten.
+          Zonder downloaden verdwijnen antwoorden bij herladen of sluiten.
+          Er staan geen adressen, namen, accountgegevens of documenten in dit formaat.
+          Een bestandslocatie kan wel buiten Woonpoints synchroniseren.</p>
+        <button type="button" onClick={() => {
+          setBackupPreview(value => !value); setPendingBackup(null);
+          setBackupMessage(''); setPreview(false); setAllPreview(false);
+        }} style={{ minHeight: 44, padding: '9px 14px' }}>
+          {backupPreview ? 'Sluit JSON-voorbeeld' : 'Bekijk complete privé-JSON'}
+        </button>
+        {backupPreview && <div>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 280, overflow: 'auto',
+            padding: 16, background: '#f3f6f3' }}>{portableBackup}</pre>
+          <button type="button" onClick={() =>
+            downloadLocal(portableBackup, 'woonpoints-woningaanbod-werkmap.json')}
+            style={{ minHeight: 44, padding: '9px 14px' }}>
+            Download bekeken JSON
+          </button>
+        </div>}
+        <label htmlFor="offer-safety-import" style={{ display: 'block', fontWeight: 700, marginTop: 18 }}>
+          Open mijn eerdere privéwerkmap (.json, maximaal 10 KiB)
+        </label>
+        <input type="file" id="offer-safety-import" accept=".json,application/json"
+          style={{ display: 'block', minHeight: 44, maxWidth: '100%', marginTop: 7 }}
+          onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void readOwnBackup(file);
+          }} />
+        {backupMessage && <p role="status" aria-live="polite">{backupMessage}</p>}
+        {pendingBackup && <div style={{ background: '#f1f6f1', borderRadius: 10, padding: 14 }}>
+          <p><strong>Gecontroleerd bestand:</strong> {pendingBackup.length} werkbladen;
+            {' '}je huidige {caseItems.length} blijven onveranderd tot je kiest om
+            <strong> alles te vervangen</strong> of <strong> zonder overschrijven toe te voegen</strong>.</p>
+          <ul>{pendingBackup.map(item => <li key={item.id}>
+            {caseLabel(item.id)}: {Object.keys(item.answers).length} vragen ingevuld,
+            {' '}{Object.values(item.reviewed).filter(Boolean).length} acties zelf nagelopen.
+          </li>)}</ul>
+          {mergePreview ? <div>
+            <h3>Voorbeeld toevoegen zonder overschrijven</h3>
+            <p>Na toevoegen bevat dit tabblad {caseItems.length + mergePreview.length}
+              {' '}afzonderlijke werkbladen. Bij gelijke nummers wordt een nieuwe, vrije
+              nummercode gebruikt; geen enkel bestaand antwoord wordt aangepast.</p>
+            <ul>{mergePreview.map(entry => <li key={entry.sourceId}>
+              {caseLabel(entry.sourceId)} uit bestand → {caseLabel(entry.targetId)}
+              {entry.sourceId !== entry.targetId ? ' (nieuw nummer)' : ''}
+            </li>)}</ul>
+            <button type="button" onClick={mergeOwnBackup} style={{ minHeight: 44, padding: '9px 14px' }}>
+              Voeg deze werkbladen toe — behoud bestaande
+            </button>
+          </div> : <p role="status">Toevoegen kan niet: maximaal vijf werkbladen totaal.
+            Kies eventueel bewust volledig vervangen of annuleer de import.</p>}
+          <button type="button" onClick={applyOwnBackup} style={{ minHeight: 44, padding: '9px 14px', marginTop: 12 }}>
+            Vervang in plaats daarvan alle huidige werkbladen
+          </button>
+          <button type="button" onClick={() => { backupReadGeneration.current++; setPendingBackup(null); setBackupMessage('Herstel geannuleerd.'); }}
+            style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
+        </div>}
+        {undoBackup && <button type="button" onClick={undoOwnBackup}
+          style={{ minHeight: 44, padding: '9px 14px', marginTop: 12 }}>
+          Draai laatste import (vervangen of toevoegen) eenmalig terug
+        </button>}
+        <p style={{ fontSize: 14 }}>Alleen precies de bekende vraag-ID's en antwoorden
+          worden geaccepteerd. Onbekende velden, extra werkbladen, corrupte bestandsinhoud,
+          inconsistente afvinkingen of een verkeerde versie worden geweigerd vóór vervanging.
+          Je bestanden worden niet geüpload.</p>
+      </section>
+    </section>
+  );
+}
+
+
+// Self-contained, non-authorizing client-only comparison inside the approved app source.
+type WoonMatchAllocation = 'unknown' | 'lottery' | 'queue';
+type WoonMatchPreference = 'any' | 'lottery' | 'queue';
+const WOON_MATCH_METHOD_LABELS: Record<WoonMatchAllocation,string> = {
+  unknown: 'Onbekend / nog controleren', lottery: 'Loting (eigen invoer)', queue: 'Inschrijfduur (eigen invoer)'
+};
+const WOON_MATCH_PREFERENCE_LABELS: Record<WoonMatchPreference,string> = {
+  any: 'Geen methodevoorkeur', lottery: 'Voorkeur voor loting', queue: 'Voorkeur voor inschrijfduur'
+};
+const woonMatchMethodRank = (method: WoonMatchAllocation, preference: WoonMatchPreference): number =>
+  preference === 'any' ? 0 : method === preference ? 2 : method === 'unknown' ? 1 : 0;
+type WoonMatchListing = { id: number; name: string; monthlyRent: string; utilities: string; area: string; bedrooms: string; commute: string; note: string; allocation: WoonMatchAllocation };
+type WoonMatchCriteria = { budget: string; area: string; bedrooms: string; commute: string };
+type WoonMatchWeights = Record<keyof WoonMatchCriteria, number>;
+const WOON_MATCH_DEFAULT_WEIGHTS: WoonMatchWeights = { budget: 4, area: 3, bedrooms: 2, commute: 2 };
+const WOON_MATCH_PRIORITY_LABELS: Array<{ key: keyof WoonMatchCriteria; label: string }> = [
+  { key: 'budget', label: 'Totale maandlasten' }, { key: 'area', label: 'Woonoppervlak' },
+  { key: 'bedrooms', label: 'Slaapkamers' }, { key: 'commute', label: 'Reistijd' }
+];
+type WoonMatchRule = { label: string; weight: number; observed: number | null; required: number | null; met: boolean | null; detail: string };
+type WoonMatchOutcome = { listing: WoonMatchListing; monthly: number | null; rules: WoonMatchRule[]; complete: boolean; pass: boolean; met: number; known: number; score: number | null };
+
+const WoonMatchBlank = (id: number): WoonMatchListing => ({ id, name: '', monthlyRent: '', utilities: '', area: '', bedrooms: '', commute: '', note: '', allocation: 'unknown' });
+const WoonMatchInputStyle: React.CSSProperties = { width: '100%', minWidth: 0, padding: '9px', border: '1px solid #a8bdb8', borderRadius: 6, background: '#fff', color: '#173731', boxSizing: 'border-box' };
+const WoonMatchPanelStyle: React.CSSProperties = { border: '1px solid #cedfda', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 18 };
+const WoonMatchNumeric = (input: string, cap: number): number | null => {
+  const trimmed = input.trim();
+  if (!trimmed || !/^\d+(?:[.,]\d{1,2})?$/.test(trimmed)) return null;
+  const value = Number(trimmed.replace(',', '.'));
+  return Number.isFinite(value) && value >= 0 && value <= cap ? value : null;
+};
+const WoonMatchMoney = (value: number): string => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(value);
+const WoonMatchScalar = (value: string, label: string, cap: number, required: boolean): string | null =>
+  value.trim() && WoonMatchNumeric(value, cap) === null
+    ? label + ' moet een getal tussen 0 en ' + cap + ' zijn.'
+    : required && WoonMatchNumeric(value, cap) === null ? 'Vul ' + label.toLowerCase() + ' in.' : null;
+
+function WoonMatchCalculate(listing: WoonMatchListing, criteria: WoonMatchCriteria, weights: WoonMatchWeights): WoonMatchOutcome {
+  const rent = WoonMatchNumeric(listing.monthlyRent, 100000);
+  const utility = WoonMatchNumeric(listing.utilities, 100000);
+  const monthly = rent !== null && utility !== null ? rent + utility : null;
+  const area = WoonMatchNumeric(listing.area, 100000);
+  const bedrooms = WoonMatchNumeric(listing.bedrooms, 100);
+  const commute = WoonMatchNumeric(listing.commute, 10000);
+  const pairs: Array<[string, number, number | null, number | null, 'max' | 'min', string]> = [
+    ['Totale maandkosten', weights.budget, monthly, WoonMatchNumeric(criteria.budget, 100000), 'max', '€ per maand, inclusief eigen service/energie-inschatting'],
+    ['Woonoppervlak', weights.area, area, WoonMatchNumeric(criteria.area, 100000), 'min', 'm²'],
+    ['Slaapkamers', weights.bedrooms, bedrooms, WoonMatchNumeric(criteria.bedrooms, 100), 'min', 'kamers'],
+    ['Reistijd enkele reis', weights.commute, commute, WoonMatchNumeric(criteria.commute, 10000), 'max', 'minuten']
+  ];
+  const rules: WoonMatchRule[] = pairs.map(([label, weight, observed, required, direction, detail]) => ({
+    label, weight, observed, required, detail,
+    met: observed === null || required === null ? null : direction === 'max' ? observed <= required : observed >= required
+  }));
+  const known = rules.filter(r => r.met !== null).length;
+  const met = rules.filter(r => r.met === true).length;
+  const complete = known === rules.length;
+  const total = rules.reduce((sum, r) => sum + r.weight, 0);
+  const score = complete ? Math.round(rules.reduce((sum, r) => sum + (r.met ? r.weight : 0), 0) * 100 / total) : null;
+  return { listing, monthly, rules, complete, pass: complete && met === rules.length, met, known, score };
+}
+
+/** Explain only the distance from an owner's own threshold, never inferred listing or eligibility facts. */
+function WoonMatchGap(rule: WoonMatchRule): string | null {
+  if (rule.met !== false || rule.observed === null || rule.required === null) return null;
+  const distance = new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 2 })
+    .format(Math.abs(rule.observed - rule.required));
+  switch (rule.label) {
+    case 'Totale maandkosten': return '€ ' + distance + ' per maand boven jouw maximum';
+    case 'Woonoppervlak': return distance + ' m² onder jouw minimum';
+    case 'Slaapkamers': return distance + ' slaapkamers onder jouw minimum';
+    case 'Reistijd enkele reis': return distance + ' minuten boven jouw maximum';
+    default: return null;
+  }
+}
+function WoonMatchField({ label, value, setValue, placeholder, maxLength = 20 }: { label: string; value: string; setValue: (v: string) => void; placeholder?: string; maxLength?: number }) {
+  return <label style={{ display: 'block', fontSize: 14, fontWeight: 650, minWidth: 0 }}>
+    <span style={{ display: 'block', marginBottom: 5 }}>{label}</span>
+    <input style={WoonMatchInputStyle} value={value} onChange={e => setValue(e.target.value)} placeholder={placeholder} maxLength={maxLength} />
+  </label>;
+}
+
+
+const WOON_MATCH_CSV_HEADER = 'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie';
+
+// A CSV opened in desktop spreadsheet software can interpret a text cell as
+// a formula. Refuse ambiguous leading formula prefixes rather than adding
+// escape characters that silently change the seven-field import contract.
+const woonMatchCsvFormulaCell = (value: string): boolean => /^[=+@-]/u.test(value.trimStart());
+
+/** Only locally pasted, seven-column Dutch semicolon records; no spreadsheet parser or network. */
+function parsePrivateMatchCsv(source: string, minRows: 1 | 2 = 2): { rows: Omit<WoonMatchListing, 'id'>[]; error: string } {
+  if (!source || source.length > 4096 || /[^\S\n\r\t ]/.test(source)) {
+    return { rows: [], error: 'Plak maximaal 4.096 tekens zonder verborgen besturingstekens.' };
+  }
+  const normalized = source.replace(/\r\n/g, '\n');
+  if (normalized.includes('\r')) return { rows: [], error: 'Gebruik gewone LF of CRLF-regels.' };
+  const lines = normalized.trimEnd().split('\n');
+  if (lines[0] !== WOON_MATCH_CSV_HEADER) return { rows: [], error: 'De zeven kolomnamen moeten exact overeenkomen met het getoonde sjabloon.' };
+  if (lines.length < minRows + 1 || lines.length > 6) return { rows: [], error: 'Voer ' + (minRows === 1 ? 'één tot vijf' : 'twee tot vijf') + ' woningregels in.' };
+  const rows: Omit<WoonMatchListing, 'id'>[] = [];
+  const names = new Set<string>();
+  for (let index = 1; index < lines.length; index++) {
+    const cols = lines[index].split(';');
+    if (cols.length !== 7) return { rows: [], error: 'Rij ' + (index + 1) + ': verwacht precies 7 met puntkomma gescheiden velden; geen quotes of puntkomma in notities.' };
+    const [name, monthlyRent, utilities, area, bedrooms, commute, note] = cols.map(value => value.trim());
+    if (woonMatchCsvFormulaCell(name) || woonMatchCsvFormulaCell(note)) {
+      return { rows: [], error: 'Rij ' + (index + 1) +
+        ': label of notitie begint met een spreadsheet-formuleteken (=, +, - of @). Gebruik eigen platte tekst.' };
+    }
+    if (!name || name.length > 80 || note.length > 200 || /[\u0000-\u001f\u007f]/.test(name + note)) {
+      return { rows: [], error: 'Rij ' + (index + 1) + ': naam of notitie ontbreekt, is te lang of bevat besturingstekens.' };
+    }
+    const nameKey = name.toLocaleLowerCase('nl-NL');
+    if (names.has(nameKey)) return { rows: [], error: 'Rij ' + (index + 1) + ': gebruik voor iedere optie een uniek eigen label.' };
+    names.add(nameKey);
+    const amounts = [monthlyRent, utilities, area, bedrooms, commute];
+    const caps = [100000, 100000, 100000, 100, 10000];
+    if (amounts.some((value, k) => WoonMatchNumeric(value, caps[k]) === null) ||
+      !/^\d+$/.test(bedrooms) || !/^\d+$/.test(commute)) {
+      return { rows: [], error: 'Rij ' + (index + 1) + ': ongeldige bedragen, m², gehele slaapkamers of gehele reistijd.' };
+    }
+    rows.push({ name, monthlyRent, utilities, area, bedrooms, commute, note, allocation: 'unknown' });
+  }
+  return { rows, error: '' };
+}
+
+
+
+/** Export only faithfully round-trippable, explicitly private seven-field text. */
+function woonMatchEncodeCsv(listings: WoonMatchListing[]): { text: string; error: string } {
+  const fail = (error: string) => ({ text: '', error });
+  if (listings.length < 2 || listings.length > 5) return fail('Alleen twee tot vijf opties kunnen worden geëxporteerd.');
+  const names = new Set<string>();
+  for (const [index, row] of listings.entries()) {
+    if (woonMatchCsvFormulaCell(row.name) || woonMatchCsvFormulaCell(row.note))
+      return fail('Optie ' + (index + 1) +
+        ': label of notitie mag niet beginnen met =, +, - of @ bij CSV-export. Pas die eigen tekst eerst aan.');
+    if (!woonMatchSafeText(row.name, 80) || !woonMatchSafeText(row.note, 200) ||
+        !row.name.trim() || row.name !== row.name.trim() || row.note !== row.note.trim() ||
+        /[;\r\n\t]/.test(row.name + row.note)) {
+      return fail('Optie ' + (index + 1) + ': label of notitie is leeg, te lang, heeft randspaties of bevat een scheidingsteken. Pas dit eerst zelf aan.');
+    }
+    const key = row.name.toLocaleLowerCase('nl-NL');
+    if (names.has(key)) return fail('Gebruik unieke woninglabels vóór export.');
+    names.add(key);
+    if ([row.monthlyRent,row.utilities,row.area,row.bedrooms,row.commute].some((v, i) =>
+        !woonMatchSafeText(v, 20) || WoonMatchNumeric(v, [100000,100000,100000,100,10000][i]) === null) ||
+        !/^\d+$/.test(row.bedrooms) || !/^\d+$/.test(row.commute)) {
+      return fail('Optie ' + (index + 1) + ': vul eerst alle geldige bedragen, m², hele slaapkamers en hele reisminuten in.');
+    }
+  }
+  const fields: Array<keyof Omit<WoonMatchListing, 'id' | 'allocation'>> =
+    ['name','monthlyRent','utilities','area','bedrooms','commute','note'];
+  const text = [WOON_MATCH_CSV_HEADER, ...listings.map(row =>
+    fields.map(key => row[key]).join(';'))].join('\n') + '\n';
+  if (text.length > 4096) return fail('De tekst is langer dan de toegestane 4.096 tekens.');
+  const imported = parsePrivateMatchCsv(text);
+  if (imported.error || imported.rows.length !== listings.length ||
+      imported.rows.some((item,index) =>
+        fields.some(key => item[key] !== listings[index][key]))) {
+    return fail('De zeven-koloms tekst kan niet zonder verlies terug worden ingelezen. Gebruik de volledige JSON-back-up.');
+  }
+  return { text, error: '' };
+}
+
+type WoonMatchPortable = {
+  format: 'woonpoints.private-match.v2';
+  criteria: WoonMatchCriteria;
+  weights: WoonMatchWeights;
+  preference: WoonMatchPreference;
+  listings: Omit<WoonMatchListing, 'id'>[];
+};
+const WOON_MATCH_BACKUP_LIMIT = 12288;
+const woonMatchKeys = (value: Record<string, unknown>, expected: string[]): boolean =>
+  Object.keys(value).sort().join('|') === [...expected].sort().join('|');
+const woonMatchRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const woonMatchSafeText = (value: unknown, cap: number): value is string => {
+  if (typeof value !== 'string' || value.length > cap || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  // JSON can decode \uD800 into an unpaired UTF-16 surrogate even from valid UTF-8.
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = value.charCodeAt(++i);
+      if (!(next >= 0xDC00 && next <= 0xDFFF)) return false;
+    } else if (code >= 0xDC00 && code <= 0xDFFF) return false;
+  }
+  return true;
+};
+function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; error: string } {
+  const fail = (message: string) => ({ data: null, error: message });
+  if (new TextEncoder().encode(text).length > WOON_MATCH_BACKUP_LIMIT) return fail('Het bestand is groter dan 12 KiB.');
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return fail('Dit is geen geldige JSON-back-up.'); }
+  if (!woonMatchRecord(value)) return fail('Onbekende versie of extra back-upvelden.');
+  const v2 = value.format === 'woonpoints.private-match.v2';
+  const v1 = value.format === 'woonpoints.private-match.v1';
+  if ((!v1 && !v2) || !woonMatchKeys(value, v2
+    ? ['format','criteria','weights','preference','listings']
+    : ['format','criteria','weights','listings'])) return fail('Onbekende versie of extra back-upvelden.');
+  if (v2 && value.preference !== 'any' && value.preference !== 'lottery' && value.preference !== 'queue') {
+    return fail('Ongeldige eigen toewijzingsmethodevoorkeur.');
+  }
+  const c = value.criteria, w = value.weights, items = value.listings;
+  const fields: Array<keyof WoonMatchCriteria> = ['budget','area','bedrooms','commute'];
+  if (!woonMatchRecord(c) || !woonMatchKeys(c, fields) ||
+      fields.some((key, index) => !woonMatchSafeText(c[key], 20) ||
+        (c[key] !== '' && WoonMatchNumeric(c[key] as string, [100000,100000,100,10000][index]) === null))) {
+    return fail('Ongeldige eigen criteria in de back-up.');
+  }
+  if (!woonMatchRecord(w) || !woonMatchKeys(w, fields) ||
+      fields.some(key => typeof w[key] !== 'number' || !Number.isInteger(w[key]) || (w[key] as number) < 1 || (w[key] as number) > 5)) {
+    return fail('Ongeldige relatieve weging in de back-up.');
+  }
+  if (!Array.isArray(items) || items.length < 2 || items.length > 5) return fail('Alleen twee tot vijf opties worden ondersteund.');
+  const names = new Set<string>();
+  for (const [index,item] of items.entries()) {
+    if (!woonMatchRecord(item) || !woonMatchKeys(item, v2
+      ? ['name','monthlyRent','utilities','area','bedrooms','commute','note','allocation']
+      : ['name','monthlyRent','utilities','area','bedrooms','commute','note'])) {
+      return fail('Optie '+(index+1)+': onbekende of ontbrekende velden.');
+    }
+    for (const [key,cap] of [['name',80],['note',200]] as const) {
+      if (!woonMatchSafeText(item[key], cap)) return fail('Optie '+(index+1)+': ongeldige '+key+'.');
+    }
+    if (v2 && item.allocation !== 'unknown' && item.allocation !== 'lottery' && item.allocation !== 'queue') {
+      return fail('Optie '+(index+1)+': ongeldige zelf ingevoerde toewijzingsmethode.');
+    }
+    const name = (item.name as string).trim().toLocaleLowerCase('nl-NL');
+    if (name && names.has(name)) return fail('Dubbele labels in het herstelbestand.');
+    if (name) names.add(name);
+    const numbers: Array<[string,number]> = [['monthlyRent',100000],['utilities',100000],['area',100000],['bedrooms',100],['commute',10000]];
+    if (numbers.some(([key,cap]) => !woonMatchSafeText(item[key],20) ||
+        (item[key] !== '' && WoonMatchNumeric(item[key] as string,cap) === null))) {
+      return fail('Optie '+(index+1)+': ongeldig numeriek veld.');
+    }
+    if (['bedrooms','commute'].some(key => item[key] !== '' && !/^\d+$/.test(item[key] as string))) {
+      return fail('Optie '+(index+1)+': kamers en reistijd moeten gehele getallen zijn.');
+    }
+  }
+  // Original v1 backups remain restorable. Never invent lottery evidence
+  // for a listing in an older backup that carried no such field.
+  return {
+    data: {
+      format: 'woonpoints.private-match.v2',
+      criteria: c as WoonMatchCriteria,
+      weights: w as WoonMatchWeights,
+      preference: v2 ? value.preference as WoonMatchPreference : 'any',
+      listings: items.map(item => ({
+        ...item,
+        allocation: v2 ? item.allocation as WoonMatchAllocation : 'unknown'
+      })) as Array<Omit<WoonMatchListing, 'id'>>
+    },
+    error: ''
+  };
+}
+
+type WoonMatchRentalHandoff = {
+  id: number; source: string; label: string; rent: number;
+  allOwnCriteriaMet: boolean; score: number; monthly: number;
+};
+const woonMatchHandoffLabel = (value: string) =>
+  value.length >= 1 && value.length <= 64 && value === value.trim() &&
+  !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value);
+const woonMatchHandoffRent = (value: string): number | null => {
+  const amount = WoonMatchNumeric(value, 10000);
+  return amount !== null && Number.isSafeInteger(amount) && amount >= 100 ? amount : null;
+};
+
+function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
+  onRentalPrefill?: (item: {label: string; rent: number}) => void;
+  onCostPrefill?: (pair: PrivateMatchCostPair) => void;
+} = {}) {
+  const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
+  const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
+  const [preference, setPreference] = useState<WoonMatchPreference>('any');
+  const [listings, setListings] = useState<WoonMatchListing[]>([WoonMatchBlank(1), WoonMatchBlank(2)]);
+  const nextId = useRef(3);
+  const backupRead = useRef(0);
+  const [backupPreview, setBackupPreview] = useState<{ source: string; text: string } | null>(null);
+  const [backupExportApproved, setBackupExportApproved] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<{ source: string; data: WoonMatchPortable; label: string } | null>(null);
+  const [restoreApproved, setRestoreApproved] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState('');
+  const [undoRestore, setUndoRestore] = useState<{ criteria: WoonMatchCriteria; weights: WoonMatchWeights; preference: WoonMatchPreference; listings: WoonMatchListing[] } | null>(null);
+  const [csvText, setCsvText] = useState('');
+  const csvFileRead = useRef(0);
+  const [csvFileMessage, setCsvFileMessage] = useState('');
+  const [csvError, setCsvError] = useState('');
+  const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
+  const [confirmCsv, setConfirmCsv] = useState(false);
+  const [confirmCsvAppend, setConfirmCsvAppend] = useState(false);
+  const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
+  const [csvExportPreview, setCsvExportPreview] = useState<{ source: string; text: string } | null>(null);
+  const [csvExportApproved, setCsvExportApproved] = useState(false);
+  const [showPreview, setShowPreview] = useState<{ source: string; text: string } | null>(null);
+  const [allowDownload, setAllowDownload] = useState(false);
+  const [rentalHandoff, setRentalHandoff] = useState<WoonMatchRentalHandoff | null>(null);
+  const [rentalApproved, setRentalApproved] = useState(false);
+  const [rentalMessage, setRentalMessage] = useState('');
+  const [firstCostId,setFirstCostId]=useState<number|null>(null);
+  const [secondCostId,setSecondCostId]=useState<number|null>(null);
+  const [costHandoff,setCostHandoff]=useState<{
+    source:string; first:WoonMatchOutcome; second:WoonMatchOutcome;
+    pair:PrivateMatchCostPair;
+  }|null>(null);
+  const [costApproved,setCostApproved]=useState(false);
+  const [costMessage,setCostMessage]=useState('');
+  const [whatIf, setWhatIf] = useState<{ source: string; limits: WoonMatchCriteria } | null>(null);
+  const [scenarioReportPreview, setScenarioReportPreview] = useState<{ source: string; text: string } | null>(null);
+  const [scenarioReportApproved, setScenarioReportApproved] = useState(false);
+  const scenarioGeneration = useRef(0);
+  const closeScenario = () => {
+    scenarioGeneration.current++;
+    setWhatIf(null);
+    setScenarioReportPreview(null);
+    setScenarioReportApproved(false);
+  };
+  const modifyScenario = (key: keyof WoonMatchCriteria, value: string) => {
+    scenarioGeneration.current++;
+    setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, [key]: value } }));
+    setScenarioReportPreview(null);
+    setScenarioReportApproved(false);
+  };
+  const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
+    setUndoRestore(null);
+    setCriteria(prev => ({ ...prev, [key]: value }));
+  };
+  const changeListing = <K extends keyof Omit<WoonMatchListing, 'id'>>(id: number, key: K, value: Omit<WoonMatchListing, 'id'>[K]) => {
+    setUndoRestore(null);
+    setUndoCsv(null);
+    setListings(prev => prev.map(row => row.id === id ? { ...row, [key]: value } : row));
+  };
+
+  const currentSource = JSON.stringify({ schema: 2, criteria, weights, preference, listings });
+  const portableBackup: WoonMatchPortable = {
+    format: 'woonpoints.private-match.v2', criteria, weights, preference,
+    listings: listings.map(({ id, ...fields }) => fields)
+  };
+  const portableBackupText = JSON.stringify(portableBackup, null, 2);
+  const backupSourceValid = woonMatchDecodeBackup(portableBackupText).data !== null;
+  const backupPreviewValid = backupPreview?.source === currentSource && backupSourceValid;
+  const restorePreviewValid = pendingRestore?.source === currentSource;
+  const outcomes = useMemo(() => listings.map(item => WoonMatchCalculate(item, criteria, weights)), [listings, criteria, weights]);
+  const criteriaErrors = [
+    WoonMatchScalar(criteria.budget, 'Maandgrens', 100000, true),
+    WoonMatchScalar(criteria.area, 'Minimum oppervlak', 100000, true),
+    WoonMatchScalar(criteria.bedrooms, 'Minimum slaapkamers', 100, true),
+    WoonMatchScalar(criteria.commute, 'Maximum reistijd', 10000, true)
+  ].filter(Boolean) as string[];
+  const fieldErrors = listings.flatMap((row, index) => [
+    !row.name.trim() ? 'Optie ' + (index + 1) + ': vul een herkenbare titel in.' : null,
+    WoonMatchScalar(row.monthlyRent, 'Optie ' + (index + 1) + ': kale huur', 100000, true),
+    WoonMatchScalar(row.utilities, 'Optie ' + (index + 1) + ': extra maandlasten', 100000, true),
+    WoonMatchScalar(row.area, 'Optie ' + (index + 1) + ': oppervlak', 100000, true),
+    WoonMatchScalar(row.bedrooms, 'Optie ' + (index + 1) + ': slaapkamers', 100, true),
+    WoonMatchScalar(row.commute, 'Optie ' + (index + 1) + ': reistijd', 10000, true)
+  ].filter(Boolean)) as string[];
+  const canCompare = criteriaErrors.length === 0 && fieldErrors.length === 0;
+  const ordered = [...outcomes].sort((a, b) =>
+    Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) ||
+    woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
+    a.listing.id - b.listing.id);
+  // Scenario is deliberately transient: an old source snapshot cannot change or authorize the real comparison.
+  const whatIfCurrent = !!whatIf && whatIf.source === currentSource && canCompare;
+  const whatIfErrors = !whatIf ? [] : ([
+    WoonMatchScalar(whatIf.limits.budget, 'Scenario: maximale maandlasten', 100000, true),
+    WoonMatchScalar(whatIf.limits.area, 'Scenario: minimaal oppervlak', 100000, true),
+    WoonMatchScalar(whatIf.limits.bedrooms, 'Scenario: slaapkamers', 100, true),
+    WoonMatchScalar(whatIf.limits.commute, 'Scenario: reistijd', 10000, true)
+  ].filter(Boolean) as string[]);
+  const scenarioOrdered = whatIfCurrent && whatIfErrors.length === 0
+    ? listings.map(item => WoonMatchCalculate(item, whatIf!.limits, weights)).sort((a, b) =>
+        Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) ||
+        woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
+        a.listing.id - b.listing.id)
+    : [];
+  // A separate, explicitly hypothetical plain-text export. This never
+  // authorizes or mutates original listings, budgets, other transfers or backups.
+  const scenarioKey = JSON.stringify({
+    source: currentSource,
+    version: scenarioGeneration.current,
+    limits: whatIf?.limits
+  });
+  const buildScenarioReport = (): string => {
+    if (!whatIfCurrent || whatIfErrors.length > 0) return '';
+    const lines = [
+      'WOONPOINTS — MIJN HYPOTHETISCHE WONINGVERGELIJKING',
+      'GEEN WONINGADVIES, GEEN TOEWIJZINGSKANS OF OFFICIËLE BESLISSING',
+      'Alle waarden en grenzen zijn uitsluitend door mijzelf ingevuld.',
+      'Dit is een wat-als-scenario: geen van mijn oorspronkelijke gegevens is gewijzigd.',
+      '',
+      'MIJN OORSPRONKELIJKE GRENZEN',
+      'Maandkosten max.: € ' + criteria.budget,
+      'Woonoppervlak min.: ' + criteria.area + ' m²',
+      'Slaapkamers min.: ' + criteria.bedrooms,
+      'Reistijd enkele reis max.: ' + criteria.commute + ' min',
+      '',
+      'MIJN HYPOTHETISCHE GRENZEN',
+      'Maandkosten max.: € ' + whatIf!.limits.budget,
+      'Woonoppervlak min.: ' + whatIf!.limits.area + ' m²',
+      'Slaapkamers min.: ' + whatIf!.limits.bedrooms,
+      'Reistijd enkele reis max.: ' + whatIf!.limits.commute + ' min',
+      '',
+      'MIJN WEGENDE PRIORITEITEN (ONVERANDERD)',
+      'Maandkosten: ' + weights.budget + ', oppervlak: ' + weights.area +
+        ', slaapkamers: ' + weights.bedrooms + ', reistijd: ' + weights.commute,
+      '',
+      'VOLLEDIG PASSEND VOLGENS AL MIJN VIER EIGEN GRENZEN',
+      'Origineel: ' + ordered.filter(row => row.pass).length + '/' + ordered.length,
+      'Hypothetisch: ' + scenarioOrdered.filter(row => row.pass).length + '/' + scenarioOrdered.length,
+      '',
+      'RANGSCHIKKING BIJ DE HYPOTHETISCHE GRENZEN'
+    ];
+    scenarioOrdered.forEach((row, index) => {
+      const originalIndex = ordered.findIndex(item => item.listing.id === row.listing.id);
+      const original = ordered[originalIndex];
+      lines.push(
+        String(index + 1) + '. ' + row.listing.name,
+        'Oorspronkelijke plek: ' + (originalIndex + 1) +
+          '; hypothetische plek: ' + (index + 1),
+        'Oorspronkelijke score: ' + original.score + '% (' + original.met +
+          '/4); hypothetische score: ' + row.score + '% (' + row.met + '/4)',
+        'Harde grenzen hypothetisch: ' + (row.pass ? 'alle vier gehaald' : 'NIET alle vier gehaald')
+      );
+      row.rules.filter(rule => rule.met === false).forEach(rule => {
+        lines.push('Niet gehaald: ' + rule.label + ' — ' +
+          (WoonMatchGap(rule) || 'afwijking ten opzichte van eigen grens'));
+      });
+      lines.push('');
+    });
+    lines.push(
+      'De scores zijn uitsluitend afgeleide eigen criteria; geen broncontrole of toewijzingsbewijs.',
+      'Dit TXT-document bevat eigen woninglabels. Deel het alleen bewust.',
+      'Alle scenario-waarden zijn tijdelijk; de oorspronkelijke JSON/TXT en overdrachten blijven ongewijzigd.'
+    );
+    return lines.join('\n') + '\n';
+  };
+  const scenarioPreviewValid = !!scenarioReportPreview && whatIfCurrent &&
+    whatIfErrors.length === 0 && scenarioReportPreview.source === scenarioKey &&
+    scenarioReportPreview.text === buildScenarioReport();
+  const downloadScenarioReport = () => {
+    if (!scenarioPreviewValid || !scenarioReportApproved || !scenarioReportPreview) return;
+    const url = URL.createObjectURL(new Blob([scenarioReportPreview.text], {
+      type: 'text/plain;charset=utf-8'
+    }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woonpoints-eigen-wat-als-vergelijking.txt';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const previewValid = showPreview?.source === currentSource && canCompare;
+  const rentalHandoffValid = !!rentalHandoff && rentalHandoff.source === currentSource &&
+    canCompare && !!onRentalPrefill &&
+    ordered.some(item => item.listing.id === rentalHandoff.id &&
+      item.listing.name === rentalHandoff.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent) === rentalHandoff.rent &&
+      item.monthly === rentalHandoff.monthly &&
+      item.pass === rentalHandoff.allOwnCriteriaMet &&
+      item.score === rentalHandoff.score);
+  const costHandoffValid = !!costHandoff && costHandoff.source === currentSource && canCompare &&
+    !!onCostPrefill && costHandoff.first.listing.id !== costHandoff.second.listing.id &&
+    ordered.some(item=>item.listing.id===costHandoff.first.listing.id &&
+      item.listing.name===costHandoff.pair.first.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.first.rent) &&
+    ordered.some(item=>item.listing.id===costHandoff.second.listing.id &&
+      item.listing.name===costHandoff.pair.second.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.second.rent);
+  const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
+
+  const appendCsvReason = !pendingCsvValid || !pendingCsv ? '' :
+    listings.length + pendingCsv.rows.length > 5
+      ? 'Toevoegen kan niet: je hebt samen meer dan vijf woningen; kies vervangen of verwijder eerst opties.'
+      : (() => {
+          const existingNames = listings.map(row => row.name.trim().toLocaleLowerCase('nl-NL'));
+          if (existingNames.some(name => !name) || new Set(existingNames).size !== existingNames.length)
+            return 'Toevoegen kan pas als alle bestaande opties een uniek, niet-leeg label hebben.';
+          if (pendingCsv.rows.some(row => existingNames.includes(row.name.trim().toLocaleLowerCase('nl-NL'))))
+            return 'Een toegevoegd label bestaat al in jouw huidige lijst. Geef de opties eerst unieke labels.';
+          return '';
+        })();
+
+  const csvExport = woonMatchEncodeCsv(listings);
+  const csvExportValid = !!csvExportPreview && csvExportPreview.source === currentSource &&
+    !csvExport.error && csvExportPreview.text === csvExport.text;
+  const downloadOwnCsv = () => {
+    if (!csvExportValid || !csvExportApproved || !csvExportPreview) return;
+    const url = URL.createObjectURL(new Blob([csvExportPreview.text], { type: 'text/csv;charset=utf-8' }));
+    const element = document.createElement('a');
+    element.href = url;
+    element.download = 'woonpoints-eigen-woninglijst.csv';
+    document.body.appendChild(element);
+    element.click();
+    element.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+
+  // Reading is explicitly local and never accepts a document as a saved
+  // listing. The pasted-content preview plus append/replace consent still apply.
+  const openPrivateCsvFile = async (file: File | undefined) => {
+    const serial = ++csvFileRead.current;
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvFileMessage('');
+    if (!file) return;
+    if (file.size > 4096) {
+      setCsvFileMessage('Bestand geweigerd: maximaal 4 KiB UTF-8-tekst.');
+      return;
+    }
+    try {
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      if (serial !== csvFileRead.current) return;
+      const result = parsePrivateMatchCsv(decoded, 1);
+      if (result.error) {
+        setCsvFileMessage('Bestand geweigerd: ' + result.error + ' Je bestaande invoer blijft staan.');
+        return;
+      }
+      setCsvText(decoded);
+      setCsvError('');
+      setCsvFileMessage('Eigen bestand lokaal geopend: ' + result.rows.length +
+        ' woningoptie(s). Bekijk alle regels hieronder en bevestig toevoegen of vervangen afzonderlijk.');
+    } catch {
+      if (serial === csvFileRead.current) {
+        setCsvFileMessage('Bestand niet leesbaar als geldige UTF-8. Je invoer bleef ongewijzigd.');
+      }
+    }
+  };
+
+  const previewPastedCsv = () => {
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    const result = parsePrivateMatchCsv(csvText, 1);
+    setPendingCsv(result.error ? null : { rows: result.rows, source: currentSource, paste: csvText });
+    setCsvError(result.error);
+  };
+  const acceptPastedCsv = () => {
+    if (!pendingCsvValid || !confirmCsv || !pendingCsv || pendingCsv.rows.length < 2) return;
+    const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
+    setUndoRestore(null);
+    setUndoCsv(listings.map(item => ({ ...item })));
+    setListings(imported);
+    setCsvText('');
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvError('Eigen woningopties vervangen. Vorige opties kun je één keer herstellen.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
+
+  const appendPastedCsv = () => {
+    if (!pendingCsvValid || !confirmCsvAppend || !pendingCsv || appendCsvReason) return;
+    const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
+    setUndoRestore(null);
+    setUndoCsv(listings.map(item => ({ ...item })));
+    setListings([...listings, ...imported]);
+    setCsvText('');
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvError('Nieuwe eigen opties toegevoegd; bestaande opties behouden. Je kunt de toevoeging één keer terugdraaien.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
+  const undoPastedCsv = () => {
+    if (!undoCsv) return;
+    setUndoRestore(null);
+    setListings(undoCsv);
+    setUndoCsv(null);
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvError('Vorige woningopties in dit tabblad teruggezet.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
+
+  const downloadBackup = () => {
+    if (!backupExportApproved || !backupPreviewValid || !backupPreview) return;
+    const url = URL.createObjectURL(new Blob([backupPreview.text], { type: 'application/json;charset=utf-8' }));
+    const element = document.createElement('a');
+    element.href = url;
+    element.download = 'woonpoints-prive-woningmatch-v2.json';
+    document.body.appendChild(element);
+    element.click();
+    element.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+  const openBackupFile = async (file: File | undefined) => {
+    const read = ++backupRead.current;
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('');
+    if (!file) return;
+    if (file.size > WOON_MATCH_BACKUP_LIMIT) {
+      setRestoreMessage('Bestand geweigerd: groter dan 12 KiB.');
+      return;
+    }
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      if (read !== backupRead.current) return;
+      const result = woonMatchDecodeBackup(text);
+      if (!result.data) {
+        setRestoreMessage(result.error);
+        return;
+      }
+      setPendingRestore({ source: currentSource, data: result.data, label: file.name.slice(0, 100) });
+    } catch {
+      if (read === backupRead.current) setRestoreMessage('Bestand niet leesbaar of niet geldig UTF-8.');
+    }
+  };
+  const applyRestore = () => {
+    if (!pendingRestore || !restoreApproved || !restorePreviewValid) return;
+    const copy = pendingRestore.data;
+    setUndoRestore({
+      criteria: { ...criteria }, weights: { ...weights }, preference, listings: listings.map(item => ({ ...item }))
+    });
+    setCriteria({ ...copy.criteria });
+    setWeights({ ...copy.weights });
+    setPreference(copy.preference);
+    setListings(copy.listings.map(item => ({ ...item, id: nextId.current++ })));
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('De gekozen back-up is tijdelijk geopend. Je kunt de vorige sessie één keer terugzetten.');
+    setUndoCsv(null);
+    setCsvText('');
+    setShowPreview(null);
+    setBackupPreview(null);
+    setBackupExportApproved(false);
+    setAllowDownload(false);
+  };
+  const revertRestore = () => {
+    if (!undoRestore) return;
+    setCriteria(undoRestore.criteria);
+    setWeights(undoRestore.weights);
+    setPreference(undoRestore.preference);
+    setListings(undoRestore.listings);
+    setUndoRestore(null);
+    setPendingRestore(null);
+    setRestoreApproved(false);
+    setRestoreMessage('Vorige invoer teruggezet.');
+    setShowPreview(null);
+    setBackupPreview(null);
+    setBackupExportApproved(false);
+    setAllowDownload(false);
+  };
+
+  const previewCostPair = () => {
+    setCostApproved(false);setCostMessage('');
+    const first=ordered.find(item=>item.listing.id===firstCostId);
+    const second=ordered.find(item=>item.listing.id===secondCostId);
+    if(!onCostPrefill||!canCompare||!first||!second||first.listing.id===second.listing.id||
+      !woonMatchHandoffLabel(first.listing.name)||!woonMatchHandoffLabel(second.listing.name)||
+      first.listing.name===second.listing.name){
+      setCostHandoff(null);
+      setCostMessage('Kies twee verschillende woningen met unieke labels van maximaal 64 tekens.');
+      return;
+    }
+    const rentA=woonMatchHandoffRent(first.listing.monthlyRent);
+    const rentB=woonMatchHandoffRent(second.listing.monthlyRent);
+    if(rentA===null||rentB===null){
+      setCostHandoff(null);
+      setCostMessage('Voor de kostenvergelijker moeten beide kale huurbedragen hele eurobedragen tussen €100 en €10.000 zijn. Afronden gebeurt niet automatisch.');
+      return;
+    }
+    setCostHandoff({source:currentSource,first,second,pair:{
+      first:{label:first.listing.name,rent:rentA},
+      second:{label:second.listing.name,rent:rentB}
+    }});
+  };
+  const acceptCostPair = () => {
+    if(!costHandoffValid||!costHandoff||!costApproved||!onCostPrefill)return;
+    onCostPrefill({
+      first:{...costHandoff.pair.first},second:{...costHandoff.pair.second}
+    });
+    setCostHandoff(null);setCostApproved(false);
+    setCostMessage('Twee kale huren als momentopname aangeboden. Ga naar de bestaande kostenvergelijker en bevestig daar opnieuw vóór overschrijven.');
+  };
+  const previewRentalHandoff = (item: WoonMatchOutcome) => {
+    setRentalApproved(false);
+    setRentalMessage('');
+    const rent = woonMatchHandoffRent(item.listing.monthlyRent);
+    if (!canCompare || !onRentalPrefill || !woonMatchHandoffLabel(item.listing.name) ||
+      rent === null || item.monthly === null || item.score === null) {
+      setRentalHandoff(null);
+      setRentalMessage('Dit woninglabel of de kale huur is niet geldig voor de huurvoorstellendesk. Gebruik een label van 1–64 tekens en een hele kale maandhuur tussen €100 en €10.000.');
+      return;
+    }
+    setRentalHandoff({
+      id: item.listing.id, source: currentSource,
+      label: item.listing.name, rent, monthly: item.monthly,
+      allOwnCriteriaMet: item.pass, score: item.score
+    });
+  };
+  const acceptRentalHandoff = () => {
+    if (!rentalHandoffValid || !rentalApproved || !rentalHandoff || !onRentalPrefill) return;
+    onRentalPrefill({label:rentalHandoff.label,rent:rentalHandoff.rent});
+    setRentalHandoff(null);
+    setRentalApproved(false);
+    setRentalMessage('Alleen jouw label en kale huur staan klaar bij Huurvoorstellen. Daar moet je opnieuw bevestigen, ontbrekende kosten invullen en het voorstel zelf bewaren.');
+  };
+
+  const makeReport = (): string => {
+    const lines = [
+      'WOONPOINTS · PRIVÉ WONINGVERGELIJKING', 'Eigen invoer; geen WoningNet-gegevens of officieel match-/toewijzingsadvies.',
+      '', 'EIGEN GRENZEN',
+      'Maximale maandkosten: ' + criteria.budget + ' EUR; minimaal oppervlak: ' + criteria.area + ' m²;',
+      'Minimaal slaapkamers: ' + criteria.bedrooms + '; maximaal enkele-reisminuten: ' + criteria.commute,
+      'Zelf gekozen relatieve wegingspunten (1=licht, 5=zwaar): ' +
+        WOON_MATCH_PRIORITY_LABELS.map(entry => entry.label + ' ' + weights[entry.key]).join('; '),
+      'Persoonlijke toewijzingsmethodevoorkeur: ' + WOON_MATCH_PREFERENCE_LABELS[preference] +
+        ' (geen officiële aanbiedings- of toewijzingskans)',
+      '', 'ZELF INGEVOERDE OPTIES (GEEN GECONTROLEERDE ADVERTENTIES)'
+    ];
+    ordered.forEach((item, index) => {
+      lines.push('', String(index + 1) + '. ' + item.listing.name);
+      lines.push('Indicatieve eigen totale maandkosten: ' + (item.monthly === null ? 'Onbekend' : WoonMatchMoney(item.monthly)));
+      lines.push('Zelf ingevulde toewijzingsmethode: ' + WOON_MATCH_METHOD_LABELS[item.listing.allocation] +
+        (preference === 'any' ? '' : ' · ' + (item.listing.allocation === 'unknown' ? 'methode niet geverifieerd' :
+          item.listing.allocation === preference ? 'past bij eigen methodevoorkeur' : 'andere methode dan eigen voorkeur')));
+      lines.push('Eigen voorwaarden: ' + (item.pass ? 'Alle vier gehaald' : 'Een of meer niet gehaald') +
+        ' · gewogen indicatie ' + (item.score === null ? 'onvolledig' : item.score + '%') + ' (geen toewijzingskans)');
+      item.rules.forEach(rule => lines.push(' - ' + rule.label + ': ' + (rule.met === null ? 'onbekend' : rule.met ? 'voldoet' : 'voldoet niet') +
+        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')' + (WoonMatchGap(rule) ? ' · verschil: ' + WoonMatchGap(rule) : '')));
+      if (item.listing.note.trim()) lines.push('Eigen notitie: ' + item.listing.note.trim());
+    });
+    lines.push('', 'Alleen eigen getallen en notities. Niet gebruiken als bewijs van woninggeschiktheid, identiteit, inkomen of reservering.',
+      'Er is niets verzonden, bewaard op een server of bij WoningNet geplaatst.');
+    return lines.join('\n') + '\n';
+  };
+  const download = () => {
+    if (!allowDownload || !previewValid || !showPreview) return;
+    const blob = new Blob([showPreview.text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'woonpoints-prive-woningvergelijking.txt';
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+  return (
+    <div style={{ maxWidth: 1000, padding: '24px 18px 80px', margin: 'auto', color: '#16342f', fontFamily: 'system-ui, sans-serif', lineHeight: 1.55 }}>
+      <a href="#housing-shortlist-heading" style={{ color: '#075e57' }}>← Naar woningen vergelijken</a>
+      <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2.2rem)', marginBottom: 8 }}>Mijn woningmatch · privé vergelijker</h2>
+      <p>Vergelijk twee tot vijf <strong>zelf ingevulde</strong> woningopties met vier persoonlijke grenzen. De score is alleen een
+        gewogen uitleg van jouw criteria, <strong>geen officiële matchkans, woningcheck of verhuurdersbeslissing</strong>.</p>
+      <p style={{ borderLeft: '4px solid #0b7669', paddingLeft: 12 }}>Alle gegevens blijven in dit browsertabblad. Geen accountkoppeling,
+        tracking, WoningNet-login, woningreactie, automatische opslag of netwerkverzoek door deze vergelijker.</p>
+
+      <section aria-labelledby="criteria-heading" style={WoonMatchPanelStyle}>
+        <h2 id="criteria-heading">1. Stel je eigen grenzen in</h2>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+          <WoonMatchField label="Max. maandkosten (€)" value={criteria.budget} setValue={v => changeCriteria('budget', v)} placeholder="Bijv. 1050" />
+          <WoonMatchField label="Min. woonoppervlak (m²)" value={criteria.area} setValue={v => changeCriteria('area', v)} placeholder="Bijv. 55" />
+          <WoonMatchField label="Min. slaapkamers" value={criteria.bedrooms} setValue={v => changeCriteria('bedrooms', v)} placeholder="Bijv. 1" />
+          <WoonMatchField label="Max. enkele-reisminuten" value={criteria.commute} setValue={v => changeCriteria('commute', v)} placeholder="Bijv. 45" />
+        </div>
+        <fieldset style={{ marginTop: 20, border: '1px solid #c1d7d0', borderRadius: 9, padding: 12 }}>
+          <legend style={{ fontWeight: 700 }}>Wat telt voor mij het zwaarst?</legend>
+          <p style={{ marginTop: 0, fontSize: 14 }}>Stel per criterium een gewicht van 1 (licht) tot 5 (zwaar) in.
+            Alle vier eigen grenzen blijven harde voorwaarden, ook als een gewicht laag is.
+            Startwaarden: geld 4, oppervlak 3, slaapkamers 2, reistijd 2.</p>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+            {WOON_MATCH_PRIORITY_LABELS.map(entry => <label key={entry.key} style={{ display: 'block', fontWeight: 650, fontSize: 14 }}>
+              <span style={{ display: 'block', marginBottom: 5 }}>{entry.label}</span>
+              <select style={WoonMatchInputStyle} value={weights[entry.key]} onChange={event => {
+                const next = Number(event.currentTarget.value);
+                if (Number.isInteger(next) && next >= 1 && next <= 5) {
+                  setUndoRestore(null);
+                  setWeights(prev => ({ ...prev, [entry.key]: next }));
+                }
+              }}>
+                {[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>
+                  {value} — {value === 1 ? 'licht' : value === 5 ? 'zwaar' : 'gemiddeld'}
+                </option>)}
+              </select>
+            </label>)}
+          </div>
+          <button type="button" style={{ marginTop: 12 }} onClick={() => { setUndoRestore(null); setWeights({ ...WOON_MATCH_DEFAULT_WEIGHTS }); }}>
+            Herstel startweging
+          </button>
+        </fieldset>
+        <label style={{ display: 'block', marginTop: 16, fontWeight: 700 }}>
+          Mijn persoonlijke voorkeur voor toewijzingsmethode
+          <select style={{ ...WoonMatchInputStyle, marginTop: 6 }} value={preference}
+            onChange={event => { setUndoRestore(null); setPreference(event.target.value as WoonMatchPreference); }}>
+            <option value="any">Geen methodevoorkeur</option>
+            <option value="lottery">Loting</option>
+            <option value="queue">Inschrijfduur</option>
+          </select>
+        </label>
+        <p style={{ fontSize: 14 }}>Alleen je eigen inschatting: Woonpoints haalt geen WoningNet-advertenties,
+          scores of officiële toewijzingskansen op. Methodevoorkeur is alleen een zichtbare sortering
+          bij een <strong>gelijke eigen criteriascore</strong> en kan geen onvoldoende harde grens verbergen.</p>
+        <p style={{ marginBottom: 0, fontSize: 14 }}>De expliciete gewichten bepalen alleen de indicatieve
+          percentages en de volgorde van woningen die niet aan alle voorwaarden voldoen.
+          Niets hiervan is een voorspelling van woningtoewijzing.</p>
+      </section>
+
+      <section aria-labelledby="options-heading">
+        <h2 id="options-heading">2. Vul je opties in</h2>
+        {listings.map((row, index) => (
+          <article key={row.id} style={WoonMatchPanelStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'start' }}>
+              <h3 style={{ marginTop: 0 }}>Optie {index + 1}</h3>
+              <button type="button" disabled={listings.length <= 2} onClick={() => { setUndoRestore(null); setUndoCsv(null); setListings(prev => prev.filter(item => item.id !== row.id)); }}>Verwijder</button>
+            </div>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+              <WoonMatchField label="Naam of eigen label (zonder adres)" value={row.name} setValue={v => changeListing(row.id, 'name', v)} maxLength={80} placeholder="Woning A" />
+              <WoonMatchField label="Kale maandhuur (€)" value={row.monthlyRent} setValue={v => changeListing(row.id, 'monthlyRent', v)} placeholder="820" />
+              <WoonMatchField label="Overige maandlasten (€)" value={row.utilities} setValue={v => changeListing(row.id, 'utilities', v)} placeholder="230,50" />
+              <WoonMatchField label="Woonoppervlak (m²)" value={row.area} setValue={v => changeListing(row.id, 'area', v)} placeholder="62" />
+              <WoonMatchField label="Slaapkamers" value={row.bedrooms} setValue={v => changeListing(row.id, 'bedrooms', v)} placeholder="2" />
+              <WoonMatchField label="Reistijd enkele reis (min)" value={row.commute} setValue={v => changeListing(row.id, 'commute', v)} placeholder="32" />
+              <label style={{ fontSize: 14, fontWeight: 650 }}>Zelf genoteerde methode
+                <select style={{ ...WoonMatchInputStyle, marginTop: 6 }} value={row.allocation}
+                  onChange={event => changeListing(row.id, 'allocation', event.target.value as WoonMatchAllocation)}>
+                  <option value="unknown">Onbekend / nog controleren</option>
+                  <option value="lottery">Loting — eigen notitie</option>
+                  <option value="queue">Inschrijfduur — eigen notitie</option>
+                </select>
+              </label>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <WoonMatchField label="Eigen notitie (maximaal 200 tekens; geen privé-adres)" value={row.note} setValue={v => changeListing(row.id, 'note', v)} maxLength={200} placeholder="Bijvoorbeeld: eerst bellen voor bezichtiging" />
+            </div>
+          </article>
+        ))}
+        <button type="button" disabled={listings.length >= 5} onClick={() => { setUndoRestore(null); setUndoCsv(null); setListings(prev => [...prev, WoonMatchBlank(nextId.current++)]); }}
+          style={{ padding: '10px 16px', border: '1px solid #075e57', borderRadius: 7, background: '#f2faf7' }}>
+          + Woningoptie toevoegen ({listings.length}/5)
+        </button>
+      </section>
+
+      <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="csv-intake-heading">
+        <h2 id="csv-intake-heading">Optioneel: eigen woninglijst plakken of lokaal openen</h2>
+        <p>Gebruik een zelf gemaakt, puntkomma-gescheiden tekstlijstje. Maximaal 4 KiB; één tot vijf bij toevoegen, twee tot vijf bij vervangen;
+          kolommen en volgorde liggen vast. Dit is geen advertentie-import, linkbezoek of accountkoppeling.
+          <strong> Kies liever eigen labels dan adressen.</strong></p>
+        <p><code style={{ overflowWrap: 'anywhere' }}>{WOON_MATCH_CSV_HEADER}</code></p>
+        <label style={{ display: 'block', margin: '12px 0', fontWeight: 650 }}>
+          Open mijn eigen CSV-bestand op dit apparaat (max. 4 KiB, UTF-8)
+          <input type="file" accept=".csv,text/csv,text/plain" style={{ display: 'block', marginTop: 8 }}
+            onChange={event => {
+              const selected = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void openPrivateCsvFile(selected);
+            }} />
+        </label>
+        <p style={{ fontSize: 13 }}>
+          Alleen lokale bestandslezing in dit tabblad; niets wordt verzonden of opgeslagen.
+          Een geldig bestand vult uitsluitend onderstaande bewerkbare tekst in.
+          Daarna moet je zelf alle regels bekijken en apart bevestigen of je toevoegt of vervangt.
+          Kies bij voorkeur labels zonder straatadres of andere persoonlijke gegevens.
+        </p>
+        {csvFileMessage && <p role="status">{csvFileMessage}</p>}
+        <label style={{ display: 'block', fontWeight: 650 }} htmlFor="woonmatch-paste">Eigen tekst (één woning per regel)</label>
+        <textarea id="woonmatch-paste" rows={5} maxLength={4096} value={csvText}
+          onChange={event => { csvFileRead.current += 1; setCsvFileMessage(''); setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setConfirmCsvAppend(false); setCsvError(''); }}
+          placeholder={'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie\nWoning A;800;190;60;1;30;zelf bekijken\nWoning B;880;210;75;2;45;'}
+          style={{ ...WoonMatchInputStyle, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} />
+        <div style={{ marginTop: 10 }}>
+          <button type="button" onClick={previewPastedCsv}>Bekijk alle eigen woningopties vóór toevoegen of vervangen</button>
+        </div>
+        {csvError && <p role="status">{csvError}</p>}
+        {pendingCsv && !pendingCsvValid && <p role="status">De preview is vervallen omdat de invoer of woninglijst veranderde.</p>}
+        {pendingCsv && pendingCsvValid && <>
+          <h3>Voorbeeld — kies bewust vervangen of toevoegen</h3>
+          <p>Je huidige {listings.length} opties veranderen pas bij afzonderlijke bevestiging van één van beide handelingen.</p>
+          <p>Vanuit deze zeven-koloms tekst kan geen betrouwbare toewijzingsmethode worden afgeleid.
+            Voor alle geplakte woningen wordt die daarom op <strong>Onbekend</strong> gezet.</p>
+          <ol>{pendingCsv.rows.map((row, index) => <li key={index}>
+            {row.name} · kale huur € {row.monthlyRent}, overige maandlasten € {row.utilities},
+            {' '}{row.area} m², {row.bedrooms} slaapkamers, {row.commute} minuten;
+            {' '}{row.note || 'geen notitie'}
+          </li>)}</ol>
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            <input type="checkbox" checked={confirmCsv} onChange={event => setConfirmCsv(event.target.checked)} />
+            {' '}Ik heb alle regels bekeken; vervang alleen mijn huidige tijdelijke opties in dit tabblad.
+          </label>
+          {pendingCsv.rows.length < 2 && <p role="status">Volledig vervangen kan alleen met minimaal twee regels. Eén regel kun je wel toevoegen aan je huidige lijst.</p>}
+          <button type="button" disabled={!confirmCsv || pendingCsv.rows.length < 2} onClick={acceptPastedCsv}>Vervang met deze bekeken opties</button>
+
+          <div style={{ marginTop: 18, borderTop: '1px solid #ccdcd7', paddingTop: 12 }}>
+            <h4>Of: veilig toevoegen zonder bestaande woningen te vervangen</h4>
+            {appendCsvReason ? <p role="status">{appendCsvReason}</p> : <p>
+              Voorbeeld: {listings.length} bestaande + {pendingCsv.rows.length} nieuwe =
+              {' '}{listings.length + pendingCsv.rows.length} afzonderlijke woningopties.
+              Je huidige criteria, prioriteiten, methoden en notities blijven behouden;
+              uitsluitend nieuwe opties krijgen methode <strong>Onbekend</strong>.
+            </p>}
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <input type="checkbox" disabled={!!appendCsvReason} checked={confirmCsvAppend}
+                onChange={event => setConfirmCsvAppend(event.target.checked)} />
+              {' '}Ik wil deze bekeken {pendingCsv.rows.length} unieke opties toevoegen zonder
+              iets te overschrijven; ik behoud alle bestaande opties.
+            </label>
+            <button type="button" disabled={!!appendCsvReason || !confirmCsvAppend}
+              onClick={appendPastedCsv}>Voeg deze bekeken opties toe</button>
+          </div>
+        </>}
+        {undoCsv && <p><button type="button" onClick={undoPastedCsv}>
+          Draai de laatste CSV-vervanging of -toevoeging één keer terug
+        </button></p>}
+
+        <div style={{ borderTop: '1px solid #ccdcd7', marginTop: 22, paddingTop: 16 }}>
+          <h3>Mijn zevenkoloms woninglijst zelf exporteren</h3>
+          <p>Maak van je <strong>eigen</strong> twee tot vijf opties hetzelfde puntkommaformaat als hierboven.
+            Bekijk de volledige tekst en geef apart toestemming vóór lokaal downloaden.
+            <strong> Dit compacte formaat bevat geen toewijzingsmethode, methodevoorkeur,
+              prioriteiten of persoonlijke grenzen.</strong> Bij opnieuw plakken is iedere methode
+            daarom weer <em>Onbekend</em>. Gebruik de volledige JSON-back-up hieronder
+            om ook deze gegevens te behouden.</p>
+          {csvExport.error ? <p role="status">{csvExport.error}</p> : null}
+          <button type="button" disabled={!!csvExport.error} onClick={() => {
+            setCsvExportPreview({ source: currentSource, text: csvExport.text });
+            setCsvExportApproved(false);
+          }}>Bekijk volledige eigen CSV vóór downloaden</button>
+          {csvExportPreview && !csvExportValid && <p role="status">
+            De CSV-preview is ongeldig geworden doordat je brongegevens veranderd zijn.
+            Bekijk de actuele woninglijst opnieuw.
+          </p>}
+          {csvExportValid && csvExportPreview && <div style={{ marginTop: 12 }}>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240,
+              overflow: 'auto', padding: 14, background: '#f2faf7', borderRadius: 8 }}>{csvExportPreview.text}</pre>
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <input type="checkbox" checked={csvExportApproved}
+                onChange={event => setCsvExportApproved(event.target.checked)} />
+              {' '}Ik heb alle zeven kolommen en het verlies van methodegegevens bekeken.
+              Ik wil deze privétekst zelf lokaal bewaren.
+            </label>
+            <button type="button" disabled={!csvExportApproved} onClick={downloadOwnCsv}>
+              Download deze bekeken CSV
+            </button>
+          </div>}
+        </div>
+      </section>
+
+      <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="result-heading">
+        <h2 id="result-heading">3. Mijn uitlegbare vergelijking</h2>
+        {!canCompare ? (
+          <div role="status">
+            <p>De vergelijking verschijnt pas wanneer alle vier criteria en alle verplichte gegevens van iedere optie geldig zijn.
+              Blanco/ongeldige velden tellen niet als nul of als een goede match.</p>
+            <ul>{[...criteriaErrors, ...fieldErrors].slice(0, 25).map((error, index) => <li key={index}>{error}</li>)}</ul>
+          </div>
+        ) : (
+          <div aria-live="polite">
+            <p>Gerangschikt op het behalen van <strong>alle vier</strong> eigen voorwaarden, daarna op gewogen criteria
+              en pas bij gelijke score op je <strong>eigen methodevoorkeur</strong>.
+              Onbekende toewijzingsmethode blijft expliciet onbekend; dit is geen woningtoewijzingskans.</p>
+            {ordered.map((outcome, index) => (
+              <article key={outcome.listing.id} style={{ borderTop: '1px solid #ccdcd7', padding: '12px 0' }}>
+                <h3 style={{ marginBottom: 4 }}>{index + 1}. {outcome.listing.name}</h3>
+                <strong>{outcome.pass ? 'Alle 4 eigen grenzen gehaald' : outcome.met + ' van 4 grenzen gehaald'}</strong>
+                <p style={{ marginTop: 4 }}>Gewogen criteriascore: {outcome.score}% · Geschatte maandlasten: {outcome.monthly === null ? 'Onbekend' : WoonMatchMoney(outcome.monthly)}</p>
+                <p>Zelf ingevulde methode: <strong>{WOON_MATCH_METHOD_LABELS[outcome.listing.allocation]}</strong>.
+                  {preference === 'any' ? ' Geen specifieke methodevoorkeur.' :
+                    outcome.listing.allocation === 'unknown' ? ' Methode nog niet vastgesteld.' :
+                    outcome.listing.allocation === preference ? ' Past bij je methodevoorkeur.' : ' Wijkt af van je methodevoorkeur.'}
+                </p>
+                <ul>{outcome.rules.map(rule => <li key={rule.label}>
+                  {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight}){WoonMatchGap(rule) ? <> — <strong>Verschil: {WoonMatchGap(rule)}</strong></> : null}
+                </li>)}</ul>
+                <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:10}}>
+                  <button type="button" onClick={()=>{
+                    setFirstCostId(outcome.listing.id);
+                    if(secondCostId===outcome.listing.id)setSecondCostId(null);
+                    setCostHandoff(null);setCostApproved(false);
+                  }} aria-pressed={firstCostId===outcome.listing.id}>
+                    {firstCostId===outcome.listing.id?'✓ Als kostenwoning A':'Kies als kostenwoning A'}
+                  </button>
+                  <button type="button" onClick={()=>{
+                    setSecondCostId(outcome.listing.id);
+                    if(firstCostId===outcome.listing.id)setFirstCostId(null);
+                    setCostHandoff(null);setCostApproved(false);
+                  }} aria-pressed={secondCostId===outcome.listing.id}>
+                    {secondCostId===outcome.listing.id?'✓ Als kostenwoning B':'Kies als kostenwoning B'}
+                  </button>
+                </div>
+                <button type="button" disabled={!onRentalPrefill}
+                  onClick={() => previewRentalHandoff(outcome)}
+                  style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #1b6c5f' }}>
+                  Bekijk overname naar eigen huurvoorstel…
+                </button>
+                {!woonMatchHandoffLabel(outcome.listing.name) ||
+                 woonMatchHandoffRent(outcome.listing.monthlyRent) === null ?
+                  <p style={{fontSize:13}}>Voor de huurdesk is een label van 1–64 tekens en een hele kale huur
+                    van €100–€10.000 vereist. De woning blijft wel in deze vergelijking staan.</p> : null}
+              </article>
+            ))}
+            <section aria-labelledby="woonmatch-cost-pair-title"
+              style={{borderTop:'1px solid #ccdcd7',padding:'14px 0'}}>
+              <h3 id="woonmatch-cost-pair-title">Twee woningmatches naar de echte kostenvergelijking</h3>
+              <p>Kies hierboven bewust één optie als <strong>A</strong> en een andere als <strong>B</strong>.
+                Bekijk ze samen voordat je alleen de twee zelf genoteerde labels en <strong>kale huren</strong>
+                als onopgeslagen voorstel aan de kostenvergelijker doorgeeft. Service, energie,
+                vervoer en startkosten worden daar <strong>niet</strong> overgenomen of geraden.</p>
+              <p>Geselecteerd: A — {ordered.find(x=>x.listing.id===firstCostId)?.listing.name||'nog niet gekozen'}
+                {' '}· B — {ordered.find(x=>x.listing.id===secondCostId)?.listing.name||'nog niet gekozen'}</p>
+              <button type="button" disabled={!onCostPrefill||firstCostId===null||secondCostId===null}
+                onClick={previewCostPair}>Bekijk twee kale huren vóór overname…</button>
+              {costMessage && <p role="status">{costMessage}
+                {costMessage.startsWith('Twee kale huren') &&
+                  <> <a href="#private-budget-title">Ga naar kostenvergelijking ↓</a></>}</p>}
+              {costHandoff && !costHandoffValid && <p role="status">
+                Deze preview is vervallen omdat je brongegevens veranderden. Bekijk eerst een actuele selectie.
+              </p>}
+              {costHandoff && costHandoffValid && <div style={{background:'#f2faf7',padding:14,marginTop:12,borderRadius:8}}>
+                <p><strong>Overdrachtsvoorbeeld (onopgeslagen)</strong></p>
+                <ul>
+                  <li>A: {costHandoff.pair.first.label} · kale huur {WoonMatchMoney(costHandoff.pair.first.rent)}
+                    {' '}· {costHandoff.first.met} van 4 eigen grenzen gehaald; score {costHandoff.first.score}%</li>
+                  <li>B: {costHandoff.pair.second.label} · kale huur {WoonMatchMoney(costHandoff.pair.second.rent)}
+                    {' '}· {costHandoff.second.met} van 4 eigen grenzen gehaald; score {costHandoff.second.score}%</li>
+                </ul>
+                <p>De hier getoonde scores en ontbrekende andere maandkosten gaan <strong>niet mee</strong>.
+                  De bestemmingsdesk vraagt apart toestemming om jouw twee bestaande tijdelijke
+                  kostenscenario&apos;s te vervangen en zal geen onbekende bedragen verzinnen.</p>
+                <label style={{display:'block',marginBottom:12}}>
+                  <input type="checkbox" checked={costApproved}
+                    onChange={event=>setCostApproved(event.target.checked)} />
+                  {' '}Ik wil uitsluitend de twee labels en kale huurbedragen aanbieden voor een
+                  <em> aparte, nog te bevestigen </em>kostenvergelijking.
+                </label>
+                <button type="button" disabled={!costApproved} onClick={acceptCostPair}>
+                  Ja, bereid deze twee kostenwoningen voor
+                </button>{' '}
+                <button type="button" onClick={()=>{setCostHandoff(null);setCostApproved(false);
+                  setCostMessage('Niet overgenomen. Je woonvergelijking is ongewijzigd.');}}>
+                  Annuleren
+                </button>
+              </div>}
+            </section>
+            <section aria-labelledby="woonmatch-rental-handoff-title" style={{borderTop:'1px solid #ccdcd7',paddingTop:14}}>
+              <h3 id="woonmatch-rental-handoff-title">Bewust overnemen naar Huurvoorstellen</h3>
+              <p>Neem uitsluitend een zelf ingevuld <strong>woninglabel en kale huur</strong> over als tijdelijk
+                kopieervoorstel. Geen score, toewijzingsmethode, servicekosten, energie, borg, adres,
+                identiteit of officieel aanbiedingsbewijs wordt meegestuurd.</p>
+              {rentalMessage && <p role="status">{rentalMessage}
+                {rentalMessage.startsWith('Alleen jouw label') &&
+                  <> <a href="#offer-desk-heading">Ga naar Huurvoorstellen ↓</a></>}
+              </p>}
+              {rentalHandoff && !rentalHandoffValid && <p role="status">
+                Deze preview is vervallen omdat je woninggegevens of criteria veranderd zijn. Maak een nieuwe preview.
+              </p>}
+              {rentalHandoff && rentalHandoffValid && <div style={{background:'#f2faf7',padding:14,borderRadius:8}}>
+                <p><strong>Preview:</strong> {rentalHandoff.label}; kale huur
+                  {' '}{WoonMatchMoney(rentalHandoff.rent)} per maand.
+                  Geschatte totale eigen maandlasten: {WoonMatchMoney(rentalHandoff.monthly)}
+                  {' '}— dit tweede bedrag <strong>gaat niet mee</strong>.</p>
+                <p>{rentalHandoff.allOwnCriteriaMet
+                  ? 'Deze optie haalt jouw vier persoonlijke grenzen.'
+                  : 'Let op: deze optie haalt niet alle vier jouw persoonlijke grenzen.'}
+                  {' '}De matchscore van {rentalHandoff.score}% is geen toewijzingskans en wordt niet
+                  als bewijs of contractgegeven overgenomen.</p>
+                <label style={{display:'block',marginBottom:12}}>
+                  <input type="checkbox" checked={rentalApproved}
+                    onChange={event=>setRentalApproved(event.target.checked)} />
+                  {' '}Ik wil alleen dit zelf ingevulde label en deze kale huur als <em>onopgeslagen voorstel</em>
+                  {' '}doorgeven. De huurdesk vraagt nog een tweede bevestiging.
+                </label>
+                <button type="button" disabled={!rentalApproved} onClick={acceptRentalHandoff}>
+                  Ja, bereid dit onopgeslagen huurvoorstel voor
+                </button>{' '}
+                <button type="button" onClick={()=>{
+                  setRentalHandoff(null);setRentalApproved(false);
+                  setRentalMessage('Niet overgenomen. Je woningvergelijking is ongewijzigd.');
+                }}>Annuleren</button>
+              </div>}
+            </section>
+          </div>
+        )}
+      </section>
+
+
+      <section style={WoonMatchPanelStyle} aria-labelledby="woonmatch-whatif-heading">
+        <h2 id="woonmatch-whatif-heading">4. Wat verandert er als mijn grenzen anders zijn?</h2>
+        <p>Vergelijk veilig één hypothetisch scenario met je oorspronkelijke vier persoonlijke grenzen.
+          Je echte criteria, weging, woninggegevens, back-up, TXT en overdrachten blijven intact.
+          Dit is alleen een eigen rekenscenario, <strong>geen woningadvies of toewijzingskans</strong>.</p>
+        <button type="button" disabled={!canCompare} onClick={() => { scenarioGeneration.current++; setScenarioReportPreview(null); setScenarioReportApproved(false); setWhatIf({ source: currentSource, limits: { ...criteria } }); }}>
+          {whatIf ? 'Begin nieuw scenario met mijn actuele grenzen' : 'Begin eigen wat-als-scenario'}
+        </button>
+        {whatIf && !whatIfCurrent && <p role="status">
+          Je oorspronkelijke gegevens zijn veranderd. Het oude scenario is vervallen; begin hierboven opnieuw.
+        </p>}
+        {whatIfCurrent && whatIf && <>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', marginTop: 14 }}>
+            <WoonMatchField label="Scenario: max. maandkosten (€)" value={whatIf.limits.budget}
+              setValue={value => modifyScenario('budget', value)} />
+            <WoonMatchField label="Scenario: min. woonoppervlak (m²)" value={whatIf.limits.area}
+              setValue={value => modifyScenario('area', value)} />
+            <WoonMatchField label="Scenario: min. slaapkamers" value={whatIf.limits.bedrooms}
+              setValue={value => modifyScenario('bedrooms', value)} />
+            <WoonMatchField label="Scenario: max. enkele-reisminuten" value={whatIf.limits.commute}
+              setValue={value => modifyScenario('commute', value)} />
+          </div>
+          {whatIfErrors.length > 0 ? <div role="status">
+            <p>Vul geldige scenariogrenzen in; ongeldige invoer produceert geen nieuwe rangschikking.</p>
+            <ul>{whatIfErrors.map((error,index) => <li key={index}>{error}</li>)}</ul>
+          </div> : <div aria-live="polite" style={{ marginTop: 14 }}>
+            <p><strong>Nu volledig passend:</strong> {ordered.filter(row => row.pass).length} van {ordered.length}.
+              {' '}<strong>In dit scenario:</strong> {scenarioOrdered.filter(row => row.pass).length} van {scenarioOrdered.length}.
+              {' '}Alle vier grenzen blijven ook in het scenario harde voorwaarden.</p>
+            <ol>{scenarioOrdered.map((row, index) => {
+              const original = ordered.find(item => item.listing.id === row.listing.id)!;
+              const originalRank = ordered.findIndex(item => item.listing.id === row.listing.id) + 1;
+              return <li key={row.listing.id} style={{ marginBottom: 12 }}>
+                <strong>{row.listing.name}</strong> — oorspronkelijke plaats {originalRank}, scenarioplaats {index + 1}.
+                {' '}{original.met}/4 naar {row.met}/4 eigen grenzen gehaald;
+                {' '}score {original.score}% → {row.score}%.
+                <strong> {row.pass ? 'Alle vier in scenario gehaald.' : 'Niet alle vier gehaald.'}</strong>
+                {!row.pass && <ul>{row.rules.filter(rule => !rule.met).map(rule =>
+                  <li key={rule.label}>{rule.label}: {WoonMatchGap(rule) || 'grens niet gehaald'}</li>)}</ul>}
+              </li>;
+            })}</ol>
+            <p style={{ fontSize: 14 }}>Er is niets overgenomen, opgeslagen, verstuurd of in je werkblad aangepast.
+              Gebruik de echte vergelijking hierboven voor bewuste vervolgacties.</p>
+          </div>}
+
+          <div style={{ borderTop: '1px solid #cfdcd7', paddingTop: 16, marginTop: 18 }}>
+            <h3>Mijn wat-als-vergelijking als apart privé-TXT</h3>
+            <p>Bekijk de <strong>volledige hypothetische vergelijking</strong> inclusief jouw
+              oorspronkelijke en aangepaste grenzen, scores, rangorde en resterende tekorten.
+              Je reguliere TXT, JSON-back-up en kosten- of huurvoorstellen blijven ongewijzigd.
+              Dit is geen gecontroleerde woninginformatie of toewijzingsadvies.</p>
+            <button type="button" disabled={whatIfErrors.length > 0 || !scenarioOrdered.length}
+              onClick={() => {
+                const text = buildScenarioReport();
+                setScenarioReportPreview({ source: scenarioKey, text });
+                setScenarioReportApproved(false);
+              }}>
+              Bekijk mijn volledige hypothetische privé-TXT
+            </button>
+            {scenarioReportPreview && !scenarioPreviewValid && <p role="status">
+              De scenario-preview is verlopen. Bekijk de huidige inhoud opnieuw.
+            </p>}
+            {scenarioPreviewValid && scenarioReportPreview && <>
+              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320,
+                overflow: 'auto', padding: 14, background: '#f2faf7', borderRadius: 8 }}>
+                {scenarioReportPreview.text}
+              </pre>
+              <label style={{ display: 'block', margin: '12px 0' }}>
+                <input type="checkbox" checked={scenarioReportApproved}
+                  onChange={event => setScenarioReportApproved(event.target.checked)} />
+                {' '}Ik heb dit volledige hypothetische privédocument nagelezen
+                en wil het zelf lokaal bewaren.
+              </label>
+              <button type="button" disabled={!scenarioReportApproved} onClick={downloadScenarioReport}>
+                Download alleen deze bekeken wat-als-TXT
+              </button>
+            </>}
+          </div>
+          <button type="button" onClick={closeScenario}>Sluit scenario zonder overnemen</button>
+        </>}
+      </section>
+
+      <section style={WoonMatchPanelStyle} aria-labelledby="export-heading">
+        <h2 id="export-heading">5. Privérapport bekijken en downloaden</h2>
+        <p>De optionele tekst bevat alleen jouw zelf ingevoerde labels, bedragen, criteria en notities.
+          Bekijk de volledige inhoud vóór je deze bewust lokaal opslaat. Veranderen van invoer maakt een vorige preview ongeldig.</p>
+        <button type="button" disabled={!canCompare} onClick={() => { setShowPreview({ source: currentSource, text: makeReport() }); setAllowDownload(false); }}>
+          Volledige privé-TXT bekijken
+        </button>
+        {showPreview && !previewValid && <p role="status">De preview is verouderd. Bekijk eerst de gewijzigde inhoud opnieuw.</p>}
+        {showPreview && previewValid && <>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 380, overflowY: 'auto', background: '#f2faf7', padding: 14, borderRadius: 8 }}>{showPreview.text}</pre>
+          <label style={{ display: 'block', margin: '12px 0' }}>
+            <input type="checkbox" checked={allowDownload} onChange={e => setAllowDownload(e.target.checked)} /> Ik heb dit volledige privédocument nagelezen en wil het zelf downloaden.
+          </label>
+          <button type="button" disabled={!allowDownload} onClick={download}>Download eigen TXT</button>
+        </>}
+      </section>
+
+      <section style={WoonMatchPanelStyle} aria-labelledby="backup-match-heading">
+        <h2 id="backup-match-heading">6. Mijn eigen woningmatch bewaren en terugzetten</h2>
+        <p>Bewaar je zelf ingevoerde criteria, prioriteiten, woningopties en notities in een
+          <strong> lokale JSON-back-up</strong> voor een volgende sessie. Ook onvolledige maar geldig geschreven concepten mogen mee.
+          Het formaat bevat geen account-, cookies-, WoningNet- of bronrechtengegevens.
+          Jouw gekozen opslaglocatie kan buiten Woonpoints synchroniseren.</p>
+        <button type="button" disabled={!backupSourceValid} onClick={() => {
+          setBackupPreview({ source: currentSource, text: portableBackupText });
+          setBackupExportApproved(false);
+        }}>Bekijk mijn volledige privé-JSON</button>
+        {backupPreview && !backupPreviewValid && <p role="status">Je invoer veranderde; bekijk de actuele JSON eerst opnieuw.</p>}
+        {backupPreview && backupPreviewValid && <>
+          <pre style={{ maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            padding: 14, background: '#f2faf7', borderRadius: 7 }}>{backupPreview.text}</pre>
+          <label style={{ display: 'block', margin: '12px 0' }}>
+            <input type="checkbox" checked={backupExportApproved}
+              onChange={event => setBackupExportApproved(event.target.checked)} />
+            {' '}Ik heb alle velden bekeken en wil deze privé-JSON zelf lokaal downloaden.
+          </label>
+          <button type="button" disabled={!backupExportApproved} onClick={downloadBackup}>Download bekeken JSON</button>
+        </>}
+        <h3>Mijn eerdere privé-JSON terugzetten</h3>
+        <p>Selecteer een eigen <code>woonpoints.private-match.v2</code> JSON, of je eerdere <code>v1</code>-back-up (maximaal 12 KiB).
+          Oude v1-bestanden krijgen alleen een onbekende methode en geen methodevoorkeur: geen uitgevonden bronbewijs. Er wordt niets geüpload; onbekende velden en versies worden geweigerd.
+          Je huidige invoer verandert pas na volledige preview en afzonderlijke bevestiging.</p>
+        <input type="file" accept=".json,application/json"
+          aria-label="Open eigen woningmatch-back-up" onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void openBackupFile(file);
+          }} />
+        {restoreMessage && <p role="status">{restoreMessage}</p>}
+        {pendingRestore && !restorePreviewValid && <p role="status">De restore-preview is verouderd: de huidige invoer is veranderd.</p>}
+        {pendingRestore && restorePreviewValid && <div style={{ background: '#f2faf7', padding: 14, borderRadius: 8, marginTop: 12 }}>
+          <p><strong>Volledig herstelvoorbeeld:</strong> {pendingRestore.label} · {pendingRestore.data.listings.length}
+            {' '}opties. Je huidige {listings.length} opties en alle vier eigen grenzen/gewichten worden vervangen.</p>
+          <p>Eigen grenzen:
+            {' '}max €{pendingRestore.data.criteria.budget || 'onbekend'} per maand,
+            {' '}min {pendingRestore.data.criteria.area || '?'} m²,
+            {' '}min {pendingRestore.data.criteria.bedrooms || '?'} kamers,
+            {' '}max {pendingRestore.data.criteria.commute || '?'} minuten.
+          </p>
+          <p>Prioriteiten: {WOON_MATCH_PRIORITY_LABELS.map(x => x.label + ' ' + pendingRestore.data.weights[x.key]).join(' · ')}</p>
+          <p>Eigen methodevoorkeur: {WOON_MATCH_PREFERENCE_LABELS[pendingRestore.data.preference]}.</p>
+          <ul>{pendingRestore.data.listings.map((row,index) => <li key={index}>
+            <strong>{row.name || '(concept zonder naam)'}</strong> — huur {row.monthlyRent || '?'},
+            {' '}extra {row.utilities || '?'}, {row.area || '?'} m², {row.bedrooms || '?'} slaapkamers,
+            {' '}{row.commute || '?'} min; methode: {WOON_MATCH_METHOD_LABELS[row.allocation]}; notitie: {row.note || '(leeg)'}
+          </li>)}</ul>
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            <input type="checkbox" checked={restoreApproved} onChange={event => setRestoreApproved(event.target.checked)} />
+            {' '}Ik heb alle waarden bekeken; vervang alleen de tijdelijke invoer in dit tabblad.
+          </label>
+          <button type="button" disabled={!restoreApproved} onClick={applyRestore}>Zet deze privémomentopname terug</button>
+          <button type="button" style={{ marginLeft: 10 }} onClick={() => {
+            backupRead.current++;
+            setPendingRestore(null);
+            setRestoreApproved(false);
+            setRestoreMessage('Herstel geannuleerd.');
+          }}>Annuleren</button>
+        </div>}
+        {undoRestore && <p><button type="button" onClick={revertRestore}>
+          Vorige complete woningmatch één keer terugzetten
+        </button></p>}
+      </section>
+    </div>
+  );
+}
+
+
+/**
+ * Local contract-reading workspace. No legal decision, account integration,
+ * persistence, upload or automatic acceptance; all values belong to this tab.
+ */
+const PRIVATE_CONTRACT_TOPICS = [
+  ['partijen', 'Partijen en contactpersoon', 'Klopt wie verhuurt en met wie je afspraken maakt?'],
+  ['woning', 'Woning en inbegrepen ruimtes', 'Staan woning, adres en afgesproken berging/parkeerplaats duidelijk genoemd?'],
+  ['huur', 'Kale huur en betaalmoment', 'Zijn kale huur, ingangsdatum en betaalmoment terug te vinden?'],
+  ['service', 'Servicekosten en afrekening', 'Is duidelijk wat een voorschot is en hoe afrekening plaatsvindt?'],
+  ['borg', 'Borg en teruggave', 'Staan het betaalbedrag en de voorwaarden voor teruggave op papier?'],
+  ['duur', 'Duur en opzegging', 'Is duidelijk welk soort overeenkomst je krijgt en hoe opzeggen werkt?'],
+  ['verhoging', 'Huurprijsverhoging', 'Weet je waar en hoe een eventuele huurverhoging is beschreven?'],
+  ['gebreken', 'Onderhoud en opleverstaat', 'Zijn bestaande gebreken en onderhoudsafspraken vastgelegd?'],
+  ['energie', 'Gas, water, licht en internet', 'Weet je wat inbegrepen is en wat je zelf moet afsluiten?'],
+  ['bijlagen', 'Bijlagen, huisregels en extra kosten', 'Zijn genoemde bijlagen beschikbaar en ongewenste extra kosten uitgezocht?']
+] as const;
+type ContractTopicChoice = 'open'|'gevonden'|'vraag';
+function parseContractMoney(input: string): number | null {
+  const value = input.trim();
+  if (value === '') return null;
+  if (!/^(?:0|[1-9][0-9]{0,5})(?:[,.][0-9]{1,2})?$/.test(value)) return null;
+  const [whole, fraction = ''] = value.replace(',', '.').split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) && cents >= 0 && cents <= 50000000 ? cents : null;
+}
+const contractEuro = (cents: number): string =>
+  new Intl.NumberFormat('nl-NL', {style:'currency',currency:'EUR'}).format(cents / 100);
+
+/** Portable, opt-in document: never includes offer credentials or third-party responses. */
+type PrivateContractBackup = {
+  format:'woonpoints-private-contract';version:1;
+  values:Record<string,ContractTopicChoice>;
+  notes:Record<string,string>;
+  rent:string;service:string;deposit:string;signingDate:string;followUpDate:string;
+};
+function validPrivateContractBackup(input:unknown): input is PrivateContractBackup {
+  if(!input||typeof input!=='object'||Array.isArray(input))return false;
+  const o=input as Record<string,unknown>;
+  const keys=['format','version','values','notes','rent','service','deposit','signingDate','followUpDate'];
+  if(Object.keys(o).sort().join('|')!==keys.sort().join('|')||
+     o.format!=='woonpoints-private-contract'||o.version!==1||
+     !o.values||typeof o.values!=='object'||Array.isArray(o.values)||
+     !o.notes||typeof o.notes!=='object'||Array.isArray(o.notes))return false;
+  const status=o.values as Record<string,unknown>, notes=o.notes as Record<string,unknown>;
+  const ids=PRIVATE_CONTRACT_TOPICS.map(([id])=>id);
+  if(Object.keys(status).sort().join('|')!==[...ids].sort().join('|')||
+     Object.keys(notes).sort().join('|')!==[...ids].sort().join('|'))return false;
+  if(ids.some(id=>!['open','gevonden','vraag'].includes(status[id] as string)||
+     typeof notes[id]!=='string'||(notes[id] as string).length>180||
+     /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(notes[id] as string)))return false;
+  for(const name of ['rent','service','deposit'] as const){
+    if(typeof o[name]!=='string'||o[name].length>10||
+      (o[name].trim()!==''&&parseContractMoney(o[name])===null))return false;
+  }
+  for(const name of ['signingDate','followUpDate'] as const){
+    const value=o[name];
+    if(typeof value!=='string')return false;
+    if(value==='')continue;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    if(y<2000||y>2100||new Date(Date.UTC(y,m-1,d)).toISOString().slice(0,10)!==value)return false;
+  }
+  return true;
+}
+function PrivateContractReview() {
+  const [values, setValues] = useState<Record<string, ContractTopicChoice>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [rent, setRent] = useState('');
+  const [service, setService] = useState('');
+  const [deposit, setDeposit] = useState('');
+  const [signingDate, setSigningDate] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [calendarPreview, setCalendarPreview] = useState<{source:string;content:string}|null>(null);
+  const [calendarAccepted, setCalendarAccepted] = useState(false);
+  const [backupPreview, setBackupPreview] = useState<{source:string;json:string}|null>(null);
+  const [backupAccepted, setBackupAccepted] = useState(false);
+  const [importCandidate, setImportCandidate] = useState<{data:PrivateContractBackup;json:string}|null>(null);
+  const [importAccepted, setImportAccepted] = useState(false);
+  const [importUndo, setImportUndo] = useState<{before:PrivateContractBackup;after:string}|null>(null);
   const [preview, setPreview] = useState<{source: string;text: string}|null>(null);
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -11920,12 +13880,21 @@ function PrivateContractReview({acceptedRentalDecision}: {
   const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate,acceptedRentalDecision});
   const acceptedOffer = acceptedRentalDecision?.offer ?? null;
   const showOfferComparison = acceptedOffer!==null && comparedSource===source;
+  const backupData:PrivateContractBackup={
+    format:'woonpoints-private-contract',version:1,
+    values:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,values[id]||'open'])),
+    notes:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,notes[id]||''])),
+    rent,service,deposit,signingDate,followUpDate
+  };
+  const backupFingerprint=JSON.stringify(backupData);
   const totalMonthly = amounts[0]!==null&&amounts[1]!==null ? amounts[0]+amounts[1] : null;
   const initialCash = totalMonthly!==null&&amounts[2]!==null ? totalMonthly+amounts[2] : null;
   const firstYearRent = totalMonthly!==null ? totalMonthly*12 : null;
   const change = () => {
     setPreview(null);setApproved(false);setCalendarPreview(null);
-    setCalendarAccepted(false);setComparedSource(null);setFeedback('');
+    setCalendarAccepted(false);setBackupPreview(null);setBackupAccepted(false);
+    setImportCandidate(null);setImportAccepted(false);setImportUndo(null);
+    setComparedSource(null);setFeedback('');
   };
   const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
   const formGrid = {display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14} as const;
@@ -11975,6 +13944,79 @@ function PrivateContractReview({acceptedRentalDecision}: {
     setPreview({source,text:lines.join('\n')+'\n'});
     setApproved(false);
     setFeedback('Rapport voorbereid. Lees de volledige tekst hieronder en bevestig zelf de download.');
+  }
+  function loadContractBackup(data:PrivateContractBackup) {
+    setValues({...data.values});setNotes({...data.notes});
+    setRent(data.rent);setService(data.service);setDeposit(data.deposit);
+    setSigningDate(data.signingDate);setFollowUpDate(data.followUpDate);
+    setPreview(null);setApproved(false);setCalendarPreview(null);
+    setCalendarAccepted(false);setBackupPreview(null);setBackupAccepted(false);
+    setImportCandidate(null);setImportAccepted(false);
+  }
+  function prepareContractBackup() {
+    if(!validPrivateContractBackup(backupData)){setFeedback('De huidige invoer kan niet veilig worden opgeslagen. Controleer bedragen, datums en notities.');return;}
+    const json=JSON.stringify(backupData,null,2)+'\n';
+    if(new TextEncoder().encode(json).length>10000){setFeedback('De eigen back-up is te groot. Kort notities in.');return;}
+    setBackupPreview({source:backupFingerprint,json});
+    setBackupAccepted(false);
+    setFeedback('Bekijk eerst alle persoonlijke tekst in deze back-up. Er is niets opgeslagen of geüpload.');
+  }
+  function downloadContractBackup() {
+    if(!backupPreview||backupPreview.source!==backupFingerprint||!backupAccepted){
+      setBackupPreview(null);setBackupAccepted(false);
+      setFeedback('De back-up is gewijzigd of niet bevestigd. Bekijk eerst een nieuwe preview.');return;
+    }
+    const url=URL.createObjectURL(new Blob([backupPreview.json],{type:'application/json;charset=utf-8'}));
+    try{
+      const link=document.createElement('a');link.href=url;
+      link.download='mijn-huurcontractcontrole-backup.json';
+      document.body.appendChild(link);link.click();link.remove();
+      setBackupAccepted(false);
+      setFeedback('Eigen back-up aangeboden aan je browser. Controleer waar je het bestand bewaart.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
+  async function readContractBackup(file:File|undefined) {
+    setImportCandidate(null);setImportAccepted(false);setFeedback('');
+    if(!file||file.size<1||file.size>10000){
+      setFeedback('Kies een niet-leeg JSON-bestand van maximaal 10 KB.');return;
+    }
+    try{
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+      if(new TextEncoder().encode(raw).length!==bytes.length)throw Error('encoding');
+      const parsed:unknown=JSON.parse(raw);
+      if(!validPrivateContractBackup(parsed))throw Error('schema');
+      setImportCandidate({data:parsed,json:JSON.stringify(parsed,null,2)+'\n'});
+      setFeedback('Back-up gelezen zonder wijziging. Controleer de volledige inhoud vóór vervangen.');
+    }catch{
+      setImportCandidate(null);
+      setFeedback('Dit bestand is geen geldige volledige Woonpoints-contractback-up. Er is niets vervangen.');
+    }
+  }
+  function confirmContractImport(){
+    if(!importAccepted||!importCandidate)return;
+    const previous=backupData;
+    const candidate=importCandidate.data;
+    if(!validPrivateContractBackup(candidate))return;
+    const normalizedAfter:PrivateContractBackup={
+      format:'woonpoints-private-contract',version:1,
+      values:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.values[id]])),
+      notes:Object.fromEntries(PRIVATE_CONTRACT_TOPICS.map(([id])=>[id,candidate.notes[id]])),
+      rent:candidate.rent,service:candidate.service,deposit:candidate.deposit,
+      signingDate:candidate.signingDate,followUpDate:candidate.followUpDate
+    };
+    loadContractBackup(candidate);
+    setImportUndo({before:previous,after:JSON.stringify(normalizedAfter)});
+    setFeedback('Eigen gegevens na bevestiging vervangen. Eenmalig terugzetten blijft mogelijk tot de volgende wijziging.');
+  }
+  function undoContractImport(){
+    if(!importUndo)return;
+    if(importUndo.after!==backupFingerprint){
+      setImportUndo(null);setFeedback('De huidige invoer is veranderd; terugzetten is vervallen.');return;
+    }
+    if(!window.confirm('De eigen contractgegevens van vóór de laatste import terugzetten?'))return;
+    loadContractBackup(importUndo.before);setImportUndo(null);
+    setFeedback('De eerdere tabbladgegevens zijn teruggezet. Maak exports opnieuw.');
   }
   function prepareCalendar() {
     const [y,m,d] = followUpDate.split('-').map(Number);
@@ -12153,6 +14195,46 @@ function PrivateContractReview({acceptedRentalDecision}: {
       </div>}
     </div>
     {feedback&&<p role="status" aria-live="polite">{feedback}</p>}
+    <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+      <h3>Mijn controle later verderzetten: privé-back-up</h3>
+      <p>Bewaar alleen op eigen verzoek een JSON-bestand met je tien antwoorden, eigen notities,
+        bedragen en datums. Er is geen automatisch opslaan. Het bestand kan persoonlijke informatie
+        bevatten; import en export blijven volledig onder jouw controle.</p>
+      <button type="button" onClick={prepareContractBackup}>Bekijk alle gegevens voor back-up</button>
+      {backupPreview&&backupPreview.source===backupFingerprint&&<div style={{marginTop:12}}>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:280,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{backupPreview.json}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={backupAccepted} onChange={e=>setBackupAccepted(e.target.checked)}/>
+          <span>Ik heb alle gegevens bekeken en kies zelf waar ik het privébestand bewaar.</span>
+        </label>
+        <button type="button" disabled={!backupAccepted} onClick={downloadContractBackup}>Download mijn bevestigde JSON</button>
+      </div>}
+      <label style={{display:'grid',gap:6,marginTop:18,maxWidth:500}}>
+        <strong>Mijn eerdere JSON-back-up openen (maximaal 10 KB)</strong>
+        <input type="file" accept=".json,application/json"
+          onChange={async e=>{
+            const chosen=e.target.files?.[0];e.target.value='';
+            await readContractBackup(chosen);
+          }}/>
+      </label>
+      {importCandidate&&<div style={{marginTop:12}}>
+        <p><strong>Vervangingspreview:</strong> de volledige nieuwe invoer staat hieronder.
+          Je huidige gegevens blijven staan totdat je afzonderlijk bevestigt.</p>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:280,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{importCandidate.json}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={importAccepted} onChange={e=>setImportAccepted(e.target.checked)}/>
+          <span>Ik heb de complete vervangende invoer bekeken en wil mijn huidige contractcontrole vervangen.</span>
+        </label>
+        <button type="button" disabled={!importAccepted} onClick={confirmContractImport}>Vervang mijn tijdelijke gegevens</button>
+        <button type="button" onClick={()=>{setImportCandidate(null);setImportAccepted(false);}}>Annuleer import</button>
+      </div>}
+      {importUndo&&<button type="button" style={{marginTop:12}}
+        disabled={importUndo.after!==backupFingerprint} onClick={undoContractImport}>
+        Vorige tabbladgegevens eenmalig herstellen
+      </button>}
+    </div>
     <p><small>Er is geen opslag in dit tabblad, geen API-verzoek, e-mail of automatische toestemming.
       Sluit je het tabblad, dan verdwijnen de ingevulde waarden; een zelf gedownload bestand blijft onder jouw beheer.
       Controleer persoonlijke informatie vóór je een rapport met anderen deelt.</small></p>
