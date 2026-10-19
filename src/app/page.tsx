@@ -10893,6 +10893,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   const [csvError, setCsvError] = useState('');
   const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
   const [confirmCsv, setConfirmCsv] = useState(false);
+  const [confirmCsvAppend, setConfirmCsvAppend] = useState(false);
   const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
   const [csvExportPreview, setCsvExportPreview] = useState<{ source: string; text: string } | null>(null);
   const [csvExportApproved, setCsvExportApproved] = useState(false);
@@ -10981,6 +10982,19 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       item.listing.name===costHandoff.pair.second.label &&
       woonMatchHandoffRent(item.listing.monthlyRent)===costHandoff.pair.second.rent);
   const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
+
+  const appendCsvReason = !pendingCsvValid || !pendingCsv ? '' :
+    listings.length + pendingCsv.rows.length > 5
+      ? 'Toevoegen kan niet: je hebt samen meer dan vijf woningen; kies vervangen of verwijder eerst opties.'
+      : (() => {
+          const existingNames = listings.map(row => row.name.trim().toLocaleLowerCase('nl-NL'));
+          if (existingNames.some(name => !name) || new Set(existingNames).size !== existingNames.length)
+            return 'Toevoegen kan pas als alle bestaande opties een uniek, niet-leeg label hebben.';
+          if (pendingCsv.rows.some(row => existingNames.includes(row.name.trim().toLocaleLowerCase('nl-NL'))))
+            return 'Een toegevoegd label bestaat al in jouw huidige lijst. Geef de opties eerst unieke labels.';
+          return '';
+        })();
+
   const csvExport = woonMatchEncodeCsv(listings);
   const csvExportValid = !!csvExportPreview && csvExportPreview.source === currentSource &&
     !csvExport.error && csvExportPreview.text === csvExport.text;
@@ -10998,6 +11012,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
 
   const previewPastedCsv = () => {
     setConfirmCsv(false);
+    setConfirmCsvAppend(false);
     const result = parsePrivateMatchCsv(csvText);
     setPendingCsv(result.error ? null : { rows: result.rows, source: currentSource, paste: csvText });
     setCsvError(result.error);
@@ -11011,7 +11026,23 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
     setCsvText('');
     setPendingCsv(null);
     setConfirmCsv(false);
+    setConfirmCsvAppend(false);
     setCsvError('Eigen woningopties vervangen. Vorige opties kun je één keer herstellen.');
+    setShowPreview(null);
+    setAllowDownload(false);
+  };
+
+  const appendPastedCsv = () => {
+    if (!pendingCsvValid || !confirmCsvAppend || !pendingCsv || appendCsvReason) return;
+    const imported = pendingCsv.rows.map(row => ({ ...row, id: nextId.current++ }));
+    setUndoRestore(null);
+    setUndoCsv(listings.map(item => ({ ...item })));
+    setListings([...listings, ...imported]);
+    setCsvText('');
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvError('Nieuwe eigen opties toegevoegd; bestaande opties behouden. Je kunt de toevoeging één keer terugdraaien.');
     setShowPreview(null);
     setAllowDownload(false);
   };
@@ -11022,6 +11053,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
     setUndoCsv(null);
     setPendingCsv(null);
     setConfirmCsv(false);
+    setConfirmCsvAppend(false);
     setCsvError('Vorige woningopties in dit tabblad teruggezet.');
     setShowPreview(null);
     setAllowDownload(false);
@@ -11291,7 +11323,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         <p><code style={{ overflowWrap: 'anywhere' }}>{WOON_MATCH_CSV_HEADER}</code></p>
         <label style={{ display: 'block', fontWeight: 650 }} htmlFor="woonmatch-paste">Eigen tekst (één woning per regel)</label>
         <textarea id="woonmatch-paste" rows={5} maxLength={4096} value={csvText}
-          onChange={event => { setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setCsvError(''); }}
+          onChange={event => { setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setConfirmCsvAppend(false); setCsvError(''); }}
           placeholder={'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie\nWoning A;800;190;60;1;30;zelf bekijken\nWoning B;880;210;75;2;45;'}
           style={{ ...WoonMatchInputStyle, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} />
         <div style={{ marginTop: 10 }}>
@@ -11300,7 +11332,8 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         {csvError && <p role="status">{csvError}</p>}
         {pendingCsv && !pendingCsvValid && <p role="status">De preview is vervallen omdat de invoer of woninglijst veranderde.</p>}
         {pendingCsv && pendingCsvValid && <>
-          <h3>Voorbeeld — vervangt je huidige {listings.length} opties uitsluitend na bevestiging</h3>
+          <h3>Voorbeeld — kies bewust vervangen of toevoegen</h3>
+          <p>Je huidige {listings.length} opties veranderen pas bij afzonderlijke bevestiging van één van beide handelingen.</p>
           <p>Vanuit deze zeven-koloms tekst kan geen betrouwbare toewijzingsmethode worden afgeleid.
             Voor alle geplakte woningen wordt die daarom op <strong>Onbekend</strong> gezet.</p>
           <ol>{pendingCsv.rows.map((row, index) => <li key={index}>
@@ -11313,9 +11346,27 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
             {' '}Ik heb alle regels bekeken; vervang alleen mijn huidige tijdelijke opties in dit tabblad.
           </label>
           <button type="button" disabled={!confirmCsv} onClick={acceptPastedCsv}>Vervang met deze bekeken opties</button>
+
+          <div style={{ marginTop: 18, borderTop: '1px solid #ccdcd7', paddingTop: 12 }}>
+            <h4>Of: veilig toevoegen zonder bestaande woningen te vervangen</h4>
+            {appendCsvReason ? <p role="status">{appendCsvReason}</p> : <p>
+              Voorbeeld: {listings.length} bestaande + {pendingCsv.rows.length} nieuwe =
+              {' '}{listings.length + pendingCsv.rows.length} afzonderlijke woningopties.
+              Je huidige criteria, prioriteiten, methoden en notities blijven behouden;
+              uitsluitend nieuwe opties krijgen methode <strong>Onbekend</strong>.
+            </p>}
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <input type="checkbox" disabled={!!appendCsvReason} checked={confirmCsvAppend}
+                onChange={event => setConfirmCsvAppend(event.target.checked)} />
+              {' '}Ik wil deze bekeken {pendingCsv.rows.length} unieke opties toevoegen zonder
+              iets te overschrijven; ik behoud alle bestaande opties.
+            </label>
+            <button type="button" disabled={!!appendCsvReason || !confirmCsvAppend}
+              onClick={appendPastedCsv}>Voeg deze bekeken opties toe</button>
+          </div>
         </>}
         {undoCsv && <p><button type="button" onClick={undoPastedCsv}>
-          Draai mijn laatste lijstvervanging één keer terug
+          Draai de laatste CSV-vervanging of -toevoeging één keer terug
         </button></p>}
 
         <div style={{ borderTop: '1px solid #ccdcd7', marginTop: 22, paddingTop: 16 }}>
