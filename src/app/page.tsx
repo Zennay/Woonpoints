@@ -2087,8 +2087,9 @@ const energyQuoteTotal=(row:EnergyQuote,kwh:number,gas:number)=>{
   return {electricity,gasCents,fixed,total:electricity+gasCents+fixed};
 };
 let energyQuoteSequence=0;
-function PrivateEnergyQuoteComparison({onProposeRental}: {
+function PrivateEnergyQuoteComparison({onProposeRental,onInvalidateRental}: {
   onProposeRental?:(proposal:PrivateEnergyRentalOfferProposal)=>void;
+  onInvalidateRental?:()=>void;
 }={}){
   const [kwh,setKwh]=useState('');
   const [gas,setGas]=useState('0');
@@ -2133,6 +2134,8 @@ function PrivateEnergyQuoteComparison({onProposeRental}: {
     const offer:EnergyQuote={id:current?.id??'e-'+Date.now().toString(36)+'-'+(++energyQuoteSequence),
       label,electric10000:electric,gas10000:gasPrice,standingCents:standing};
     setQuotes(rows=>current?rows.map(row=>row.id===current.id?offer:row):[...rows,offer]);
+    onInvalidateRental?.();
+    setHandoffPreview(null);
     setEditing(null);setForm(newEnergyQuote());setRemoveId(null);setWipeConfirm(false);
     setExportView(null);setMessage(current?'Mijn tariefnotitie bijgewerkt.':'Eigen tariefnotitie toegevoegd.');
   }
@@ -2206,13 +2209,16 @@ function PrivateEnergyQuoteComparison({onProposeRental}: {
           <label style={labelStyle}>Stroomverbruik in kWh/jaar (0–50.000)
             <input inputMode="numeric" value={kwh} onChange={e=>{
               setKwh(e.target.value);setExportView(null);
+              setHandoffPreview(null);onInvalidateRental?.();
             }} placeholder="Zelf opzoeken, bijv. 2500"/></label>
           <label style={labelStyle}>Gasverbruik in m³/jaar (0–10.000)
             <input inputMode="numeric" value={gas} onChange={e=>{
               setGas(e.target.value);setExportView(null);
+              setHandoffPreview(null);onInvalidateRental?.();
             }} placeholder="0 als je geen gas verbruikt"/></label>
           <label style={labelStyle}>Wat-als: extra energieverbruik
-            <select value={growth} onChange={e=>{setGrowth(Number(e.target.value));setExportView(null);}}>
+            <select value={growth} onChange={e=>{setGrowth(Number(e.target.value));setExportView(null);
+              setHandoffPreview(null);onInvalidateRental?.();}}>
               <option value={0}>0% · huidig geschat</option>
               <option value={10}>+10% · iets meer</option>
               <option value={20}>+20% · duidelijke stijging</option>
@@ -2304,6 +2310,7 @@ function PrivateEnergyQuoteComparison({onProposeRental}: {
           {removeId===row.id&&<div className="woon-energy-confirm">
             <p>Alleen deze handmatige vergelijking verwijderen?</p>
             <button type="button" onClick={()=>{setQuotes(items=>items.filter(x=>x.id!==row.id));
+              setHandoffPreview(null);onInvalidateRental?.();
               if(editing===row.id){setEditing(null);setForm(newEnergyQuote());}
               setRemoveId(null);setExportView(null);setMessage('Eigen tarief verwijderd.');}}>
               Ja, verwijder alleen dit tarief</button>
@@ -2332,6 +2339,7 @@ function PrivateEnergyQuoteComparison({onProposeRental}: {
           <p>Verwijder alle {quotes.length} tariefnotities uit dit tabblad?
             Je verbruik en reeds gedownloade bestanden veranderen niet.</p>
           <button type="button" onClick={()=>{setQuotes([]);setEditing(null);setForm(newEnergyQuote());
+            setHandoffPreview(null);onInvalidateRental?.();
             setRemoveId(null);setExportView(null);setWipeConfirm(false);
             setMessage('Eigen tariefnotities gewist.');}}>Ja, wis alle tarieven</button>
           <button type="button" onClick={()=>setWipeConfirm(false)}>Behoud tarieven</button>
@@ -2813,7 +2821,8 @@ export default function HomePage() {
         energyPrefill={energyRentalProposal}
         onEnergyHandled={()=>setEnergyRentalProposal(null)} />
       <PrivateEnergyQuoteComparison
-        onProposeRental={proposal=>setEnergyRentalProposal({...proposal})} />
+        onProposeRental={proposal=>setEnergyRentalProposal({...proposal})}
+        onInvalidateRental={()=>setEnergyRentalProposal(null)} />
       <PrivatePhotoComparison />
       <PrivateCommuteComparison />
       <PrivateMovingVolume />
