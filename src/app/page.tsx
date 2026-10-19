@@ -3462,7 +3462,7 @@ export default function HomePage() {
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
       <section id="private-woningmatch-heading" aria-label="Mijn woningmatch" className="card">
-        <PrivateListingMatchStudio />
+        <PrivateListingMatchStudio onRentalPrefill={item=>setRentalPrefill({...item})} />
       </section>
       <PrivateRentalScenarioBudget proposal={scenarioOfferProposal}
         onProposalHandled={()=>setScenarioOfferProposal(null)} />
@@ -10810,7 +10810,21 @@ function woonMatchDecodeBackup(text: string): { data: WoonMatchPortable | null; 
   };
 }
 
-function PrivateListingMatchStudio() {
+type WoonMatchRentalHandoff = {
+  id: number; source: string; label: string; rent: number;
+  allOwnCriteriaMet: boolean; score: number; monthly: number;
+};
+const woonMatchHandoffLabel = (value: string) =>
+  value.length >= 1 && value.length <= 64 && value === value.trim() &&
+  !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value);
+const woonMatchHandoffRent = (value: string): number | null => {
+  const amount = WoonMatchNumeric(value, 10000);
+  return amount !== null && Number.isSafeInteger(amount) && amount >= 100 ? amount : null;
+};
+
+function PrivateListingMatchStudio({ onRentalPrefill }: {
+  onRentalPrefill?: (item: {label: string; rent: number}) => void;
+} = {}) {
   const [criteria, setCriteria] = useState<WoonMatchCriteria>({ budget: '', area: '', bedrooms: '', commute: '' });
   const [weights, setWeights] = useState<WoonMatchWeights>({ ...WOON_MATCH_DEFAULT_WEIGHTS });
   const [preference, setPreference] = useState<WoonMatchPreference>('any');
@@ -10830,6 +10844,9 @@ function PrivateListingMatchStudio() {
   const [undoCsv, setUndoCsv] = useState<WoonMatchListing[] | null>(null);
   const [showPreview, setShowPreview] = useState<{ source: string; text: string } | null>(null);
   const [allowDownload, setAllowDownload] = useState(false);
+  const [rentalHandoff, setRentalHandoff] = useState<WoonMatchRentalHandoff | null>(null);
+  const [rentalApproved, setRentalApproved] = useState(false);
+  const [rentalMessage, setRentalMessage] = useState('');
   const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
     setUndoRestore(null);
     setCriteria(prev => ({ ...prev, [key]: value }));
@@ -10870,6 +10887,14 @@ function PrivateListingMatchStudio() {
     woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
     a.listing.id - b.listing.id);
   const previewValid = showPreview?.source === currentSource && canCompare;
+  const rentalHandoffValid = !!rentalHandoff && rentalHandoff.source === currentSource &&
+    canCompare && !!onRentalPrefill &&
+    ordered.some(item => item.listing.id === rentalHandoff.id &&
+      item.listing.name === rentalHandoff.label &&
+      woonMatchHandoffRent(item.listing.monthlyRent) === rentalHandoff.rent &&
+      item.monthly === rentalHandoff.monthly &&
+      item.pass === rentalHandoff.allOwnCriteriaMet &&
+      item.score === rentalHandoff.score);
   const pendingCsvValid = !!pendingCsv && pendingCsv.source === currentSource && pendingCsv.paste === csvText;
   const previewPastedCsv = () => {
     setConfirmCsv(false);
@@ -10970,6 +10995,30 @@ function PrivateListingMatchStudio() {
     setBackupPreview(null);
     setBackupExportApproved(false);
     setAllowDownload(false);
+  };
+
+  const previewRentalHandoff = (item: WoonMatchOutcome) => {
+    setRentalApproved(false);
+    setRentalMessage('');
+    const rent = woonMatchHandoffRent(item.listing.monthlyRent);
+    if (!canCompare || !onRentalPrefill || !woonMatchHandoffLabel(item.listing.name) ||
+      rent === null || item.monthly === null || item.score === null) {
+      setRentalHandoff(null);
+      setRentalMessage('Dit woninglabel of de kale huur is niet geldig voor de huurvoorstellendesk. Gebruik een label van 1–64 tekens en een hele kale maandhuur tussen €100 en €10.000.');
+      return;
+    }
+    setRentalHandoff({
+      id: item.listing.id, source: currentSource,
+      label: item.listing.name, rent, monthly: item.monthly,
+      allOwnCriteriaMet: item.pass, score: item.score
+    });
+  };
+  const acceptRentalHandoff = () => {
+    if (!rentalHandoffValid || !rentalApproved || !rentalHandoff || !onRentalPrefill) return;
+    onRentalPrefill({label:rentalHandoff.label,rent:rentalHandoff.rent});
+    setRentalHandoff(null);
+    setRentalApproved(false);
+    setRentalMessage('Alleen jouw label en kale huur staan klaar bij Huurvoorstellen. Daar moet je opnieuw bevestigen, ontbrekende kosten invullen en het voorstel zelf bewaren.');
   };
 
   const makeReport = (): string => {
@@ -11165,8 +11214,54 @@ function PrivateListingMatchStudio() {
                 <ul>{outcome.rules.map(rule => <li key={rule.label}>
                   {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight})
                 </li>)}</ul>
+                <button type="button" disabled={!onRentalPrefill}
+                  onClick={() => previewRentalHandoff(outcome)}
+                  style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #1b6c5f' }}>
+                  Bekijk overname naar eigen huurvoorstel…
+                </button>
+                {!woonMatchHandoffLabel(outcome.listing.name) ||
+                 woonMatchHandoffRent(outcome.listing.monthlyRent) === null ?
+                  <p style={{fontSize:13}}>Voor de huurdesk is een label van 1–64 tekens en een hele kale huur
+                    van €100–€10.000 vereist. De woning blijft wel in deze vergelijking staan.</p> : null}
               </article>
             ))}
+            <section aria-labelledby="woonmatch-rental-handoff-title" style={{borderTop:'1px solid #ccdcd7',paddingTop:14}}>
+              <h3 id="woonmatch-rental-handoff-title">Bewust overnemen naar Huurvoorstellen</h3>
+              <p>Neem uitsluitend een zelf ingevuld <strong>woninglabel en kale huur</strong> over als tijdelijk
+                kopieervoorstel. Geen score, toewijzingsmethode, servicekosten, energie, borg, adres,
+                identiteit of officieel aanbiedingsbewijs wordt meegestuurd.</p>
+              {rentalMessage && <p role="status">{rentalMessage}
+                {rentalMessage.startsWith('Alleen jouw label') &&
+                  <> <a href="#offer-desk-heading">Ga naar Huurvoorstellen ↓</a></>}
+              </p>}
+              {rentalHandoff && !rentalHandoffValid && <p role="status">
+                Deze preview is vervallen omdat je woninggegevens of criteria veranderd zijn. Maak een nieuwe preview.
+              </p>}
+              {rentalHandoff && rentalHandoffValid && <div style={{background:'#f2faf7',padding:14,borderRadius:8}}>
+                <p><strong>Preview:</strong> {rentalHandoff.label}; kale huur
+                  {' '}{WoonMatchMoney(rentalHandoff.rent)} per maand.
+                  Geschatte totale eigen maandlasten: {WoonMatchMoney(rentalHandoff.monthly)}
+                  {' '}— dit tweede bedrag <strong>gaat niet mee</strong>.</p>
+                <p>{rentalHandoff.allOwnCriteriaMet
+                  ? 'Deze optie haalt jouw vier persoonlijke grenzen.'
+                  : 'Let op: deze optie haalt niet alle vier jouw persoonlijke grenzen.'}
+                  {' '}De matchscore van {rentalHandoff.score}% is geen toewijzingskans en wordt niet
+                  als bewijs of contractgegeven overgenomen.</p>
+                <label style={{display:'block',marginBottom:12}}>
+                  <input type="checkbox" checked={rentalApproved}
+                    onChange={event=>setRentalApproved(event.target.checked)} />
+                  {' '}Ik wil alleen dit zelf ingevulde label en deze kale huur als <em>onopgeslagen voorstel</em>
+                  {' '}doorgeven. De huurdesk vraagt nog een tweede bevestiging.
+                </label>
+                <button type="button" disabled={!rentalApproved} onClick={acceptRentalHandoff}>
+                  Ja, bereid dit onopgeslagen huurvoorstel voor
+                </button>{' '}
+                <button type="button" onClick={()=>{
+                  setRentalHandoff(null);setRentalApproved(false);
+                  setRentalMessage('Niet overgenomen. Je woningvergelijking is ongewijzigd.');
+                }}>Annuleren</button>
+              </div>}
+            </section>
           </div>
         )}
       </section>
