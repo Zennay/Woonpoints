@@ -226,3 +226,29 @@ de huidige criteria blijven staan. Wie de hele werkmap wil bewaren
 kiest de bestaande versiegebonden JSON-back-up. Geen automatische
 bestandsopslag, browseropslag, API, advertentielezer of woningreactie.
 Iedere bewerking maakt een eerdere CSV-preview ongeldig.
+
+
+## Eigen CSV-opties toevoegen zonder bestaande te overschrijven
+
+Na de bestaande **Bekijk alle geplakte woningopties**-preview is er nu
+ook een afzonderlijke keuze **Voeg deze bekeken opties toe**. Je mag daarbij
+één tot vijf nieuwe regels aanleveren, zolang er maximaal vijf woningen
+totaal overblijven. Volledig vervangen vraagt nog steeds twee tot vijf
+regels; één regel is dus uitsluitend voor toevoegen toegestaan.
+Woonpoints toont vooraf hoeveel woningen er blijven en hoeveel worden
+toegevoegd. De toevoeging is alleen beschikbaar als er in totaal
+maximaal vijf opties ontstaan, alle bestaande labels uniek en niet-leeg
+zijn en geen toegevoegd label al bestaat (hoofdletterongevoelig).
+Een conflict of overschrijding wordt zichtbaar geweigerd; bestaande
+gegevens worden nooit stilzwijgend overschreven of aangepast.
+
+De bestaande optie **Vervang met deze bekeken opties** blijft behouden
+en vereist haar eigen checkbox. **Toevoegen** vraagt een andere,
+afzonderlijke toestemming. De bestaande criteria, relatieve gewichten,
+eigen methodevoorkeur en alle oude opties blijven bij toevoegen gelijk.
+Nieuwe via CSV ingevoerde opties krijgen net als bij vervangen uitsluitend
+de methode Onbekend. Beide handelingen bewaren eenmalig de vorige
+tijdelijke lijst voor expliciet terugdraaien; handmatig bewerken, toevoegen
+of verwijderen trekt dat herstel in. Een verouderde preview verliest
+toestemming als bron, CSV-tekst of woninglijst verandert.
+Geen netwerk, woningreactie, opslag of accountkoppeling.
