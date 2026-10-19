@@ -12638,6 +12638,38 @@ function PrivateContractVersionComparison() {
     setNotice('Dit is een aparte conceptvragenlijst met alleen jouw eigen notities. ' +
       'Lees de volledige preview en bevestig een eventuele download.');
   }
+  function prepareLandlordDraft() {
+    if (!current) return;
+    const personalQuestions = groups.filter(group => groupNotes[group.id]?.trim());
+    if (!personalQuestions.length) {
+      setNotice('Voeg minimaal één zelfgeschreven vraag toe voordat je een conceptbericht maakt.');
+      return;
+    }
+    const letter = [
+      'Onderwerp: Vragen bij concept-huurovereenkomst',
+      '',
+      'Geachte verhuurder,',
+      '',
+      'Ik heb twee conceptversies van de huurovereenkomst naast elkaar bekeken.',
+      'Voordat ik verderga, wil ik graag een toelichting op de volgende punten:',
+      '',
+      ...personalQuestions.flatMap(group => [
+        'Punt ' + group.id + ': ' + groupNotes[group.id].trim(), ''
+      ]),
+      'Zou u deze punten schriftelijk willen toelichten?',
+      '',
+      'Met vriendelijke groet,',
+      '[Uw naam]',
+      '',
+      'Let op: dit conceptbericht is uitsluitend uit mijn eigen aantekeningen gemaakt.',
+      'Controleer de inhoud, persoonsgegevens en bewoordingen zelf vóór delen.'
+    ].join('\n') + '\n';
+    setFilePreview({source: previewKey, text: letter,
+      filename: 'mijn-conceptbericht-aan-verhuurder.txt'});
+    setConfirmSave(false);
+    setNotice('Conceptbericht lokaal samengesteld uit uitsluitend eigen notities. ' +
+      'Niet verzonden. Lees de volledige tekst en bevestig zelf een eventuele TXT-download.');
+  }
   function saveReport() {
     if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
       setFilePreview(null);
@@ -12826,8 +12858,10 @@ function PrivateContractVersionComparison() {
             onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport met afvinkstatus</button>
           <button type="button" disabled={!groups.some(group => groupNotes[group.id]?.trim())}
             onClick={prepareQuestions}>Bekijk aparte vragenlijst (alleen mijn eigen notities)</button>
+          <button type="button" disabled={!groups.some(group => groupNotes[group.id]?.trim())}
+            onClick={prepareLandlordDraft}>Bekijk conceptbericht aan verhuurder</button>
         </div>
-        <p><small>De vragenlijst bevat geen automatisch gekopieerde contractregels;
+        <p><small>De vragenlijst en het conceptbericht bevatten geen automatisch gekopieerde contractregels;
           zelf geschreven notities kunnen alsnog privé-informatie bevatten.
           Geen verzending naar verhuurder, e-mail of externe dienst.</small></p>
         {filePreview?.source === previewKey && <div style={{marginTop:12}}>
