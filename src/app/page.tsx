@@ -1384,6 +1384,9 @@ type PrivateRentalDecisionSnapshot={
   checked:number;budgetCents:number|null
 };
 type PrivateEnergyRentalOfferProposal={label:string;monthlyCents:number;sourceKey:string};
+type PrivateRentalScenarioOfferProposal={
+  label:string;rentCents:number;serviceCents:number;utilitiesCents:number;depositCents:number
+};
 const PrivateRentalOfferDesk = (() => {
   const styles = {budget: 'rental-budget', buttons: 'rental-buttons', checks: 'rental-checks', column: 'rental-column', desk: 'rental-desk', details: 'rental-details', footnote: 'rental-footnote', form: 'rental-form', header: 'rental-header', importLabel: 'rental-importLabel', links: 'rental-links', notice: 'rental-notice', ok: 'rental-ok', portable: 'rental-portable', preview: 'rental-preview', ranking: 'rental-ranking', rowhead: 'rental-rowhead', sections: 'rental-sections', summary: 'rental-summary', two: 'rental-two', warn: 'rental-warn', warnbox: 'rental-warnbox'};
 type OfferStatus = 'nog-bekijken'|'vragen-open'|'zelf-overwegen'|'afgewezen';
@@ -1709,7 +1712,8 @@ function saveDownload(filename:string,content:string,mime='application/json;char
 }
 
 function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandled,
-  safetyQuestions,onSafetyQuestionsHandled,onPrepareSafetyDecision,onInvalidateSafetyDecision}: {
+  safetyQuestions,onSafetyQuestionsHandled,onPrepareSafetyDecision,onInvalidateSafetyDecision,
+  onPrepareRentalBudget,onInvalidateRentalBudget}: {
   prefill?: {label:string;rent:number}|null;
   onPrefillHandled?:()=>void;
   energyPrefill?:PrivateEnergyRentalOfferProposal|null;
@@ -1718,6 +1722,8 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
   onSafetyQuestionsHandled?:()=>void;
   onPrepareSafetyDecision?:(snapshot:PrivateRentalDecisionSnapshot)=>void;
   onInvalidateSafetyDecision?:()=>void;
+  onPrepareRentalBudget?:(proposal:PrivateRentalScenarioOfferProposal)=>void;
+  onInvalidateRentalBudget?:()=>void;
 } = {}){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [draft,setDraft]=useState<Draft>(newDraft);
@@ -1745,6 +1751,7 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
   const resetTransient=()=>{
     setPendingImport(null);setUndoImport(null);setExportPreview(null);
     setPendingDelete(null);setConfirmClear(false);setBriefPreview(null);
+    onInvalidateRentalBudget?.();
   };
   function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault();
@@ -2025,6 +2032,24 @@ function PrivateOfferDesk({prefill,onPrefillHandled,energyPrefill,onEnergyHandle
             document.getElementById('private-offer-safety-heading')?.scrollIntoView({behavior:'smooth'});
             setNotice('Financiële momentopname aangeboden aan de privé-aanbodcheck. Daar eerst bewust bevestigen.');
           }}>Bekijk deze huurkosten bij mijn aanbodcheck</button>
+        <p>Je kunt ook je eigen kale huur, servicekosten, energiekosten en borg
+          alleen na een tweede bevestiging naar de lokale huurscenariovergelijking
+          sturen. Woon-werk en verhuiskosten worden daar apart door jezelf ingevuld.</p>
+        <button type="button" disabled={!onPrepareRentalBudget}
+          onClick={()=>{
+            if(![chosen.rentCents,chosen.serviceCents,chosen.utilitiesCents,chosen.depositCents]
+                .every(value=>Number.isSafeInteger(value)&&value>=0&&value<=5_000_000)){
+              setNotice('Eigen huurwaarden buiten de toegelaten grens; niets klaargezet.');
+              return;
+            }
+            onPrepareRentalBudget?.({
+              label:chosen.label,rentCents:chosen.rentCents,
+              serviceCents:chosen.serviceCents,utilitiesCents:chosen.utilitiesCents,
+              depositCents:chosen.depositCents
+            });
+            document.getElementById('rental-scenarios-heading')?.scrollIntoView({behavior:'smooth'});
+            setNotice('Eigen huurvoorstel ter controle klaargezet bij huurscenario’s. Nog niets vervangen.');
+          }}>Bekijk dit eigen huurvoorstel bij mijn huurscenario’s</button>
       </div>
       <p><strong>Zelf afgevinkt:</strong> {chosen.checked.length}/{checklist.length}.
         Dit is geen juridische toets, betaalbaarheidsverklaring of officiële toelating.</p>
@@ -2449,6 +2474,7 @@ export default function HomePage() {
   ];
   const [personalOverview,setPersonalOverview]=useState<PrivateHomeOverview|null>(null);
   const [rentalPrefill,setRentalPrefill]=useState<{label:string;rent:number}|null>(null);
+  const [scenarioOfferProposal,setScenarioOfferProposal]=useState<PrivateRentalScenarioOfferProposal|null>(null);
   const [energyRentalProposal,setEnergyRentalProposal]=useState<PrivateEnergyRentalOfferProposal|null>(null);
   const [safetyQuestionsProposal,setSafetyQuestionsProposal]=useState<string|null>(null);
   const [rentalDecisionProposal,setRentalDecisionProposal]=useState<PrivateRentalDecisionSnapshot|null>(null);
@@ -2897,11 +2923,14 @@ export default function HomePage() {
       </PrivateReactionWorkflow>
       <PrivateReactionPacing />
       <ManualHousingDecisionWorkspace onRentalPrefill={item=>setRentalPrefill({...item})} />
-      <PrivateRentalScenarioBudget />
+      <PrivateRentalScenarioBudget proposal={scenarioOfferProposal}
+        onProposalHandled={()=>setScenarioOfferProposal(null)} />
       <PrivateRentalOfferDesk prefill={rentalPrefill}
         onPrefillHandled={()=>setRentalPrefill(null)}
         energyPrefill={energyRentalProposal}
         onEnergyHandled={()=>setEnergyRentalProposal(null)}
+        onPrepareRentalBudget={proposal=>setScenarioOfferProposal({...proposal})}
+        onInvalidateRentalBudget={()=>setScenarioOfferProposal(null)}
         safetyQuestions={safetyQuestionsProposal}
         onSafetyQuestionsHandled={()=>setSafetyQuestionsProposal(null)}
         onPrepareSafetyDecision={snapshot=>{
