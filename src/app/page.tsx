@@ -8435,6 +8435,72 @@ const offerLabels: Record<OfferAnswer, string> = { yes: 'Ja, dit speelt', no: 'N
 
 type OfferSafetyCase = { id: number; answers: Record<string, OfferAnswer>; reviewed: Record<string, boolean> };
 const MAX_OFFER_SAFETY_CASES = 5;
+const MAX_OFFER_SAFETY_BACKUP_BYTES = 10 * 1024;
+const OFFER_SAFETY_BACKUP_KIND = 'woonpoints-private-offer-safety';
+const OFFER_SAFETY_BACKUP_VERSION = 1;
+
+function offerSafetyBackup(cases: readonly OfferSafetyCase[]): string {
+  return JSON.stringify({
+    kind: OFFER_SAFETY_BACKUP_KIND,
+    version: OFFER_SAFETY_BACKUP_VERSION,
+    cases: cases.map(item => ({
+      id: item.id,
+      answers: Object.fromEntries(Object.entries(item.answers)),
+      reviewed: Object.fromEntries(Object.entries(item.reviewed).filter(
+        ([id, done]) => done === true &&
+          (item.answers[id] === 'yes' || item.answers[id] === 'unknown')
+      ))
+    }))
+  }, null, 2);
+}
+
+function decodeOfferSafetyBackup(raw: string): OfferSafetyCase[] | null {
+  if (raw.length < 20 || raw.length > MAX_OFFER_SAFETY_BACKUP_BYTES) return null;
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
+  const hasExactKeys = (value: Record<string, unknown>, names: readonly string[]) => {
+    const keys = Object.keys(value);
+    return keys.length === names.length && keys.every(key => names.includes(key));
+  };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed) || !hasExactKeys(parsed, ['kind', 'version', 'cases']) ||
+      parsed.kind !== OFFER_SAFETY_BACKUP_KIND ||
+      parsed.version !== OFFER_SAFETY_BACKUP_VERSION ||
+      !Array.isArray(parsed.cases) || parsed.cases.length < 1 ||
+      parsed.cases.length > MAX_OFFER_SAFETY_CASES) return null;
+    const ids = new Set<number>();
+    const allowed = new Set(offerSignals.map(signal => signal.id));
+    const restored: OfferSafetyCase[] = [];
+    for (const original of parsed.cases) {
+      if (!isObject(original) || !hasExactKeys(original, ['id', 'answers', 'reviewed']) ||
+        typeof original.id !== 'number' || !Number.isSafeInteger(original.id) ||
+        original.id < 1 || original.id > 1_000_000_000 || ids.has(original.id) ||
+        !isObject(original.answers) || !isObject(original.reviewed)) return null;
+      ids.add(original.id);
+      const answerEntries = Object.entries(original.answers);
+      const reviewedEntries = Object.entries(original.reviewed);
+      if (answerEntries.length > offerSignals.length ||
+        reviewedEntries.length > offerSignals.length) return null;
+      const answers: Record<string, OfferAnswer> = Object.create(null);
+      const reviewed: Record<string, boolean> = Object.create(null);
+      for (const [id, answer] of answerEntries) {
+        if (!allowed.has(id) || (answer !== 'yes' && answer !== 'no' &&
+          answer !== 'unknown')) return null;
+        answers[id] = answer;
+      }
+      for (const [id, done] of reviewedEntries) {
+        if (!allowed.has(id) || done !== true ||
+          (answers[id] !== 'yes' && answers[id] !== 'unknown')) return null;
+        reviewed[id] = true;
+      }
+      restored.push({ id: original.id, answers, reviewed });
+    }
+    return restored;
+  } catch { return null; }
+}
+
 function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: string, reviewed: Record<string, boolean>, caseName: string): string {
   const lines = [
     'WOONPOINTS · PRIVÉ WONINGAANBODCHECK',
@@ -8464,6 +8530,10 @@ function PrivateOfferSafety() {
   const [allPreview, setAllPreview] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [backupPreview, setBackupPreview] = useState(false);
+  const [pendingBackup, setPendingBackup] = useState<OfferSafetyCase[] | null>(null);
+  const [backupMessage, setBackupMessage] = useState('');
+  const [undoBackup, setUndoBackup] = useState<{ cases: OfferSafetyCase[]; selected: number } | null>(null);
 
   const currentCase = caseItems.find(item => item.id === currentCaseId) ?? caseItems[0];
   const answers = currentCase.answers;
@@ -8476,6 +8546,10 @@ function PrivateOfferSafety() {
 
   function updateCurrentCase(change: (current: OfferSafetyCase) => OfferSafetyCase) {
     setCaseItems(current => current.map(item => item.id === currentCaseId ? change(item) : item));
+    setUndoBackup(null);
+    setPendingBackup(null);
+    setBackupPreview(false);
+    setBackupMessage('');
   }
   function selectCase(id: number) {
     if (!caseItems.some(item => item.id === id)) return;
@@ -8486,6 +8560,7 @@ function PrivateOfferSafety() {
     if (caseItems.length >= MAX_OFFER_SAFETY_CASES) return;
     const id = Math.max(...caseItems.map(item => item.id)) + 1;
     setCaseItems(current => [...current, { id, answers: {}, reviewed: {} }]);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
     setCurrentCaseId(id);
     setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
   }
@@ -8493,6 +8568,7 @@ function PrivateOfferSafety() {
     if (caseItems.length <= 1) return;
     const next = caseItems.filter(item => item.id !== currentCaseId);
     setCaseItems(next);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false); setBackupMessage('');
     setCurrentCaseId(next[0].id);
     setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
   }
@@ -8510,6 +8586,7 @@ function PrivateOfferSafety() {
   const reviewActions = [...findings.flagged, ...findings.unknown];
   const reviewedCount = reviewActions.filter(signal => reviewed[signal.id] === true).length;
   const report = offerSafetyExport(answers, today, reviewed, caseLabel(currentCase.id));
+  const portableBackup = offerSafetyBackup(caseItems);
   const status = findings.urgent.length > 0
     ? 'Eerst stoppen en onafhankelijk controleren'
     : findings.flagged.length > 0 || findings.unknown.length > 0 || findings.unanswered.length > 0
@@ -8534,7 +8611,51 @@ function PrivateOfferSafety() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setPreview(false); setAllPreview(false);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+  }
+
+  async function readOwnBackup(file?: File) {
+    setPendingBackup(null);
+    setBackupMessage('');
+    setBackupPreview(false);
+    if (!file) return;
+    if (file.size > MAX_OFFER_SAFETY_BACKUP_BYTES ||
+      file.size < 20 || !file.name.toLocaleLowerCase('nl-NL').endsWith('.json')) {
+      setBackupMessage('Bestand geweigerd: kies een eigen JSON-back-up tot 10 KiB.');
+      return;
+    }
+    try {
+      const raw = await file.text();
+      const restored = decodeOfferSafetyBackup(raw);
+      if (!restored) {
+        setBackupMessage('Bestand geweigerd: schema, versie, vragen of afvinkingen zijn ongeldig.');
+        return;
+      }
+      setPendingBackup(restored);
+      setBackupMessage('Eigen bestand gecontroleerd. Niets vervangen totdat je apart bevestigt.');
+    } catch {
+      setBackupMessage('Bestand kon niet veilig worden gelezen; huidige werkmap ongewijzigd.');
+    }
+  }
+
+  function applyOwnBackup() {
+    if (!pendingBackup) return;
+    setUndoBackup({ cases: caseItems, selected: currentCaseId });
+    setCaseItems(pendingBackup);
+    setCurrentCaseId(pendingBackup[0].id);
+    setPendingBackup(null);
+    setPreview(false); setAllPreview(false); setBackupPreview(false);
+    setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Eigen werkmap hersteld. Eenmalig terugdraaien mogelijk zolang je niets wijzigt.');
+  }
+
+  function undoOwnBackup() {
+    if (!undoBackup) return;
+    setCaseItems(undoBackup.cases);
+    setCurrentCaseId(undoBackup.selected);
+    setUndoBackup(null); setPendingBackup(null); setBackupPreview(false);
+    setPreview(false); setAllPreview(false); setConfirmReset(false); setConfirmDelete(false);
+    setBackupMessage('Vorige tabbladwerkmap teruggezet.');
   }
 
   return (
@@ -8725,6 +8846,62 @@ function PrivateOfferSafety() {
           <button type="button" onClick={() => setConfirmReset(false)}
             style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
         </div>}
+      </section>
+
+      <section className="card" aria-label="Zelf privéwerkmap bewaren en herstellen" style={{ marginTop: 20, marginBottom: 32 }}>
+        <h2 style={{ fontSize: 24 }}>Privéwerkmap back-up en herstel</h2>
+        <p>Je kunt de complete {caseItems.length} {caseItems.length === 1 ? 'werkblad' : 'werkbladen'}
+          optioneel als eigen JSON bewaren om later bewust terug te zetten.
+          Zonder downloaden verdwijnen antwoorden bij herladen of sluiten.
+          Er staan geen adressen, namen, accountgegevens of documenten in dit formaat.
+          Een bestandslocatie kan wel buiten Woonpoints synchroniseren.</p>
+        <button type="button" onClick={() => {
+          setBackupPreview(value => !value); setPendingBackup(null);
+          setBackupMessage(''); setPreview(false); setAllPreview(false);
+        }} style={{ minHeight: 44, padding: '9px 14px' }}>
+          {backupPreview ? 'Sluit JSON-voorbeeld' : 'Bekijk complete privé-JSON'}
+        </button>
+        {backupPreview && <div>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 280, overflow: 'auto',
+            padding: 16, background: '#f3f6f3' }}>{portableBackup}</pre>
+          <button type="button" onClick={() =>
+            downloadLocal(portableBackup, 'woonpoints-woningaanbod-werkmap.json')}
+            style={{ minHeight: 44, padding: '9px 14px' }}>
+            Download bekeken JSON
+          </button>
+        </div>}
+        <label htmlFor="offer-safety-import" style={{ display: 'block', fontWeight: 700, marginTop: 18 }}>
+          Open mijn eerdere privéwerkmap (.json, maximaal 10 KiB)
+        </label>
+        <input type="file" id="offer-safety-import" accept=".json,application/json"
+          style={{ display: 'block', minHeight: 44, maxWidth: '100%', marginTop: 7 }}
+          onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            void readOwnBackup(file);
+          }} />
+        {backupMessage && <p role="status" aria-live="polite">{backupMessage}</p>}
+        {pendingBackup && <div style={{ background: '#f1f6f1', borderRadius: 10, padding: 14 }}>
+          <p><strong>Voorbeeld herstel:</strong> {pendingBackup.length} werkbladen; de huidige {caseItems.length}
+            {' '}worden pas na aparte bevestiging volledig vervangen.</p>
+          <ul>{pendingBackup.map(item => <li key={item.id}>
+            {caseLabel(item.id)}: {Object.keys(item.answers).length} vragen ingevuld,
+            {' '}{Object.values(item.reviewed).filter(Boolean).length} acties zelf nagelopen.
+          </li>)}</ul>
+          <button type="button" onClick={applyOwnBackup} style={{ minHeight: 44, padding: '9px 14px' }}>
+            Vervang mijn complete huidige werkmap
+          </button>
+          <button type="button" onClick={() => { setPendingBackup(null); setBackupMessage('Herstel geannuleerd.'); }}
+            style={{ minHeight: 44, padding: '9px 14px', marginLeft: 8 }}>Annuleren</button>
+        </div>}
+        {undoBackup && <button type="button" onClick={undoOwnBackup}
+          style={{ minHeight: 44, padding: '9px 14px', marginTop: 12 }}>
+          Draai laatste herstel eenmalig terug
+        </button>}
+        <p style={{ fontSize: 14 }}>Alleen precies de bekende vraag-ID's en antwoorden
+          worden geaccepteerd. Onbekende velden, extra werkbladen, corrupte bestandsinhoud,
+          inconsistente afvinkingen of een verkeerde versie worden geweigerd vóór vervanging.
+          Je bestanden worden niet geüpload.</p>
       </section>
     </section>
   );
