@@ -2958,6 +2958,7 @@ export default function HomePage() {
         rentalDecisionProposal={rentalDecisionProposal}
         acceptedRentalDecision={acceptedRentalDecision}
         onAcceptRentalDecision={setAcceptedRentalDecision}
+        onClearRentalProposal={()=>setRentalDecisionProposal(null)}
         onClearRentalDecision={invalidateRentalDecision} />
     </main>
   );
@@ -8624,11 +8625,12 @@ function offerSafetyExport(answers: Record<string, OfferAnswer>, checkedAt: stri
 }
 
 function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
-  acceptedRentalDecision,onAcceptRentalDecision,onClearRentalDecision}: {
+  acceptedRentalDecision,onAcceptRentalDecision,onClearRentalProposal,onClearRentalDecision}: {
   onPrepareRentalQuestions?: (questions: string) => void;
   rentalDecisionProposal?: PrivateRentalDecisionSnapshot|null;
   acceptedRentalDecision?: {caseId:number;offer:PrivateRentalDecisionSnapshot}|null;
   onAcceptRentalDecision?: (value:{caseId:number;offer:PrivateRentalDecisionSnapshot})=>void;
+  onClearRentalProposal?:()=>void;
   onClearRentalDecision?:()=>void
 } = {}) {
   const [caseItems, setCaseItems] = useState<OfferSafetyCase[]>([{ id: 1, answers: {}, reviewed: {} }]);
@@ -8821,7 +8823,7 @@ function PrivateOfferSafety({onPrepareRentalQuestions,rentalDecisionProposal,
             if(!onAcceptRentalDecision)return;
             onAcceptRentalDecision({caseId:currentCase.id,offer:rentalDecisionProposal});
             setFinancialPreview(false);
-            onClearRentalDecision?.();
+            onClearRentalProposal?.();
           }} disabled={!onAcceptRentalDecision} style={{minHeight:44,padding:'9px 14px'}}>
             Koppel deze momentopname aan {caseLabel(currentCase.id)}
           </button>
