@@ -11952,12 +11952,20 @@ function PrivateContractReview({acceptedRentalDecision}: {
   const [importUndo, setImportUndo] = useState<{before:PrivateContractBackup;after:string}|null>(null);
   const [preview, setPreview] = useState<{source: string;text: string}|null>(null);
   const [approved, setApproved] = useState(false);
+  const [shareOwnNotes, setShareOwnNotes] = useState(false);
+  const [questionsPreview, setQuestionsPreview] = useState<{fingerprint:string;text:string}|null>(null);
+  const [questionsApproved, setQuestionsApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
   const amounts = [rent,service,deposit].map(parseContractMoney);
   const moneyBad = [rent,service,deposit].some((s,i)=>s.trim()!==''&&amounts[i]===null);
   const checked = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='gevonden').length;
   const questions = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='vraag');
   const open = PRIVATE_CONTRACT_TOPICS.filter(([id])=>!values[id]||values[id]==='open');
+  const questionFingerprint = JSON.stringify({
+    status:questions.map(([id])=>id),
+    notes:shareOwnNotes?questions.map(([id])=>notes[id]||''):[],
+    shareOwnNotes
+  });
   const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate,acceptedRentalDecision});
   const acceptedOffer = acceptedRentalDecision?.offer ?? null;
   const showOfferComparison = acceptedOffer!==null && comparedSource===source;
@@ -11975,6 +11983,7 @@ function PrivateContractReview({acceptedRentalDecision}: {
     setPreview(null);setApproved(false);setCalendarPreview(null);
     setCalendarAccepted(false);setBackupPreview(null);setBackupAccepted(false);
     setImportCandidate(null);setImportAccepted(false);setImportUndo(null);
+    setQuestionsPreview(null);setQuestionsApproved(false);
     setComparedSource(null);setFeedback('');
   };
   const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
@@ -12141,6 +12150,48 @@ function PrivateContractReview({acceptedRentalDecision}: {
       setFeedback('ICS aan je browser aangeboden. Importeren en melding instellen doe je zelf in je agenda.');
     }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
   }
+
+  function prepareQuestionsHandoff() {
+    if(questions.length===0){
+      setFeedback('Markeer eerst minstens één contractonderdeel als vraag voor een verhuurder of adviseur.');
+      setQuestionsPreview(null);setQuestionsApproved(false);return;
+    }
+    const text = [
+      'MIJN OPEN HUURCONTRACTVRAGEN', '',
+      'Zelf samengestelde conceptvragen. Geen geverifieerde controle, juridisch oordeel of bericht.',
+      'Deze versie bevat geen huurprijs, borg, adres, persoonsgegevens of externe accountgegevens',
+      'uit andere velden van Woonpoints.',
+      ...(shareOwnNotes?['Let op: hieronder kunnen wel persoonlijke tekstnotities staan.','']:[
+        'Eigen notities zijn bewust weggelaten.',''
+      ]),
+      ...questions.flatMap(([id,title,hint],index)=>[
+        (index+1)+'. '+title,
+        '   Vraag: '+hint,
+        ...(shareOwnNotes && notes[id]?.trim()?
+          ['   Eigen notitie: '+notes[id].trim().replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]+/gu,' ')]:[]),
+        ''
+      ]),
+      'Controleer je eigen tekst voordat je iets verstuurt. Woonpoints verstuurt niets.'
+    ].join('\n')+'\n';
+    setQuestionsPreview({fingerprint:questionFingerprint,text});
+    setQuestionsApproved(false);
+    setFeedback('Deelbare conceptvragen staan ter controle klaar. Niets is gedeeld.');
+  }
+  function saveQuestionsHandoff(){
+    if(!questionsPreview||questionsPreview.fingerprint!==questionFingerprint||
+       !questionsApproved||questions.length===0){
+      setQuestionsPreview(null);setQuestionsApproved(false);
+      setFeedback('De vraagselectie is gewijzigd of niet bevestigd. Bekijk een nieuwe preview.');return;
+    }
+    const url=URL.createObjectURL(new Blob([questionsPreview.text],{type:'text/plain;charset=utf-8'}));
+    try{
+      const a=document.createElement('a');a.href=url;
+      a.download='mijn-open-contractvragen.txt';
+      document.body.appendChild(a);a.click();a.remove();
+      setQuestionsApproved(false);
+      setFeedback('Afzonderlijke vragenlijst aangeboden aan je browser. Niets is automatisch verstuurd.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  }
   function saveReport() {
     if (!preview || preview.source!==source || !approved || moneyBad) {
       setFeedback('Het rapport is gewijzigd of niet bevestigd. Maak een nieuwe preview.');
@@ -12240,6 +12291,36 @@ function PrivateContractReview({acceptedRentalDecision}: {
               onChange={e=>{setNotes(current=>({...current,[id]:e.target.value}));change();}}/>
           </label>
         </fieldset>)}
+    </div>
+
+    <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+      <h3>Alleen open vragen apart meenemen</h3>
+      <p>Maak van alle onderdelen met status 'Vraag voor verhuurder / adviseur' een kort,
+        los TXT-document. Kosten, borg, data, aanbodmomentopnames en adressen worden nooit
+        automatisch toegevoegd. Je bepaalt zelf of jouw notities in deze export horen.</p>
+      <p><strong>{questions.length} open vraagpunten geselecteerd.</strong></p>
+      <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+        <input type="checkbox" checked={shareOwnNotes}
+          onChange={e=>{
+            setShareOwnNotes(e.target.checked);
+            setQuestionsPreview(null);setQuestionsApproved(false);setFeedback('');
+          }}/>
+        <span>Ook mijn handgeschreven notities bij deze vragen opnemen. Daar kan persoonlijke informatie in staan.</span>
+      </label>
+      <button type="button" disabled={questions.length===0} onClick={prepareQuestionsHandoff}>
+        Bekijk deze losse vraag- en overleglijst
+      </button>
+      {questionsPreview&&questionsPreview.fingerprint===questionFingerprint&&<div style={{marginTop:14}}>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:350,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{questionsPreview.text}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={questionsApproved} onChange={e=>setQuestionsApproved(e.target.checked)}/>
+          <span>Ik heb de hele tekst gecontroleerd en kies zelf of ik het bestand opsla en eventueel met iemand deel.</span>
+        </label>
+        <button type="button" disabled={!questionsApproved} onClick={saveQuestionsHandoff}>
+          Download uitsluitend mijn bekeken contractvragen
+        </button>
+      </div>}
     </div>
     <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:20}}>
       <button type="button" disabled={moneyBad} onClick={makeReport}>Bekijk mijn volledige vraag- en contractrapport</button>
