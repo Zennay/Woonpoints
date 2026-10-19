@@ -2,6 +2,29 @@
 
 Sectie: `/#private-offer-safety-heading` binnen de bestaande Woonpoints-pagina, ook bereikbaar via de vaste navigatie.
 
+## Eigen herstelbare werkmap — geen automatische opslag
+
+- **Bekijk complete privé-JSON** toont de exacte versiegebonden werkmap voordat een
+  eigen `.json`-bestand handmatig wordt gedownload. Het schema is
+  `{ kind: "woonpoints-private-offer-safety", version: 1, cases: [...] }`.
+- Per werkblad staan uitsluitend de automatisch toegekende numerieke ID,
+  bekende vraag-ID's met `yes/no/unknown` en expliciet als nagelopen aangevinkte
+  **relevante** vraag-ID's. Geen vrije tekst, adressen of verhuurder-identiteiten.
+  TXT-export blijft een leesbaar verslag; JSON is de enige herstelbare vorm.
+- Een zelfgekozen JSON-bestand van maximaal 10 KiB wordt vóór het overschrijven
+  volledig gevalideerd op exact schema, versie, 1–5 unieke veilige werkblad-ID's,
+  0–9 bekende vraag-ID's per map, toegestane antwoorden en uitsluitend geldige
+  positieve follow-up-afvinkingen. Onbekende/prototype-velden en inconsistente
+  afvinkingen worden geweigerd. De originele werkmap blijft onaangeraakt.
+- Eerst verschijnt een gecontroleerd overzicht per werkblad. **Pas na een tweede
+  expliciete herstelknop** vervangt de gebruiker de complete tabbladwerkmap.
+  Daarna bestaat éénmalig **ongedaan maken**, zolang antwoorden, werkbladen of
+  afvinkingen niet verder gewijzigd worden. Annuleren/wissen van een import
+  verandert niets aan andere bronnen.
+- Bestandslocatie kan extern synchroniseren; Woonpoints slaat niets automatisch
+  op en leest alleen een lokaal door de gebruiker gekozen bestand. Geen netwerk,
+  opslag, dienst of WoningNet-actie.
+
 ## Meerdere voorstellen als privéwerkbladen
 
 - De aanbodcheck ondersteunt nu **1–5 onafhankelijke voorstellen** zonder vrijetekst-identiteit:
