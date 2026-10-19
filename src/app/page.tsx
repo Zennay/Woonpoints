@@ -2559,8 +2559,31 @@ function stressScenarios(results:Result[],extra:string,energyPercent:number,
       firstMonthCash:month+cents(r.scenario.moving)!+r.reservedDeposit};
   }).filter((r):r is RentalShock=>r!==null);
 }
+
+type SavingsRow={
+  id:string;scenario:string;target:number;availableAtMove:number;
+  gap:number;monthsNeeded:number|null;remainingAfterGoal:number
+};
+function planSavings(stress:RentalShock[],cashNow:string,savingPerMonth:string,
+  monthsAway:number):SavingsRow[]|null{
+  const now=cents(cashNow),perMonth=cents(savingPerMonth);
+  if(now===null||perMonth===null||!Number.isInteger(monthsAway)||
+     monthsAway<0||monthsAway>24)return null;
+  const available=now+perMonth*monthsAway;
+  return stress.map(row=>{
+    // Reserve is intentionally *additional* to the first month's outlay:
+    // a separate cushion, not an outgoing invoice or refundable deposit.
+    const target=row.firstMonthCash+row.reserve;
+    const outstanding=Math.max(0,target-now);
+    return {id:row.id,scenario:row.scenario,target,availableAtMove:available,
+      gap:Math.max(0,target-available),
+      monthsNeeded:outstanding===0?0:perMonth===0?null:Math.ceil(outstanding/perMonth),
+      remainingAfterGoal:available-target};
+  });
+}
 function reportText(results:Result[],monthlyBudget:number,stress:RentalShock[],
-  extra:string,energyPercent:number,reserveMonths:number):string{
+  extra:string,energyPercent:number,reserveMonths:number,
+  savings:SavingsRow[]|null,cashNow:string,savingPerMonth:string,monthsAway:number):string{
   const lines=[
     'WOONPOINTS · MIJN PRIVE HUURSCENARIOS',
     'Alle bedragen zelf ingevuld en niet onafhankelijk geverifieerd.',
@@ -2590,6 +2613,22 @@ function reportText(results:Result[],monthlyBudget:number,stress:RentalShock[],
       'Eerste-maand kasbehoefte inclusief borg: '+euro.format(r.firstMonthCash/100),'');
   }
   lines.push('Een reserve is geen betaling, borgteruggave of daadwerkelijk spaarsaldo.','');
+  if(savings){
+    lines.push('MIJN EIGEN SPAARSIMULATIE, GEEN FINANCIEEL ADVIES',
+      'Zelf opgegeven beschikbaar bedrag: '+euro.format((cents(cashNow)??0)/100),
+      'Eigen geplande maandelijkse besparing: '+euro.format((cents(savingPerMonth)??0)/100),
+      'Maanden tot eigen verhuisdoel: '+monthsAway,
+      'Doel = eerste maand inclusief verhuiskosten en borg + aparte woonlastenbuffer.','');
+    for(const r of savings){
+      lines.push(r.scenario,
+        'Doel voor vertrek: '+euro.format(r.target/100),
+        'Verwacht gespaard onder eigen aannames: '+euro.format(r.availableAtMove/100),
+        'Tekort bij verhuisdoel: '+euro.format(r.gap/100),
+        'Zelf benodigde maanden bij gekozen spaarbedrag: '+(
+          r.monthsNeeded===null?'niet haalbaar zonder extra inleg':String(r.monthsNeeded)),
+        'Ruimte (+) of tekort (-): '+euro.format(r.remainingAfterGoal/100),'');
+    }
+  }else lines.push('Persoonlijke spaarsimulatie niet ingevuld; geen spaardoel berekend.','');
   lines.push('Let op: geen inflatie, belastingen, toeslagen, borgteruggave, inkomenseisen of',
     'werkelijke toekomstige energietarieven voorspeld. Lasten kunnen afwijken.',
     'Door jou bewust gedownload; lokale/cloudgesynchroniseerde bestandslocaties',
@@ -2611,6 +2650,9 @@ function PrivateRentalScenarioBudget({
   const [extraMonthly,setExtraMonthly]=useState('0');
   const [energyPercent,setEnergyPercent]=useState(0);
   const [reserveMonths,setReserveMonths]=useState(2);
+  const [cashNow,setCashNow]=useState('');
+  const [saveMonthly,setSaveMonthly]=useState('');
+  const [monthsAway,setMonthsAway]=useState(3);
   const [preview,setPreview]=useState<{fingerprint:string;text:string}|null>(null);
   const [backupPreview,setBackupPreview]=useState<{fingerprint:string;text:string}|null>(null);
   const [incoming,setIncoming]=useState<{data:RentalBackup;raw:string}|null>(null);
@@ -2619,12 +2661,16 @@ function PrivateRentalScenarioBudget({
   const [clearRequested,setClearRequested]=useState(false);
   const [status,setStatus]=useState('');
   const sourceFingerprint=JSON.stringify([scenarios,budget]);
-  const fingerprint=JSON.stringify([scenarios,budget,extraMonthly,energyPercent,reserveMonths]);
+  const fingerprint=JSON.stringify([scenarios,budget,extraMonthly,energyPercent,
+    reserveMonths,cashNow,saveMonthly,monthsAway]);
   const results=useMemo(()=>makeResults(scenarios,budget),[scenarios,budget]);
   const monthlyBudget=cents(budget);
   const stress=useMemo(()=>(results&&monthlyBudget!==null?
     stressScenarios(results,extraMonthly,energyPercent,reserveMonths,monthlyBudget):null),
     [results,monthlyBudget,extraMonthly,energyPercent,reserveMonths]);
+  const savings=useMemo(()=>stress?
+    planSavings(stress,cashNow,saveMonthly,monthsAway):null,
+    [stress,cashNow,saveMonthly,monthsAway]);
   function invalidateEdits(){
     fileGeneration.current++;
     setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
@@ -2640,6 +2686,11 @@ function PrivateRentalScenarioBudget({
   function updateBudget(raw:string){
     if(raw!==''&&(!valuePattern.test(raw)||raw.length>9))return;
     setBudget(raw);invalidateEdits();
+  }
+  function updateSavingsInput(which:'current'|'monthly',value:string){
+    if(value!==''&&(!valuePattern.test(value)||value.length>9))return;
+    if(which==='current')setCashNow(value);else setSaveMonthly(value);
+    setPreview(null);setStatus('');
   }
   function updateWhatIfExtra(value:string){
     if(value!==''&&(!valuePattern.test(value)||value.length>9))return;
@@ -2664,7 +2715,7 @@ function PrivateRentalScenarioBudget({
   function openPreview(){
     if(!results||monthlyBudget===null||!stress)return;
     setPreview({fingerprint,text:reportText(results,monthlyBudget,stress,
-      extraMonthly,energyPercent,reserveMonths)});
+      extraMonthly,energyPercent,reserveMonths,savings,cashNow,saveMonthly,monthsAway)});
     setStatus('Lees de hele tekst en kies pas daarna bewust voor downloaden.');
   }
   async function loadBackup(event:ChangeEvent<HTMLInputElement>){
@@ -2834,8 +2885,52 @@ function PrivateRentalScenarioBudget({
         </div>}
         <p>Het bufferdoel staat los van de borg, en een berekende buffer is geen bewijs dat je dit geld hebt. Deze instellingen zijn alleen een tijdelijke simulatie en maken geen deel uit van de versie 1 JSON-back-up van de basiswoningen.</p>
       </div>
+      <div className="private-rental-budget-what-if private-rental-budget-savings">
+        <h3>Mijn verhuisspaarplan: startgeld + aparte reserve</h3>
+        <p>Maak voor elke eigen woning een transparant spaarplaatje met jouw nu beschikbare bedrag en de maandelijkse inleg die je zelf denkt te kunnen missen. De doelbedragen zijn: de eerste maand met borg en verhuiskosten <strong>plus</strong> jouw eerder gekozen extra buffer. Geen echt spaar-, bank- of huuradvies.</p>
+        <div className="private-rental-budget-grid">
+          <label className="private-rental-budget-label">Nu zelf beschikbaar spaargeld (euro)
+            <input inputMode="decimal" autoComplete="off" maxLength={9}
+              value={cashNow} onChange={e=>updateSavingsInput('current',e.target.value)}
+              placeholder="Bijvoorbeeld 1500"/>
+          </label>
+          <label className="private-rental-budget-label">Wat ik zelf iedere maand wil sparen (euro)
+            <input inputMode="decimal" autoComplete="off" maxLength={9}
+              value={saveMonthly} onChange={e=>updateSavingsInput('monthly',e.target.value)}
+              placeholder="Bijvoorbeeld 250"/>
+          </label>
+          <label className="private-rental-budget-label">Maanden tot mijn geplande verhuizing
+            <select value={monthsAway} onChange={e=>{
+              setMonthsAway(Number(e.target.value));setPreview(null);setStatus('');
+            }}>
+              {[0,1,2,3,6,9,12,18,24].map(n=><option key={n} value={n}>
+                {n} {n===1?'maand':'maanden'}</option>)}
+            </select>
+          </label>
+        </div>
+        {!savings?<p role="status">Vul eerst je beschikbare bedrag én maandelijkse spaarbedrag volledig in. Je kunt bewust 0 invullen.</p>:
+          <div className="private-rental-budget-scroll">
+            <table>
+              <caption>Eigen gesimuleerd spaardoel per woning; zonder rente, toeslag, echte bankdata of prijsstijging</caption>
+              <thead><tr><th scope="col">Eigen woning</th><th scope="col">Doel: start + reserve</th>
+                <th scope="col">Zelf verwacht bij vertrek</th><th scope="col">Tekort bij vertrek</th>
+                <th scope="col">Maanden om dit doel te bereiken</th>
+                <th scope="col">Ruimte (+) of tekort (-)</th></tr></thead>
+              <tbody>{savings.map(r=><tr key={r.id}>
+                <th scope="row">{r.scenario}</th>
+                <td>{euro.format(r.target/100)}</td>
+                <td>{euro.format(r.availableAtMove/100)}</td>
+                <td>{euro.format(r.gap/100)}</td>
+                <td>{r.monthsNeeded===null?'Niet met € 0 extra sparen':
+                  r.monthsNeeded+' '+(r.monthsNeeded===1?'maand':'maanden')}</td>
+                <td>{euro.format(r.remainingAfterGoal/100)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>}
+        <p>Geen automatische bankkoppeling of controle van jouw inkomen. Rente, aankomende rekeningen en de vraag of je de inleg daadwerkelijk kunt missen zijn niet meegenomen. De spaarinstellingen zijn tijdelijk en veranderen je basis-JSON niet.</p>
+      </div>
       <div className="private-rental-budget-actions">
-        <button type="button" disabled={!results||!stress} onClick={openPreview}>Bekijk basis + wat-als als privé-TXT</button>
+        <button type="button" disabled={!results||!stress} onClick={openPreview}>Bekijk basis + wat-als + spaarplan als privé-TXT</button>
         <button type="button" onClick={()=>{setClearRequested(true);setPreview(null);setBackupPreview(null);}}>Wis alle eigen scenario's…</button>
       </div>
       {clearRequested&&<div role="group" aria-label="Scenario's wissen">
@@ -2843,6 +2938,7 @@ function PrivateRentalScenarioBudget({
         <button type="button" onClick={()=>{
           fileGeneration.current++;setScenarios(initial());setBudget('');
           setExtraMonthly('0');setEnergyPercent(0);setReserveMonths(2);
+          setCashNow('');setSaveMonthly('');setMonthsAway(3);
           setPreview(null);setBackupPreview(null);setIncoming(null);setUndo(null);
           setClearRequested(false);setStatus('Invoer uit dit tabblad gewist.');
         }}>Ja, wis mijn invoer</button>{' '}
