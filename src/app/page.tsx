@@ -1469,6 +1469,179 @@ const totals=(row:Offer)=>{
     firstYear:monthly*12+row.otherCents
   };
 };
+
+/** Opt-in scenario inputs stay out of rental offer JSON backups and all network APIs. */
+type RentalStressRecord={oldRent:string;moving:string;utilityDelta:string;cash:string;limit:string};
+type RentalStressParsed={oldRent:number;moving:number;utilityDelta:number;cash:number|null;limit:number|null};
+const initialRentalStress=():RentalStressRecord=>({
+  oldRent:'0',moving:'0',utilityDelta:'0',cash:'',limit:''
+});
+function parseRentalStress(raw:RentalStressRecord):RentalStressParsed|null{
+  const oldRent=integerMoney(raw.oldRent);
+  const moving=integerMoney(raw.moving);
+  const utilityDelta=integerMoney(raw.utilityDelta);
+  const cash=raw.cash.trim()===''?null:integerMoney(raw.cash);
+  const limit=raw.limit.trim()===''?null:integerMoney(raw.limit);
+  if(oldRent===null||moving===null||utilityDelta===null||
+    (raw.cash.trim()!==''&&cash===null)||(raw.limit.trim()!==''&&limit===null))return null;
+  return {oldRent,moving,utilityDelta,cash,limit};
+}
+function rentalStressResult(row:Offer,scenario:RentalStressParsed,overlapMonths:number){
+  const base=totals(row);
+  const oldOverlap=scenario.oldRent*overlapMonths;
+  const incremental=scenario.utilityDelta*12+oldOverlap+scenario.moving;
+  return {
+    monthly:base.monthly+scenario.utilityDelta,
+    initial:base.initial+scenario.utilityDelta+oldOverlap+scenario.moving,
+    firstYear:base.firstYear+incremental,
+    extraYear:incremental
+  };
+}
+function PrivateRentalStressPlan({offers}:{offers:Offer[]}){
+  const [raw,setRaw]=useState<RentalStressRecord>(initialRentalStress);
+  const [overlapMonths,setOverlapMonths]=useState(0);
+  const [preview,setPreview]=useState<{signature:string;text:string}|null>(null);
+  const [feedback,setFeedback]=useState('');
+  const scenario=parseRentalStress(raw);
+  const signature=JSON.stringify({raw,overlapMonths,offers:offers.map(row=>[
+    row.id,row.label,row.rentCents,row.serviceCents,row.utilitiesCents,row.depositCents,row.otherCents
+  ])});
+  const results=scenario?offers.filter(validOffer).map(row=>({
+    row,stress:rentalStressResult(row,scenario,overlapMonths)
+  })).sort((a,b)=>a.stress.firstYear-b.stress.firstYear||
+    a.row.label.localeCompare(b.row.label,'nl')):[];
+  function update(field:keyof RentalStressRecord,value:string){
+    setRaw(previous=>({...previous,[field]:value}));
+    setPreview(null);setFeedback('');
+  }
+  function summary():string{
+    if(!scenario||!results.length)return '';
+    const header=[
+      'WOONPOINTS · MIJN PRIVÉ WOONKOSTEN-SCENARIO',
+      'Zelf ingevulde schattingen; geen financiële, juridische of officiële woningtoewijzing.',
+      'Oude maandhuur: '+euro(scenario.oldRent),
+      'Dubbele huur: '+overlapMonths+' extra maand(en)',
+      'Eigen verhuiskosten: '+euro(scenario.moving),
+      'Extra maandelijkse energie/onvoorzien: '+euro(scenario.utilityDelta),
+      'Beschikbaar eigen startgeld: '+(scenario.cash===null?'onbekend':euro(scenario.cash)),
+      'Eigen maandelijkse grens: '+(scenario.limit===null?'onbekend':euro(scenario.limit)),
+      ''
+    ];
+    const lines=results.flatMap(({row,stress})=>[
+      row.label+' ('+statuses[row.status]+')',
+      'Geschatte maandlasten incl. tegenvaller: '+euro(stress.monthly),
+      'Startgeld incl. eerste maand, borg, verhuiskosten en overlap: '+euro(stress.initial),
+      'Eerste twaalf maanden excl. eventuele borgteruggave: '+euro(stress.firstYear),
+      'Extra jaarlasten in dit scenario: '+euro(stress.extraYear),
+      'Buffer na start: '+(scenario.cash===null?'onbekend':
+        (scenario.cash>=stress.initial?euro(scenario.cash-stress.initial)+' over':
+          euro(stress.initial-scenario.cash)+' tekort')),
+      'Maandgrens: '+(scenario.limit===null?'niet ingevoerd':
+        (scenario.limit>=stress.monthly?euro(scenario.limit-stress.monthly)+' ruimte':
+          euro(stress.monthly-scenario.limit)+' boven eigen grens')),
+      ''
+    ]);
+    return [...header,...lines,'Borg is als direct benodigd startgeld meegeteld, maar niet als definitieve jaaruitgave.',
+      'Niet inbegrepen: dubbele verhuisuitgaven buiten dit model, verzekeringen, gemeentelijke lasten, belasting, indexatie.',
+      'Geen aanvraag, portaalcontact, opslag of bericht verzonden.'].join('\n');
+  }
+  function download(){
+    if(!preview||preview.signature!==signature||!scenario||!results.length){
+      setFeedback('De voorstellen of aannames zijn veranderd. Bekijk opnieuw het actuele overzicht.');
+      return;
+    }
+    const file=new Blob([preview.text+'\n'],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(file);
+    try{
+      const anchor=document.createElement('a');
+      anchor.href=url;anchor.download='woonpoints-prive-huurscenario.txt';
+      document.body.appendChild(anchor);anchor.click();anchor.remove();
+      setFeedback('Je gecontroleerde scenario is als TXT aan de browser aangeboden.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+    setPreview(null);
+  }
+  return <section className="rental-stress" aria-labelledby="rental-stress-title">
+    <p className="eyebrow">FINANCIËLE TEGENVALLERS · WAT-ALS</p>
+    <h3 id="rental-stress-title">Wat als verhuizen duurder uitvalt?</h3>
+    <p>Vergelijk de <strong>bestaande eigen huurvoorstellen</strong> met
+      extra energielasten, tijdelijke dubbele huur en verhuisuitgaven.
+      Deze aannames blijven alleen in dit tabblad en wijzigen geen enkel huurvoorstel.</p>
+    <div className="rental-stress-inputs">
+      <label>Huidige maandhuur die tijdens overlap doorloopt (€)
+        <input inputMode="decimal" value={raw.oldRent} onChange={e=>update('oldRent',e.target.value)}
+          aria-describedby="rental-stress-explain"/></label>
+      <label>Maanden dubbele huur
+        <select value={overlapMonths} onChange={e=>{setOverlapMonths(Number(e.target.value));
+          setPreview(null);setFeedback('');}}>
+          {[0,1,2,3].map(n=><option key={n} value={n}>{n} maand{n===1?'':'en'}</option>)}
+        </select></label>
+      <label>Eigen geschatte verhuiskosten, eenmalig (€)
+        <input inputMode="decimal" value={raw.moving} onChange={e=>update('moving',e.target.value)}/></label>
+      <label>Extra energie/onvoorzien per maand (€)
+        <input inputMode="decimal" value={raw.utilityDelta}
+          onChange={e=>update('utilityDelta',e.target.value)}/></label>
+      <label>Beschikbaar startgeld (€) <small>optioneel</small>
+        <input inputMode="decimal" value={raw.cash} onChange={e=>update('cash',e.target.value)}
+          placeholder="Niet ingevuld"/></label>
+      <label>Persoonlijke maandgrens (€) <small>optioneel</small>
+        <input inputMode="decimal" value={raw.limit} onChange={e=>update('limit',e.target.value)}
+          placeholder="Niet ingevuld"/></label>
+    </div>
+    <p id="rental-stress-explain" className="rental-stress-hint">
+      Voor alle bedragen geldt € 0–50.000, maximaal twee decimalen. Oude huur telt alleen
+      mee voor het gekozen aantal overlappende maanden; maandlasten ná de verhuizing
+      bestaan uit de nieuwe huur plus de zelf geschatte maandelijkse tegenvaller.</p>
+    {!scenario?<p className="rental-stress-invalid" role="alert">
+      Ongeldig bedrag. Pas eerst de velden aan; we tonen geen onbetrouwbare bedragen.</p>:
+    !results.length?<p>Voeg eerst hierboven een eigen huurvoorstel toe.</p>:
+    <div className="rental-stress-results">
+      <h4>Mijn vergelijkbare scenario’s</h4>
+      <ol>{results.map(({row,stress})=><li key={row.id}>
+        <strong>{row.label}</strong>
+        <dl>
+          <div><dt>Nieuwe maandlasten</dt><dd>{euro(stress.monthly)}</dd></div>
+          <div><dt>Benodigd startgeld incl. borg</dt><dd>{euro(stress.initial)}</dd></div>
+          <div><dt>Eerste 12 maanden zonder borg als verbruik</dt>
+            <dd>{euro(stress.firstYear)}</dd></div>
+          <div><dt>Extra kosten door mijn scenario</dt><dd>{euro(stress.extraYear)}</dd></div>
+        </dl>
+        {scenario.cash!==null&&<p className={scenario.cash<stress.initial?'rental-stress-risk':'rental-stress-safe'}>
+          {scenario.cash>=stress.initial
+            ?euro(scenario.cash-stress.initial)+' buffer na startgeld'
+            :euro(stress.initial-scenario.cash)+' tekort aan startgeld'}
+        </p>}
+        {scenario.limit!==null&&<p className={scenario.limit<stress.monthly?'rental-stress-risk':'rental-stress-safe'}>
+          {scenario.limit>=stress.monthly
+            ?euro(scenario.limit-stress.monthly)+' ruimte onder maandgrens'
+            :euro(stress.monthly-scenario.limit)+' boven eigen maandgrens'}
+        </p>}
+      </li>)}</ol>
+      <div className="rental-stress-actions">
+        <button type="button" onClick={()=>{setPreview({signature,text:summary()});
+          setFeedback('Controleer de volledige tekst voordat je een eigen bestand downloadt.');}}>
+          Bekijk mijn scenario als TXT…
+        </button>
+        <button type="button" onClick={()=>{setRaw(initialRentalStress());setOverlapMonths(0);
+          setPreview(null);setFeedback('Alleen de tijdelijke scenario-aannames hersteld.');}}>
+          Herstel neutrale aannames</button>
+      </div>
+      {preview&&<div className="rental-stress-preview">
+        <p>Controleer je eigen complete kostenoverzicht. Een bestandsprovider kan dit
+          na een bewuste download buiten Woonpoints synchroniseren.</p>
+        <pre>{preview.text}</pre>
+        <button type="button" disabled={preview.signature!==signature} onClick={download}>
+          Download dit gecontroleerde TXT-bestand</button>
+        <button type="button" onClick={()=>setPreview(null)}>Annuleer</button>
+      </div>}
+    </div>}
+    {feedback&&<p role="status" aria-live="polite">{feedback}</p>}
+    <p className="rental-stress-hint">Geen huurcontracttoets, woningkans of betaalbaarheidsadvies.
+      Er worden geen inkomsten meegerekend. De kasbuffer is uitsluitend het verschil
+      tussen zelf ingevuld beschikbaar startgeld en geschatte eenmalige startbehoefte.
+      Mogelijke teruggave van borg is onzeker en niet als gegarandeerde opbrengst gerekend.</p>
+  </section>;
+}
+
 /** Build a private, human-reviewed interview checklist without claiming source verification. */
 function rentalInterviewBrief(row:Offer):string|null {
   if(!validOffer(row))return null;
@@ -1733,6 +1906,8 @@ function PrivateOfferDesk({prefill,onPrefillHandled}: {
         })}</ol>}
       </div>
     </div>
+
+    <PrivateRentalStressPlan offers={offers} />
 
     {chosen&&<section className={styles.details} aria-label={'Eigen voorstel '+chosen.label}>
       <div className={styles.rowhead}>
