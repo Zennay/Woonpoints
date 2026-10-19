@@ -172,3 +172,31 @@ De bestaande maandreactieplanner, woonpositiehistorie, aanbodcheck, import- en e
 ## Operationele oplevering
 
 Dit is een zelfstandige clientcomponent binnen de bestaande, reeds voor Docker expliciet toegelaten `src/app/page.tsx`, bereikbaar via de bestaande navigatie in `src/app/layout.tsx`. De Docker file-allowlist blijft onveranderd en weigert dus ook na deze feature onbekende nieuwe bestanden. Geen nieuwe dependencies, workflows, QA- of regressiesuites. Release via bestaande repository-branch, verplichte CI/review en reguliere deploy-admissie, niet door een productscore of documentpreview.
+
+
+## Nieuwe functie: meetbare verschillen en veilig wat-als-scenario
+
+**Mijn uitlegbare vergelijking** geeft per **niet gehaald** criterium nu het
+exacte verschil met je eigen grens weer: euro per maand boven het maximum,
+m² of slaapkamers onder het minimum, of reisminuten boven het maximum.
+Dit verschil komt uitsluitend uit je handmatig ingevulde getallen; het
+is geen beschikbaarheidscheck, officiële afwijzing of garantie dat bedragen
+in de advertentie volledig zijn. Hetzelfde verschil staat ook in de
+bestaande, expliciet te beoordelen privé-TXT-preview.
+
+Onder **Wat verandert er als mijn grenzen anders zijn?** kun je een tweede,
+tijdelijk scenario met vier andere grenzen invoeren. Per zelf ingevoerde
+woning toont Woonpoints de oorspronkelijke positie en scenariopositie,
+het aantal behaalde harde grenzen, het gewogen percentage en resterende
+verschillen. Eerst alle vier harde grenzen, dan de bestaande relatieve
+gewichten en pas bij gelijke score de zelf genoteerde methodevoorkeur.
+De oorspronkelijke vergelijking blijft zichtbaar en ongewijzigd.
+
+De scenarioanalyse is **geen editor** voor de echte brongegevens en
+wijzigt nooit het eigen TXT-rapport, JSON-back-up, kostenvergelijking
+of de Huurvoorstellen-overdracht. Bij verandering van een oorspronkelijke
+waarde, prioriteit of woningoptie wordt het scenario onmiddellijk
+ongeldig; alleen **Begin nieuw scenario** maakt een nieuwe momentopname.
+Ongeldige scenariogrenzen geven een invoermelding en geen uitslag.
+Sluiten gooit alleen de tijdelijke scenario-invoer weg. Er wordt niets
+automatisch opgeslagen, doorgestuurd of op WoningNet uitgevoerd.

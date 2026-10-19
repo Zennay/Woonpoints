@@ -10677,6 +10677,19 @@ function WoonMatchCalculate(listing: WoonMatchListing, criteria: WoonMatchCriter
   return { listing, monthly, rules, complete, pass: complete && met === rules.length, met, known, score };
 }
 
+/** Explain only the distance from an owner's own threshold, never inferred listing or eligibility facts. */
+function WoonMatchGap(rule: WoonMatchRule): string | null {
+  if (rule.met !== false || rule.observed === null || rule.required === null) return null;
+  const distance = new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 2 })
+    .format(Math.abs(rule.observed - rule.required));
+  switch (rule.label) {
+    case 'Totale maandkosten': return '€ ' + distance + ' per maand boven jouw maximum';
+    case 'Woonoppervlak': return distance + ' m² onder jouw minimum';
+    case 'Slaapkamers': return distance + ' slaapkamers onder jouw minimum';
+    case 'Reistijd enkele reis': return distance + ' minuten boven jouw maximum';
+    default: return null;
+  }
+}
 function WoonMatchField({ label, value, setValue, placeholder, maxLength = 20 }: { label: string; value: string; setValue: (v: string) => void; placeholder?: string; maxLength?: number }) {
   return <label style={{ display: 'block', fontSize: 14, fontWeight: 650, minWidth: 0 }}>
     <span style={{ display: 'block', marginBottom: 5 }}>{label}</span>
@@ -10859,6 +10872,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   }|null>(null);
   const [costApproved,setCostApproved]=useState(false);
   const [costMessage,setCostMessage]=useState('');
+  const [whatIf, setWhatIf] = useState<{ source: string; limits: WoonMatchCriteria } | null>(null);
   const changeCriteria = (key: keyof WoonMatchCriteria, value: string) => {
     setUndoRestore(null);
     setCriteria(prev => ({ ...prev, [key]: value }));
@@ -10898,6 +10912,20 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
     Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) ||
     woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
     a.listing.id - b.listing.id);
+  // Scenario is deliberately transient: an old source snapshot cannot change or authorize the real comparison.
+  const whatIfCurrent = !!whatIf && whatIf.source === currentSource && canCompare;
+  const whatIfErrors = !whatIf ? [] : ([
+    WoonMatchScalar(whatIf.limits.budget, 'Scenario: maximale maandlasten', 100000, true),
+    WoonMatchScalar(whatIf.limits.area, 'Scenario: minimaal oppervlak', 100000, true),
+    WoonMatchScalar(whatIf.limits.bedrooms, 'Scenario: slaapkamers', 100, true),
+    WoonMatchScalar(whatIf.limits.commute, 'Scenario: reistijd', 10000, true)
+  ].filter(Boolean) as string[]);
+  const scenarioOrdered = whatIfCurrent && whatIfErrors.length === 0
+    ? listings.map(item => WoonMatchCalculate(item, whatIf!.limits, weights)).sort((a, b) =>
+        Number(b.pass) - Number(a.pass) || (b.score ?? -1) - (a.score ?? -1) ||
+        woonMatchMethodRank(b.listing.allocation, preference) - woonMatchMethodRank(a.listing.allocation, preference) ||
+        a.listing.id - b.listing.id)
+    : [];
   const previewValid = showPreview?.source === currentSource && canCompare;
   const rentalHandoffValid = !!rentalHandoff && rentalHandoff.source === currentSource &&
     canCompare && !!onRentalPrefill &&
@@ -11093,7 +11121,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       lines.push('Eigen voorwaarden: ' + (item.pass ? 'Alle vier gehaald' : 'Een of meer niet gehaald') +
         ' · gewogen indicatie ' + (item.score === null ? 'onvolledig' : item.score + '%') + ' (geen toewijzingskans)');
       item.rules.forEach(rule => lines.push(' - ' + rule.label + ': ' + (rule.met === null ? 'onbekend' : rule.met ? 'voldoet' : 'voldoet niet') +
-        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')'));
+        ' · ingevuld ' + String(rule.observed ?? '?') + ' / eigen grens ' + String(rule.required ?? '?') + ' (' + rule.detail + '; gewicht ' + rule.weight + ')' + (WoonMatchGap(rule) ? ' · verschil: ' + WoonMatchGap(rule) : '')));
       if (item.listing.note.trim()) lines.push('Eigen notitie: ' + item.listing.note.trim());
     });
     lines.push('', 'Alleen eigen getallen en notities. Niet gebruiken als bewijs van woninggeschiktheid, identiteit, inkomen of reservering.',
@@ -11263,7 +11291,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
                     outcome.listing.allocation === preference ? ' Past bij je methodevoorkeur.' : ' Wijkt af van je methodevoorkeur.'}
                 </p>
                 <ul>{outcome.rules.map(rule => <li key={rule.label}>
-                  {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight})
+                  {rule.met ? '✓' : '✕'} {rule.label}: {rule.met ? 'voldoet' : 'voldoet niet'} ({String(rule.observed)} versus eigen grens {String(rule.required)}; {rule.detail}; gewicht {rule.weight}){WoonMatchGap(rule) ? <> — <strong>Verschil: {WoonMatchGap(rule)}</strong></> : null}
                 </li>)}</ul>
                 <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:10}}>
                   <button type="button" onClick={()=>{
@@ -11376,8 +11404,57 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
         )}
       </section>
 
+
+      <section style={WoonMatchPanelStyle} aria-labelledby="woonmatch-whatif-heading">
+        <h2 id="woonmatch-whatif-heading">4. Wat verandert er als mijn grenzen anders zijn?</h2>
+        <p>Vergelijk veilig één hypothetisch scenario met je oorspronkelijke vier persoonlijke grenzen.
+          Je echte criteria, weging, woninggegevens, back-up, TXT en overdrachten blijven intact.
+          Dit is alleen een eigen rekenscenario, <strong>geen woningadvies of toewijzingskans</strong>.</p>
+        <button type="button" disabled={!canCompare} onClick={() => setWhatIf({ source: currentSource, limits: { ...criteria } })}>
+          {whatIf ? 'Begin nieuw scenario met mijn actuele grenzen' : 'Begin eigen wat-als-scenario'}
+        </button>
+        {whatIf && !whatIfCurrent && <p role="status">
+          Je oorspronkelijke gegevens zijn veranderd. Het oude scenario is vervallen; begin hierboven opnieuw.
+        </p>}
+        {whatIfCurrent && whatIf && <>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', marginTop: 14 }}>
+            <WoonMatchField label="Scenario: max. maandkosten (€)" value={whatIf.limits.budget}
+              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, budget: value } }))} />
+            <WoonMatchField label="Scenario: min. woonoppervlak (m²)" value={whatIf.limits.area}
+              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, area: value } }))} />
+            <WoonMatchField label="Scenario: min. slaapkamers" value={whatIf.limits.bedrooms}
+              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, bedrooms: value } }))} />
+            <WoonMatchField label="Scenario: max. enkele-reisminuten" value={whatIf.limits.commute}
+              setValue={value => setWhatIf(prev => prev && ({ ...prev, limits: { ...prev.limits, commute: value } }))} />
+          </div>
+          {whatIfErrors.length > 0 ? <div role="status">
+            <p>Vul geldige scenariogrenzen in; ongeldige invoer produceert geen nieuwe rangschikking.</p>
+            <ul>{whatIfErrors.map((error,index) => <li key={index}>{error}</li>)}</ul>
+          </div> : <div aria-live="polite" style={{ marginTop: 14 }}>
+            <p><strong>Nu volledig passend:</strong> {ordered.filter(row => row.pass).length} van {ordered.length}.
+              {' '}<strong>In dit scenario:</strong> {scenarioOrdered.filter(row => row.pass).length} van {scenarioOrdered.length}.
+              {' '}Alle vier grenzen blijven ook in het scenario harde voorwaarden.</p>
+            <ol>{scenarioOrdered.map((row, index) => {
+              const original = ordered.find(item => item.listing.id === row.listing.id)!;
+              const originalRank = ordered.findIndex(item => item.listing.id === row.listing.id) + 1;
+              return <li key={row.listing.id} style={{ marginBottom: 12 }}>
+                <strong>{row.listing.name}</strong> — oorspronkelijke plaats {originalRank}, scenarioplaats {index + 1}.
+                {' '}{original.met}/4 naar {row.met}/4 eigen grenzen gehaald;
+                {' '}score {original.score}% → {row.score}%.
+                <strong> {row.pass ? 'Alle vier in scenario gehaald.' : 'Niet alle vier gehaald.'}</strong>
+                {!row.pass && <ul>{row.rules.filter(rule => !rule.met).map(rule =>
+                  <li key={rule.label}>{rule.label}: {WoonMatchGap(rule) || 'grens niet gehaald'}</li>)}</ul>}
+              </li>;
+            })}</ol>
+            <p style={{ fontSize: 14 }}>Er is niets overgenomen, opgeslagen, verstuurd of in je werkblad aangepast.
+              Gebruik de echte vergelijking hierboven voor bewuste vervolgacties.</p>
+          </div>}
+          <button type="button" onClick={() => setWhatIf(null)}>Sluit scenario zonder overnemen</button>
+        </>}
+      </section>
+
       <section style={WoonMatchPanelStyle} aria-labelledby="export-heading">
-        <h2 id="export-heading">4. Privérapport bekijken en downloaden</h2>
+        <h2 id="export-heading">5. Privérapport bekijken en downloaden</h2>
         <p>De optionele tekst bevat alleen jouw zelf ingevoerde labels, bedragen, criteria en notities.
           Bekijk de volledige inhoud vóór je deze bewust lokaal opslaat. Veranderen van invoer maakt een vorige preview ongeldig.</p>
         <button type="button" disabled={!canCompare} onClick={() => { setShowPreview({ source: currentSource, text: makeReport() }); setAllowDownload(false); }}>
@@ -11394,7 +11471,7 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       </section>
 
       <section style={WoonMatchPanelStyle} aria-labelledby="backup-match-heading">
-        <h2 id="backup-match-heading">5. Mijn eigen woningmatch bewaren en terugzetten</h2>
+        <h2 id="backup-match-heading">6. Mijn eigen woningmatch bewaren en terugzetten</h2>
         <p>Bewaar je zelf ingevoerde criteria, prioriteiten, woningopties en notities in een
           <strong> lokale JSON-back-up</strong> voor een volgende sessie. Ook onvolledige maar geldig geschreven concepten mogen mee.
           Het formaat bevat geen account-, cookies-, WoningNet- of bronrechtengegevens.
