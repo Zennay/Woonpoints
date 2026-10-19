@@ -2,7 +2,7 @@
 
 ## Nieuw: woningaanbodcheck vóór betalen of gegevens delen
 
-Open **[Woningaanbodcheck](/woningaanbod-check)** vanuit de vaste navigatie
+Open **[Woningaanbodcheck](/#private-offer-safety-heading)** vanuit de vaste navigatie
 (of rechtstreeks via `/woningaanbod-check`). In drie korte stappen beoordeel je
 zelf negen signalen rond afzender, betaalverzoeken, identiteitsdocumenten en
 huurvoorwaarden. De uitslag maakt onzekere/onbeantwoorde vragen zichtbaar,
