@@ -2541,7 +2541,7 @@ function makeResults(scenarios:RentalScenario[],budget:string):Result[]|null{
   return results;
 }
 type RentalShock={
-  scenario:string;month:number;delta:number;margin:number;
+  id:string;scenario:string;month:number;delta:number;margin:number;
   reserve:number;annual:number;firstMonthCash:number
 };
 function stressScenarios(results:Result[],extra:string,energyPercent:number,
@@ -2554,7 +2554,7 @@ function stressScenarios(results:Result[],extra:string,energyPercent:number,
     if(utilities===null)return null;
     const increase=extraCents+Math.round(utilities*energyPercent/100);
     const month=r.month+increase;
-    return {scenario:r.scenario.title,month,delta:increase,margin:limit-month,
+    return {id:r.scenario.id,scenario:r.scenario.title,month,delta:increase,margin:limit-month,
       reserve:month*reserveMonths,annual:12*month+cents(r.scenario.moving)!,
       firstMonthCash:month+cents(r.scenario.moving)!+r.reservedDeposit};
   }).filter((r):r is RentalShock=>r!==null);
@@ -2591,7 +2591,7 @@ function reportText(results:Result[],monthlyBudget:number,stress:RentalShock[],
   }
   lines.push('Een reserve is geen betaling, borgteruggave of daadwerkelijk spaarsaldo.','');
   lines.push('Let op: geen inflatie, belastingen, toeslagen, borgteruggave, inkomenseisen of',
-    'variabele energieprijzen berekend. Werkelijke lasten kunnen afwijken.',
+    'werkelijke toekomstige energietarieven voorspeld. Lasten kunnen afwijken.',
     'Door jou bewust gedownload; lokale/cloudgesynchroniseerde bestandslocaties',
     'vallen buiten Woonpoints. Browserinvoer wordt niet door de app opgeslagen.');
   return lines.join('\n')+'\n';
@@ -2821,7 +2821,7 @@ function PrivateRentalScenarioBudget({
               <th scope="col">Extra per maand</th><th scope="col">Ruimte onder maandgrens</th>
               <th scope="col">Eigen bufferdoel</th><th scope="col">Eerste maand incl. borg</th>
               <th scope="col">12 maanden incl. verhuizing, excl. borg</th></tr></thead>
-            <tbody>{stress.map(r=><tr key={r.scenario}>
+            <tbody>{stress.map(r=><tr key={r.id}>
               <th scope="row">{r.scenario}</th>
               <td>{euro.format(r.month/100)}</td>
               <td>{euro.format(r.delta/100)}</td>
