@@ -12,7 +12,8 @@ jobs:
   # Preserve original integration semantics: PRs exercise GitHub's proposed
   # merge commit, which may contain changes from the target branch.
   test:
-    runs-on: ubuntu-latest
+    if: ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
+    runs-on: [self-hosted, portfolio-pool, vps]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
@@ -39,8 +40,8 @@ jobs:
   # Separate immutable PR HEAD proof. A passing synthetic merge test is not
   # evidence the contributor's exact source SHA was ever validated.
   source-head:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request') && ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
+    runs-on: [self-hosted, portfolio-pool, vps]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
