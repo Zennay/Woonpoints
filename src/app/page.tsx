@@ -11903,6 +11903,9 @@ function PrivateContractReview() {
   const [service, setService] = useState('');
   const [deposit, setDeposit] = useState('');
   const [signingDate, setSigningDate] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [calendarPreview, setCalendarPreview] = useState<{source:string;content:string}|null>(null);
+  const [calendarAccepted, setCalendarAccepted] = useState(false);
   const [preview, setPreview] = useState<{source: string;text: string}|null>(null);
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -11911,8 +11914,14 @@ function PrivateContractReview() {
   const checked = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='gevonden').length;
   const questions = PRIVATE_CONTRACT_TOPICS.filter(([id])=>values[id]==='vraag');
   const open = PRIVATE_CONTRACT_TOPICS.filter(([id])=>!values[id]||values[id]==='open');
-  const source = JSON.stringify({values,notes,rent,service,deposit,signingDate});
-  const change = () => {setPreview(null);setApproved(false);setFeedback('');};
+  const source = JSON.stringify({values,notes,rent,service,deposit,signingDate,followUpDate});
+  const totalMonthly = amounts[0]!==null&&amounts[1]!==null ? amounts[0]+amounts[1] : null;
+  const initialCash = totalMonthly!==null&&amounts[2]!==null ? totalMonthly+amounts[2] : null;
+  const firstYearRent = totalMonthly!==null ? totalMonthly*12 : null;
+  const change = () => {
+    setPreview(null);setApproved(false);setCalendarPreview(null);
+    setCalendarAccepted(false);setFeedback('');
+  };
   const fieldStyle = {display:'grid',gap:7,minWidth:0} as const;
   const formGrid = {display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14} as const;
   function makeReport() {
@@ -11927,7 +11936,11 @@ function PrivateContractReview() {
       'Servicekosten per maand: '+(amounts[1]===null?'Niet ingevuld':contractEuro(amounts[1])),
       'Kale huur + service per maand: '+(amounts[0]===null||amounts[1]===null?'Onbekend; vul beide bedragen in':contractEuro(amounts[0]+amounts[1])),
       'Borg eenmalig: '+(amounts[2]===null?'Niet ingevuld':contractEuro(amounts[2])),
+      'Indicatieve startbetaling (maandbedrag + borg): '+(initialCash===null?'Onbekend':contractEuro(initialCash)),
+      '12 maanden kale huur + service (exclusief borg, energie en overige kosten): '+(firstYearRent===null?'Onbekend':contractEuro(firstYearRent)),
+      'Let op: borg is geen definitieve uitgave; teruggave en inhoudingen zijn niet voorspeld.',
       'Eigen gewenste tekendatum: '+date,
+      'Eigen herinnering voor open vragen: '+(followUpDate||'Niet ingevuld'),
       '',
       'CONTROLEPUNTEN',
       ...PRIVATE_CONTRACT_TOPICS.flatMap(([id,title,hint])=>[
@@ -11947,6 +11960,48 @@ function PrivateContractReview() {
     setPreview({source,text:lines.join('\n')+'\n'});
     setApproved(false);
     setFeedback('Rapport voorbereid. Lees de volledige tekst hieronder en bevestig zelf de download.');
+  }
+  function prepareCalendar() {
+    const [y,m,d] = followUpDate.split('-').map(Number);
+    const parsed = new Date(Date.UTC(y,m-1,d));
+    const valid = /^\d{4}-\d{2}-\d{2}$/.test(followUpDate) &&
+      y>=2000&&y<=2100&&parsed.toISOString().slice(0,10)===followUpDate;
+    const now = new Date();
+    const localToday = String(now.getFullYear())+'-'+String(now.getMonth()+1).padStart(2,'0')+
+      '-'+String(now.getDate()).padStart(2,'0');
+    if (!valid || followUpDate<localToday) {
+      setFeedback('Kies eerst een geldige herinneringsdag vandaag of later.');return;
+    }
+    const day = followUpDate.replace(/-/g,'');
+    const nextDay = new Date(Date.UTC(y,m-1,d+1)).toISOString().slice(0,10).replace(/-/g,'');
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    // Deliberately never embed contract amounts, addresses, notes or other user text.
+    const content = [
+      'BEGIN:VCALENDAR','VERSION:2.0','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+      'PRODID:-//Woonpoints//Private Contract Followup//NL',
+      'BEGIN:VEVENT','UID:contract-vragen-'+day+'@woonpoints.local',
+      'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+day,'DTEND;VALUE=DATE:'+nextDay,
+      'SUMMARY:Controleer eigen vragen over huurcontract',
+      'DESCRIPTION:Bekijk je eigen contract en bespreek open vragen voordat je beslist. Geen afspraak of ondertekening.',
+      'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY',
+      'DESCRIPTION:Controleer eigen huurcontractvragen','END:VALARM',
+      'END:VEVENT','END:VCALENDAR'
+    ].join('\r\n')+'\r\n';
+    setCalendarPreview({source,content});setCalendarAccepted(false);
+    setFeedback('Bekijk de exacte kalenderinhoud voordat je het bestand opslaat. Er is geen afspraak gemaakt.');
+  }
+  function saveCalendar() {
+    if(!calendarPreview||calendarPreview.source!==source||!calendarAccepted){
+      setCalendarPreview(null);setCalendarAccepted(false);
+      setFeedback('Herinnering gewijzigd of niet bevestigd. Maak opnieuw een preview.');return;
+    }
+    const url=URL.createObjectURL(new Blob([calendarPreview.content],{type:'text/calendar;charset=utf-8'}));
+    try {
+      const a=document.createElement('a');a.href=url;a.download='huurcontract-vragen-herinnering.ics';
+      document.body.appendChild(a);a.click();a.remove();
+      setCalendarAccepted(false);
+      setFeedback('ICS aan je browser aangeboden. Importeren en melding instellen doe je zelf in je agenda.');
+    }finally{window.setTimeout(()=>URL.revokeObjectURL(url),1000);}
   }
   function saveReport() {
     if (!preview || preview.source!==source || !approved || moneyBad) {
@@ -11983,6 +12038,9 @@ function PrivateContractReview() {
       <label style={fieldStyle}><strong>Eigen gewenste tekendatum (optioneel)</strong>
         <input type="date" value={signingDate} onChange={e=>{setSigningDate(e.target.value);change();}}/>
       </label>
+      <label style={fieldStyle}><strong>Herinnering om open vragen na te lopen</strong>
+        <input type="date" value={followUpDate} onChange={e=>{setFollowUpDate(e.target.value);change();}}/>
+      </label>
     </div>
     {moneyBad&&<p role="alert">Een bedrag is ongeldig. Gebruik bijvoorbeeld 850,00 zonder €-teken.</p>}
     <p aria-live="polite"><strong>{checked}/10 zelf teruggevonden</strong> · {questions.length} vraagpunten · {open.length} nog niet nagekeken.</p>
@@ -11990,6 +12048,9 @@ function PrivateContractReview() {
       contractEuro(amounts[0]+amounts[1]):'Onbekend totdat beide bedragen zijn ingevuld'}
       {' · '}<strong>Borg:</strong> {amounts[2]!==null?contractEuro(amounts[2]):'Niet ingevuld'}.
       Dit zijn uitsluitend eigen contractaannames, geen geverifieerde kosten.</p>
+    <p><strong>Indicatief bij aanvang te betalen:</strong> {initialCash===null?'Onbekend; vul huur, service en borg in':contractEuro(initialCash)}
+      {' · '}<strong>Eerste 12 maanden huur + service:</strong> {firstYearRent===null?'Onbekend':contractEuro(firstYearRent)}.
+      De borg is mogelijk terug te ontvangen en zit niet in de genoemde 12-maandskosten. Energie, verhuizing en andere kosten zijn niet inbegrepen.</p>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(270px,1fr))',gap:12}}>
       {PRIVATE_CONTRACT_TOPICS.map(([id,title,hint],i)=>
         <fieldset key={id} style={{border:'1px solid #c9d8cf',borderRadius:12,padding:14,minWidth:0}}>
@@ -12016,7 +12077,8 @@ function PrivateContractReview() {
       <button type="button" onClick={()=>{
         if(!window.confirm('Alle eigen controles en bedragen uit dit tabblad wissen?'))return;
         setValues({});setNotes({});setRent('');setService('');setDeposit('');
-        setSigningDate('');change();setFeedback('Alleen deze tijdelijke contractcontrole is gewist.');
+        setSigningDate('');setFollowUpDate('');change();
+        setFeedback('Alleen deze tijdelijke contractcontrole is gewist.');
       }}>Wis tijdelijke contractcontrole</button>
     </div>
     {preview&&preview.source===source&&<div style={{marginTop:16}}>
@@ -12029,6 +12091,21 @@ function PrivateContractReview() {
       </label>
       <button type="button" disabled={!approved} onClick={saveReport}>Download mijn bekeken TXT</button>
     </div>}
+    <div style={{marginTop:18,borderTop:'1px solid #c9d8cf',paddingTop:16}}>
+      <h3>Eigen herinnering voor open vragen</h3>
+      <p>Bewaar na je eigen controle eventueel een agenda-item zonder adres, contractinhoud of bedragen.
+        Je agenda importeert het bestand alleen als jij daarvoor kiest; er wordt niets automatisch ingepland.</p>
+      <button type="button" disabled={!followUpDate} onClick={prepareCalendar}>Bekijk kalenderbestand voor gekozen dag</button>
+      {calendarPreview&&calendarPreview.source===source&&<div style={{marginTop:12}}>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:260,overflowY:'auto',
+          padding:14,background:'#f2f6f2',borderRadius:10}}>{calendarPreview.content}</pre>
+        <label style={{display:'flex',gap:10,alignItems:'start',marginBottom:12}}>
+          <input type="checkbox" checked={calendarAccepted} onChange={e=>setCalendarAccepted(e.target.checked)}/>
+          <span>Ik heb de exacte agenda-inhoud gelezen en wil zelf een .ics-bestand downloaden.</span>
+        </label>
+        <button type="button" disabled={!calendarAccepted} onClick={saveCalendar}>Download mijn bekeken agenda-item</button>
+      </div>}
+    </div>
     {feedback&&<p role="status" aria-live="polite">{feedback}</p>}
     <p><small>Er is geen opslag in dit tabblad, geen API-verzoek, e-mail of automatische toestemming.
       Sluit je het tabblad, dan verdwijnen de ingevulde waarden; een zelf gedownload bestand blijft onder jouw beheer.
