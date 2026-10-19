@@ -49,21 +49,46 @@ velden of plaktekst vervalt de preview. Na de import is **éénmalig ongedaan ma
 tot de gebruiker een nieuwe woningoptie toevoegt, verwijdert of bewerkt. Criteria blijven gelijk;
 de bestaande TXT-preview moet opnieuw worden opgebouwd.
 
+## Nieuw: bewuste loting- of inschrijfduurvoorkeur
+
+De M2-privévergelijker bevat nu ook een handmatig genoteerde **toewijzingsmethode** per
+woning: *Onbekend*, *Loting* of *Inschrijfduur*. Je kunt daarnaast los daarvan jouw
+persoonlijke voorkeur instellen op *Geen*, *Loting* of *Inschrijfduur*.
+De bekende, zelf ingevoerde methode wordt met eigen voorkeur vergeleken en op elke
+woningkaart en in de privacy-preview expliciet getoond. Alleen bij **gelijke score**
+onder de oorspronkelijke **vier harde kosten-/ruimte-/kamers-/reistijdvoorwaarden**
+telt een bekende passende methode vóór onbekend, en onbekend vóór een bekende
+afwijkende methode. De gewogen matchscore blijft gebaseerd op de vier bestaande
+waarden en meet **geen** lotingskans, inschrijfduur, WoningNet-toewijzing of echte
+woningbronzekerheid.
+
+De bestaande 7-koloms tekstimport blijft bewust achterwaarts compatibel en
+zet de methode van iedere nieuwe geplakte woning op *Onbekend*; er is geen
+geautomatiseerde inferentie uit het woonlabel of notitieveld.
+
+De privé-JSON-export gebruikt nu precies `woonpoints.private-match.v2` en bewaart
+naast de bestaande criteria en 1–5 gewichten ook jouw methodevoorkeur en de
+zelf ingevoerde methode per woning. Bij herstel blijven oude **v1-bestanden**
+ondersteund, maar krijgen ze uitsluitend *geen voorkeur* en *onbekende methode*
+op alle woningen, zonder onbewezen metadata bij te verzinnen. De volledige
+herstelpreview toont alle velden vóór een afzonderlijke bevestiging en oude
+previews vervallen zodra je toewijzingsvoorkeur wijzigt.
+
 ## Nieuw: complete lokale back-up en bewuste restore
 
 Een gebruiker kan de **volledige eigen privéwoningmatch** (ook een tijdelijk onvolledig
-concept) als `woonpoints.private-match.v1` JSON apart bewaren. De export bevat alleen
-vier eigen criteria, vier gewichten, 2–5 zelf ingevoerde woningopties en optionele
+concept) als `woonpoints.private-match.v2` JSON apart bewaren. De export bevat alleen
+vier eigen criteria, vier gewichten, methodevoorkeur, 2–5 zelf ingevoerde woningopties en optionele
 notities; geen interne tijdelijke row-ID, account, reacties, authenticatie, externe
 listing of WoningNet-bewijs. De tekst wordt volledig getoond; pas na afzonderlijk
 aanvinken kan de eigenaar zelf een lokaal JSON-bestand downloaden.
 
-Via **Open eigen woningmatch-back-up** kan de eigenaar later maximaal 12 KiB
+Via **Open eigen woningmatch-back-up** kan de eigenaar later een v1- of v2-bestand van maximaal 12 KiB
 lokale UTF-8 JSON opnieuw openen. Het formulier weigert niet-UTF-8, afwijkende
 schema's/versies, extra of ontbrekende velden, ongeldige numerieke grenswaarden,
 onvolledige surrogate-paren, dubbele niet-lege woninglabels of ongeldige gewichtwaarden
 (alleen gehele 1–5). Geen externe API of server ziet het gekozen bestand.
-De browser toont vóór vervanging **alle** criteria, gewichten, woninglabels,
+De browser toont vóór vervanging **alle** criteria, gewichten, methodevoorkeur, woninglabels,
 bedragen, oppervlaktes, kamers, reistijden en notities. Niets wordt gewijzigd
 zonder een apart bevestigingsvakje. Een wijziging van de huidige invoer tijdens
 de preview maakt het voorbeeld ongeldig.
