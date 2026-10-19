@@ -12483,7 +12483,7 @@ function PrivateContractVersionComparison() {
   const [newer, setNewer] = useState('');
   const [diff, setDiff] = useState<PrivateContractDiffPreview | null>(null);
   const [includeQuotes, setIncludeQuotes] = useState(false);
-  const [filePreview, setFilePreview] = useState<{source: string; text: string} | null>(null);
+  const [filePreview, setFilePreview] = useState<{source: string; text: string; filename: string} | null>(null);
   const [confirmSave, setConfirmSave] = useState(false);
   const [notice, setNotice] = useState('');
   const [reviewedGroups, setReviewedGroups] = useState<number[]>([]);
@@ -12571,9 +12571,38 @@ function PrivateContractVersionComparison() {
       'Controleer altijd beide originele documenten naast elkaar.',
       'Woonpoints heeft niemand gecontacteerd en niets geüpload, bewaard of geaccepteerd.'
     ].join('\n') + '\n';
-    setFilePreview({source: previewKey, text: report});
+    setFilePreview({source: previewKey, text: report,
+      filename: 'mijn-contractversies-wijzigingen.txt'});
     setConfirmSave(false);
     setNotice('Lees de volledige TXT-preview. De download gebeurt alleen na jouw aparte toestemming.');
+  }
+  function prepareQuestions() {
+    if (!current) return;
+    const personalQuestions = groups.filter(group => groupNotes[group.id]?.trim());
+    if (!personalQuestions.length) {
+      setNotice('Schrijf eerst minimaal één eigen vraag bij een wijzigingsgroep.');
+      return;
+    }
+    // Intentionally excludes both pasted contract sources and diff line text.
+    // Even personal notes can contain sensitive information: preview is mandatory.
+    const report = [
+      'MIJN VRAGEN OVER TWEE HUURCONTRACTVERSIES', '',
+      'Zelf opgeschreven aandachtspunten, geen juridisch advies of contractacceptatie.',
+      'Bevat geen automatisch overgenomen contractregels of bedragen.',
+      'Controleer zelf of je vragen persoonsgegevens bevatten voordat je ze deelt.',
+      '',
+      ...personalQuestions.flatMap(group => [
+        'Wijzigingsgroep ' + group.id + ' · ' +
+          (reviewedGroups.includes(group.id) ? 'zelf bekeken' : 'nog niet bekeken'),
+        groupNotes[group.id].trim(), ''
+      ]),
+      'Er is niets verzonden of opgeslagen door Woonpoints.'
+    ].join('\n') + '\n';
+    setFilePreview({source: previewKey, text: report,
+      filename: 'mijn-vragen-over-contractversies.txt'});
+    setConfirmSave(false);
+    setNotice('Dit is een aparte conceptvragenlijst met alleen jouw eigen notities. ' +
+      'Lees de volledige preview en bevestig een eventuele download.');
   }
   function saveReport() {
     if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
@@ -12587,7 +12616,7 @@ function PrivateContractVersionComparison() {
     try {
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'mijn-contractversies-wijzigingen.txt';
+      a.download = filePreview.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -12734,8 +12763,15 @@ function PrivateContractVersionComparison() {
           <span>Neem ook mijn eigen aandachtspunten op in de TXT. Deze kunnen persoonlijke
             gegevens bevatten en worden standaard <strong>niet</strong> geëxporteerd.</span>
         </label>
-        <button type="button" style={{marginTop:12}} disabled={!current.additions && !current.removals}
-          onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport met afvinkstatus</button>
+        <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:12}}>
+          <button type="button" disabled={!current.additions && !current.removals}
+            onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport met afvinkstatus</button>
+          <button type="button" disabled={!groups.some(group => groupNotes[group.id]?.trim())}
+            onClick={prepareQuestions}>Bekijk aparte vragenlijst (alleen mijn eigen notities)</button>
+        </div>
+        <p><small>De vragenlijst bevat geen automatisch gekopieerde contractregels;
+          zelf geschreven notities kunnen alsnog privé-informatie bevatten.
+          Geen verzending naar verhuurder, e-mail of externe dienst.</small></p>
         {filePreview?.source === previewKey && <div style={{marginTop:12}}>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
             padding:14,background:'#f2f6f2',borderRadius:10}}>{filePreview.text}</pre>
@@ -12745,7 +12781,7 @@ function PrivateContractVersionComparison() {
             <span>Ik heb de volledige rapporttekst bekeken en bepaal zelf of ik dit bestand opsla.</span>
           </label>
           <button type="button" disabled={!confirmSave} onClick={saveReport}>
-            Download uitsluitend mijn bekeken TXT
+            Download uitsluitend mijn bekeken {filePreview.filename}
           </button>
         </div>}
       </div>}
