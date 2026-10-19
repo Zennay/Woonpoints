@@ -2262,6 +2262,11 @@ function readPrivateBudgetBackup(text: string): PrivateBudgetBackup | null {
 }
 
 type CostHandoff = {selected: [Home, Home]; preferences: Preferences};
+/** Ephemeral, user-approved candidate pair: labels and integer EUR rents only. */
+export type PrivateMatchCostPair = {
+  first: {label:string;rent:number};
+  second: {label:string;rent:number};
+};
 type PrivateLongTermOffer = {
   sourceLabels: [string, string];
   first: PrivateCostInputs;
@@ -2270,8 +2275,10 @@ type PrivateLongTermOffer = {
 
 
 /** Two explicit, local-only handoffs unify shortlist, cost comparison and action planning. */
-export function ManualHousingDecisionWorkspace({onRentalPrefill}: {
+export function ManualHousingDecisionWorkspace({onRentalPrefill, matchCostOffer, onMatchCostHandled}: {
   onRentalPrefill?: (selected: {label:string;rent:number}) => void;
+  matchCostOffer?: PrivateMatchCostPair | null;
+  onMatchCostHandled?: () => void;
 } = {}) {
   const [handoff, setHandoff] = useState<CostHandoff | null>(null);
   const [planPrefill, setPlanPrefill] =
@@ -2291,6 +2298,7 @@ export function ManualHousingDecisionWorkspace({onRentalPrefill}: {
         onMovePrefill={home => setMovingOffer({...home})}
         onRentalPrefill={onRentalPrefill} />
       <ManualHousingCostComparison handoff={handoff}
+        matchCostOffer={matchCostOffer} onMatchCostHandled={onMatchCostHandled}
         onLongTermOffer={offer => setLongTermOffer(offer)} />
       <PrivateLongTermHousingCosts offer={longTermOffer}
         onOfferHandled={() => setLongTermOffer(null)} />
@@ -2303,15 +2311,18 @@ export function ManualHousingDecisionWorkspace({onRentalPrefill}: {
   );
 }
 
-export function ManualHousingCostComparison({handoff, onLongTermOffer}: {
+export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCostOffer, onMatchCostHandled}: {
   handoff?: CostHandoff | null;
   onLongTermOffer?: (offer: PrivateLongTermOffer) => void;
+  matchCostOffer?: PrivateMatchCostPair | null;
+  onMatchCostHandled?: () => void;
 } = {}) {
   const [a, setA] = useState<CostDraft>(() => blankCosts('Woning A'));
   const [b, setB] = useState<CostDraft>(() => blankCosts('Woning B'));
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState('');
   const [fromShortlist, setFromShortlist] = useState(false);
+  const [matchCostApproved, setMatchCostApproved] = useState(false);
   const [pendingBudgetRestore, setPendingBudgetRestore] = useState<PrivateBudgetBackup | null>(null);
   const [budgetArchiveMessage, setBudgetArchiveMessage] = useState('');
 
@@ -2560,6 +2571,47 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer}: {
       <div>
         <p className="eyebrow">PERSOONLIJKE WONINGAFWEGING · PRIVÉ IN DIT TABBLAD</p>
         <h2 id="private-budget-title">Wat kost wonen je écht per maand?</h2>
+        {matchCostOffer && <aside aria-label="Eigen woningmatch kostenvoorstel"
+          style={{border:'2px solid #7ab9aa',padding:14,borderRadius:10,margin:'16px 0'}}>
+          <h3>Neem twee woningen uit je eigen woningmatch over?</h3>
+          <p>Dit is een <strong>momentopname van niet-geverifieerde eigen gegevens</strong>.
+            Het gaat uitsluitend om twee labels en twee gehele kale maandhuren;
+            geen score, reistijd, kans, energie, service, borg of andere bedragen.
+            Je huidige kostenvergelijking wordt pas na afzonderlijke bevestiging vervangen.</p>
+          <ol>
+            <li>{matchCostOffer.first.label}: kale huur €{matchCostOffer.first.rent} per maand</li>
+            <li>{matchCostOffer.second.label}: kale huur €{matchCostOffer.second.rent} per maand</li>
+          </ol>
+          <p>Alle andere kosten starten op €0 als <strong>nog zelf in te vullen</strong>.
+            De financiële vergelijking wordt niet automatisch als akkoord of besluit opgeslagen.</p>
+          <label style={{display:'block',marginBottom:12}}>
+            <input type="checkbox" checked={matchCostApproved}
+              onChange={event=>setMatchCostApproved(event.target.checked)} />
+            {' '}Ik heb de twee kale huurprijzen gecontroleerd en wil mijn huidige tijdelijke
+            kostenscenario&apos;s pas nu overschrijven.
+          </label>
+          <button type="button" disabled={!matchCostApproved} onClick={()=>{
+            const first=matchCostOffer.first,second=matchCostOffer.second;
+            const valid=(entry:{label:string;rent:number})=>
+              entry.label.length>=1&&entry.label.length<=64&&entry.label===entry.label.trim()&&
+              !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(entry.label)&&
+              Number.isSafeInteger(entry.rent)&&entry.rent>=100&&entry.rent<=10000;
+            const nextA={...blankCosts(first.label),rent:String(first.rent)};
+            const nextB={...blankCosts(second.label),rent:String(second.rent)};
+            if(!valid(first)||!valid(second)||first.label===second.label||
+              !calculatePrivateCosts(nextA)||!calculatePrivateCosts(nextB)){
+              setNotice('De ontvangen woninglabels of huurbedragen zijn ongeldig. Kostengegevens zijn ongewijzigd.');
+              onMatchCostHandled?.();setMatchCostApproved(false);return;
+            }
+            setA(nextA);setB(nextB);setShow(false);setFromShortlist(false);
+            setPendingBudgetRestore(null);setMatchCostApproved(false);
+            setNotice('Twee eigen woninglabels en kale huren overgenomen. Controleer service, energie, vervoer en startkosten vóór je verder rekent; overige bedragen starten op nul.');
+            onMatchCostHandled?.();
+          }}>Ja, vervang mijn tijdelijke kostenscenario&apos;s</button>{' '}
+          <button type="button" onClick={()=>{setMatchCostApproved(false);onMatchCostHandled?.();}}>
+            Nee, behoud mijn huidige scenario&apos;s
+          </button>
+        </aside>}
         <p>Vergelijk twee zelf ingevulde scenario&apos;s, inclusief service, energie, vervoer
           en eenmalige startkosten. Je ziet het maandverschil, het eerste jaar en een
           volgend jaar zonder de eenmalige startkosten.</p>
