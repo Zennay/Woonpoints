@@ -10890,6 +10890,8 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
   const [restoreMessage, setRestoreMessage] = useState('');
   const [undoRestore, setUndoRestore] = useState<{ criteria: WoonMatchCriteria; weights: WoonMatchWeights; preference: WoonMatchPreference; listings: WoonMatchListing[] } | null>(null);
   const [csvText, setCsvText] = useState('');
+  const csvFileRead = useRef(0);
+  const [csvFileMessage, setCsvFileMessage] = useState('');
   const [csvError, setCsvError] = useState('');
   const [pendingCsv, setPendingCsv] = useState<{ source: string; paste: string; rows: Omit<WoonMatchListing, 'id'>[] } | null>(null);
   const [confirmCsv, setConfirmCsv] = useState(false);
@@ -11008,6 +11010,39 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
     element.click();
     element.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+
+  // Reading is explicitly local and never accepts a document as a saved
+  // listing. The pasted-content preview plus append/replace consent still apply.
+  const openPrivateCsvFile = async (file: File | undefined) => {
+    const serial = ++csvFileRead.current;
+    setPendingCsv(null);
+    setConfirmCsv(false);
+    setConfirmCsvAppend(false);
+    setCsvFileMessage('');
+    if (!file) return;
+    if (file.size > 4096) {
+      setCsvFileMessage('Bestand geweigerd: maximaal 4 KiB UTF-8-tekst.');
+      return;
+    }
+    try {
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      if (serial !== csvFileRead.current) return;
+      const result = parsePrivateMatchCsv(decoded, 1);
+      if (result.error) {
+        setCsvFileMessage('Bestand geweigerd: ' + result.error + ' Je bestaande invoer blijft staan.');
+        return;
+      }
+      setCsvText(decoded);
+      setCsvError('');
+      setCsvFileMessage('Eigen bestand lokaal geopend: ' + result.rows.length +
+        ' woningoptie(s). Bekijk alle regels hieronder en bevestig toevoegen of vervangen afzonderlijk.');
+    } catch {
+      if (serial === csvFileRead.current) {
+        setCsvFileMessage('Bestand niet leesbaar als geldige UTF-8. Je invoer bleef ongewijzigd.');
+      }
+    }
   };
 
   const previewPastedCsv = () => {
@@ -11316,18 +11351,34 @@ function PrivateListingMatchStudio({ onRentalPrefill, onCostPrefill }: {
       </section>
 
       <section style={{ ...WoonMatchPanelStyle, marginTop: 22 }} aria-labelledby="csv-intake-heading">
-        <h2 id="csv-intake-heading">Optioneel: eigen woninglijst plakken</h2>
+        <h2 id="csv-intake-heading">Optioneel: eigen woninglijst plakken of lokaal openen</h2>
         <p>Gebruik een zelf gemaakt, puntkomma-gescheiden tekstlijstje. Maximaal 4 KiB; één tot vijf bij toevoegen, twee tot vijf bij vervangen;
-          kolommen en volgorde liggen vast. Dit is geen advertentie-import, linkbezoek, CSV-export of accountkoppeling.
+          kolommen en volgorde liggen vast. Dit is geen advertentie-import, linkbezoek of accountkoppeling.
           <strong> Kies liever eigen labels dan adressen.</strong></p>
         <p><code style={{ overflowWrap: 'anywhere' }}>{WOON_MATCH_CSV_HEADER}</code></p>
+        <label style={{ display: 'block', margin: '12px 0', fontWeight: 650 }}>
+          Open mijn eigen CSV-bestand op dit apparaat (max. 4 KiB, UTF-8)
+          <input type="file" accept=".csv,text/csv,text/plain" style={{ display: 'block', marginTop: 8 }}
+            onChange={event => {
+              const selected = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void openPrivateCsvFile(selected);
+            }} />
+        </label>
+        <p style={{ fontSize: 13 }}>
+          Alleen lokale bestandslezing in dit tabblad; niets wordt verzonden of opgeslagen.
+          Een geldig bestand vult uitsluitend onderstaande bewerkbare tekst in.
+          Daarna moet je zelf alle regels bekijken en apart bevestigen of je toevoegt of vervangt.
+          Kies bij voorkeur labels zonder straatadres of andere persoonlijke gegevens.
+        </p>
+        {csvFileMessage && <p role="status">{csvFileMessage}</p>}
         <label style={{ display: 'block', fontWeight: 650 }} htmlFor="woonmatch-paste">Eigen tekst (één woning per regel)</label>
         <textarea id="woonmatch-paste" rows={5} maxLength={4096} value={csvText}
-          onChange={event => { setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setConfirmCsvAppend(false); setCsvError(''); }}
+          onChange={event => { csvFileRead.current += 1; setCsvFileMessage(''); setCsvText(event.target.value); setPendingCsv(null); setConfirmCsv(false); setConfirmCsvAppend(false); setCsvError(''); }}
           placeholder={'label;kale_huur;extra_maandlasten;m2;slaapkamers;reistijd_min;notitie\nWoning A;800;190;60;1;30;zelf bekijken\nWoning B;880;210;75;2;45;'}
           style={{ ...WoonMatchInputStyle, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} />
         <div style={{ marginTop: 10 }}>
-          <button type="button" onClick={previewPastedCsv}>Bekijk alle geplakte woningopties vóór vervangen</button>
+          <button type="button" onClick={previewPastedCsv}>Bekijk alle eigen woningopties vóór toevoegen of vervangen</button>
         </div>
         {csvError && <p role="status">{csvError}</p>}
         {pendingCsv && !pendingCsvValid && <p role="status">De preview is vervallen omdat de invoer of woninglijst veranderde.</p>}
