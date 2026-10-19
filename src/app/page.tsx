@@ -12410,6 +12410,26 @@ function PrivateContractReview({acceptedRentalDecision}: {
 // the Docker source allowlist and CI ownership policy remain unchanged.
 type PrivateContractDiffLine = {kind: 'same' | 'removed' | 'added'; text: string; oldLine: number | null; newLine: number | null};
 type PrivateContractDiffPreview = {source: string; lines: PrivateContractDiffLine[]; additions: number; removals: number; unchanged: number};
+type PrivateContractChangeGroup = {id: number; rows: PrivateContractDiffLine[]};
+
+// Each uninterrupted run of changed lines becomes one reviewable change group.
+// This is a text-review aid only: groups are not legal clauses or approvals.
+function privateContractChangeGroups(lines: PrivateContractDiffLine[]): PrivateContractChangeGroup[] {
+  const groups: PrivateContractChangeGroup[] = [];
+  let changed: PrivateContractDiffLine[] = [];
+  const flush = () => {
+    if (changed.length) {
+      groups.push({id: groups.length + 1, rows: changed});
+      changed = [];
+    }
+  };
+  for (const row of lines) {
+    if (row.kind === 'same') flush();
+    else changed.push(row);
+  }
+  flush();
+  return groups;
+}
 
 const CONTRACT_VERSION_MAX_CHARS = 8000;
 const CONTRACT_VERSION_MAX_LINES = 80;
@@ -12466,15 +12486,32 @@ function PrivateContractVersionComparison() {
   const [filePreview, setFilePreview] = useState<{source: string; text: string} | null>(null);
   const [confirmSave, setConfirmSave] = useState(false);
   const [notice, setNotice] = useState('');
+  const [reviewedGroups, setReviewedGroups] = useState<number[]>([]);
+  const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [includeNotes, setIncludeNotes] = useState(false);
   const source = JSON.stringify([earlier, newer]);
   const current = diff?.source === source ? diff : null;
-  const previewKey = JSON.stringify([source, includeQuotes]);
+  const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
+    [current]);
+  const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
+  const previewKey = JSON.stringify([source, includeQuotes, includeNotes,
+    [...reviewedGroups].sort((a, b) => a - b), groupNotes]);
 
   function invalidate() {
     setDiff(null);
     setFilePreview(null);
     setConfirmSave(false);
+    setReviewedGroups([]);
+    setGroupNotes({});
+    setOnlyOpen(false);
+    setIncludeNotes(false);
     setNotice('');
+  }
+  function invalidateExport() {
+    setFilePreview(null);
+    setConfirmSave(false);
+    setNotice('Opvolgstatus of eigen notities aangepast. Bekijk een nieuwe exportpreview.');
   }
   function compare() {
     const rows = comparePrivateContractText(earlier, newer);
@@ -12483,6 +12520,10 @@ function PrivateContractVersionComparison() {
       setNotice('Voeg twee niet-lege teksten toe (maximaal 8.000 tekens en 80 regels elk).');
       return;
     }
+    setReviewedGroups([]);
+    setGroupNotes({});
+    setOnlyOpen(false);
+    setIncludeNotes(false);
     setDiff({
       source,
       lines: rows,
@@ -12505,14 +12546,26 @@ function PrivateContractVersionComparison() {
       'Toegevoegde regels: ' + current.additions,
       'Verwijderde regels: ' + current.removals,
       'Identieke regels: ' + current.unchanged,
+      'Wijzigingsgroepen: ' + groups.length,
+      'Handmatig bekeken groepen: ' + reviewed,
+      'Nog te bekijken groepen: ' + (groups.length - reviewed),
       '',
+      'Bekeken = alleen eigen afvinkstatus, GEEN juridische of inhoudelijke goedkeuring.',
       includeQuotes ? 'LET OP: DEZE VERSIE BEVAT TEKST UIT JE CONTRACT.' :
         'Contractinhoud weggelaten; alleen soort wijziging en regelnummer.',
+      includeNotes ? 'LET OP: DEZE VERSIE BEVAT JE EIGEN NOTITIES.' :
+        'Persoonlijke notities zijn standaard niet opgenomen.',
       '',
-      ...current.lines.filter(row => row.kind !== 'same').flatMap(row => [
-        (row.kind === 'added' ? 'TOEGEVOEGD: nieuwe regel ' + row.newLine :
-          'VERWIJDERD: oude regel ' + row.oldLine),
-        ...(includeQuotes ? [row.text] : []),
+      ...groups.flatMap(group => [
+        'WIJZIGINGSGROEP ' + group.id + ' · ' +
+          (reviewedGroups.includes(group.id) ? 'HANDMATIG BEKEKEN' : 'NOG TE BEKIJKEN'),
+        ...(includeNotes && groupNotes[group.id]?.trim() ?
+          ['Eigen notitie: ' + groupNotes[group.id].trim()] : []),
+        ...group.rows.flatMap(row => [
+          (row.kind === 'added' ? 'TOEGEVOEGD: nieuwe regel ' + row.newLine :
+            'VERWIJDERD: oude regel ' + row.oldLine),
+          ...(includeQuotes ? [row.text] : [])
+        ]),
         ''
       ]),
       'Controleer altijd beide originele documenten naast elkaar.',
@@ -12592,6 +12645,55 @@ function PrivateContractVersionComparison() {
         <h3>Exacte regelwijzigingen</h3>
         <p aria-live="polite"><strong>{current.additions} toegevoegd · {current.removals} verwijderd
           · {current.unchanged} identiek.</strong> Dit telt regels, niet juridische clausules.</p>
+        <h4>Mijn wijzigingsgroepen nalopen</h4>
+        <p><strong>{reviewed} van {groups.length} groepen handmatig bekeken.</strong> Vink
+          iedere groep uitsluitend af nadat je de oorspronkelijke contractteksten hebt
+          vergeleken. Een vinkje betekent niet dat je akkoord gaat of dat een wijziging veilig is.
+          Notities en vinkjes staan alleen tijdelijk in dit tabblad.</p>
+        <label style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
+          <input type="checkbox" checked={onlyOpen}
+            onChange={event => setOnlyOpen(event.target.checked)} />
+          Toon alleen groepen die ik nog niet heb bekeken
+        </label>
+        {groups.filter(group => !onlyOpen || !reviewedGroups.includes(group.id))
+          .map(group => (
+            <article key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
+              padding:12,marginBottom:12}}>
+              <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
+              <div style={{maxHeight:240,overflowY:'auto',overflowWrap:'anywhere'}}>
+                {group.rows.map((row,index) => <div key={index} style={{marginTop:8}}>
+                  <small>{row.kind === 'added' ? '+ Nieuw · regel ' + row.newLine :
+                    '− Oud · regel ' + row.oldLine}</small>
+                  <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'2px 0'}}>
+                    {row.text || '(lege regel)'}
+                  </pre>
+                </div>)}
+              </div>
+              <label style={{display:'grid',gap:6,marginTop:12}}>
+                Mijn eigen aandachtspunt (optioneel, maximaal 240 tekens)
+                <textarea rows={2} maxLength={240} value={groupNotes[group.id] || ''}
+                  placeholder="Bijvoorbeeld: dit bedrag navragen bij de verhuurder"
+                  onChange={event => {
+                    setGroupNotes(previous => ({...previous,[group.id]:event.target.value}));
+                    invalidateExport();
+                  }}/>
+              </label>
+              <label style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
+                <input type="checkbox" checked={reviewedGroups.includes(group.id)}
+                  onChange={event => {
+                    setReviewedGroups(previous => previous.includes(group.id) ?
+                      previous.filter(id => id !== group.id) : [...previous,group.id]);
+                    invalidateExport();
+                  }}/>
+                Ik heb deze groep zelf naast de originele documenten bekeken
+              </label>
+            </article>
+          ))}
+        {onlyOpen && reviewed === groups.length && groups.length > 0 &&
+          <p role="status">Alle groepen zijn handmatig afgevinkt. Dit is geen akkoord
+            of juridische controle; vergelijk de originele documenten zelf.</p>}
+        <details>
+          <summary>Bekijk ook de volledige regel-voor-regel vergelijking, inclusief ongewijzigd</summary>
         <div role="region" aria-label="Resultaat van de lokale tekstvergelijking"
           style={{maxHeight:380, overflowY:'auto', overflowWrap:'anywhere'}}>
           {current.lines.map((row, index) => (
@@ -12608,6 +12710,7 @@ function PrivateContractVersionComparison() {
             </div>
           ))}
         </div>
+        </details>
         <p><small>De lijst is een letterlijke tekstvergelijking. Een verschoven identieke
           regel kan elders terugkomen; een andere regelindeling kan extra verschillen tonen.
           Lees de volledige contracten ook naast elkaar.</small></p>
@@ -12622,8 +12725,17 @@ function PrivateContractVersionComparison() {
             Dit kan persoonsgegevens en gevoelige afspraken bevatten.
             Standaard worden die teksten <strong>niet</strong> geëxporteerd.</span>
         </label>
+        <label style={{display:'flex',gap:8,alignItems:'start',marginTop:12}}>
+          <input type="checkbox" checked={includeNotes}
+            onChange={event => {
+              setIncludeNotes(event.target.checked);
+              invalidateExport();
+            }}/>
+          <span>Neem ook mijn eigen aandachtspunten op in de TXT. Deze kunnen persoonlijke
+            gegevens bevatten en worden standaard <strong>niet</strong> geëxporteerd.</span>
+        </label>
         <button type="button" style={{marginTop:12}} disabled={!current.additions && !current.removals}
-          onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport</button>
+          onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport met afvinkstatus</button>
         {filePreview?.source === previewKey && <div style={{marginTop:12}}>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
             padding:14,background:'#f2f6f2',borderRadius:10}}>{filePreview.text}</pre>
