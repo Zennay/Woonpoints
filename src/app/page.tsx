@@ -12490,6 +12490,7 @@ function PrivateContractVersionComparison() {
   const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
+  const contractFileReadEpoch = useRef(0);
   const source = JSON.stringify([earlier, newer]);
   const current = diff?.source === source ? diff : null;
   const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
@@ -12499,6 +12500,8 @@ function PrivateContractVersionComparison() {
     [...reviewedGroups].sort((a, b) => a - b), groupNotes]);
 
   function invalidate() {
+    // Any source edit cancels an already pending asynchronous local file read.
+    contractFileReadEpoch.current++;
     setDiff(null);
     setFilePreview(null);
     setConfirmSave(false);
@@ -12512,6 +12515,37 @@ function PrivateContractVersionComparison() {
     setFilePreview(null);
     setConfirmSave(false);
     setNotice('Opvolgstatus of eigen notities aangepast. Bekijk een nieuwe exportpreview.');
+  }
+  async function importPlainTextContract(file: File | undefined, side: 'earlier' | 'newer') {
+    if (!file) return;
+    const epoch = ++contractFileReadEpoch.current;
+    // Browser accept filters are hints only; enforce limits before reading bytes.
+    if (!/\.txt$/i.test(file.name) || file.size < 1 || file.size > 32768) {
+      setNotice('Kies een niet-leeg .txt-bestand van maximaal 32 KiB. PDF, DOCX en andere bestanden worden niet ingelezen.');
+      return;
+    }
+    try {
+      const bytes = await file.arrayBuffer();
+      if (epoch !== contractFileReadEpoch.current) return;
+      const text = new TextDecoder('utf-8', {fatal: true}).decode(bytes)
+        .replace(/^\uFEFF/, '');
+      if (!text.trim() || text.includes('\u0000') ||
+          text.length > CONTRACT_VERSION_MAX_CHARS ||
+          privateContractLines(text).length > CONTRACT_VERSION_MAX_LINES) {
+        setNotice('Bestand niet overgenomen: maximaal 8.000 tekens en 80 tekstregels per concept; geen binaire inhoud.');
+        return;
+      }
+      invalidate();
+      if (side === 'earlier') setEarlier(text);
+      else setNewer(text);
+      setNotice((side === 'earlier' ? 'Oudere' : 'Nieuwere') +
+        ' TXT lokaal overgenomen; de vergelijking en alle oude exporttoestemmingen zijn gewist. ' +
+        'Controleer de tekst en klik zelf op Vergelijk.');
+    } catch {
+      if (epoch === contractFileReadEpoch.current) {
+        setNotice('Het bestand kon niet als geldige UTF-8 tekst worden gelezen. Er is niets overgenomen.');
+      }
+    }
   }
   function compare() {
     const rows = comparePrivateContractText(earlier, newer);
@@ -12647,6 +12681,14 @@ function PrivateContractVersionComparison() {
             onChange={event => { setEarlier(event.target.value); invalidate(); }}
           />
           <small>{earlier.length}/{CONTRACT_VERSION_MAX_CHARS} tekens · {privateContractLines(earlier).length} regels</small>
+          <span>Of laad uitsluitend een lokale UTF-8 .txt met oude concepttekst:</span>
+          <input type="file" accept=".txt,text/plain"
+            aria-label="Laad oudere contracttekst uit een lokaal TXT-bestand"
+            onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void importPlainTextContract(file, 'earlier');
+            }} />
         </label>
         <label style={{display: 'grid', gap: 8}}>
           <strong>Nieuwere concepttekst</strong>
@@ -12655,6 +12697,14 @@ function PrivateContractVersionComparison() {
             onChange={event => { setNewer(event.target.value); invalidate(); }}
           />
           <small>{newer.length}/{CONTRACT_VERSION_MAX_CHARS} tekens · {privateContractLines(newer).length} regels</small>
+          <span>Of laad uitsluitend een lokale UTF-8 .txt met nieuwe concepttekst:</span>
+          <input type="file" accept=".txt,text/plain"
+            aria-label="Laad nieuwere contracttekst uit een lokaal TXT-bestand"
+            onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void importPlainTextContract(file, 'newer');
+            }} />
         </label>
       </div>
       <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:12}}>
@@ -12664,6 +12714,14 @@ function PrivateContractVersionComparison() {
             privateContractLines(newer).length > CONTRACT_VERSION_MAX_LINES}>
           Vergelijk mijn twee teksten lokaal
         </button>
+        <button type="button" disabled={!earlier && !newer}
+          onClick={() => {
+            const previousEarlier = earlier;
+            setEarlier(newer);
+            setNewer(previousEarlier);
+            invalidate();
+            setNotice('Oud en nieuw omgewisseld. Bestaande vergelijking, vragen en rapporttoestemmingen zijn gewist.');
+          }}>Wissel oud en nieuw</button>
         <button type="button" onClick={() => {
           if (!window.confirm('Beide ingevoerde contractconcepten en previews uit dit tabblad wissen?')) return;
           setEarlier(''); setNewer(''); invalidate();
@@ -12787,6 +12845,9 @@ function PrivateContractVersionComparison() {
       </div>}
       {notice && <p role="status" aria-live="polite">{notice}</p>}
       <p><small>Deze functie gebruikt uitsluitend tijdelijk tabbladgeheugen.
+        TXT-import leest alleen de door jou geselecteerde UTF-8-tekst lokaal
+        (maximaal 32 KiB bestand, 8.000 tekens en 80 regels per concept);
+        PDF/DOCX, scans en juridische inhoudsanalyse worden niet ondersteund.
         Geen account, upload, contractacceptatie, AI-samenvatting, automatische opslag
         of contact met een verhuurder. Sluiten of verversen wist de invoer van dit onderdeel;
         een eerder gedownload TXT-bestand blijft onder jouw eigen beheer.</small></p>
