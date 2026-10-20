@@ -12778,8 +12778,21 @@ function PrivateContractVersionComparison() {
       setNotice('Deze back-up is gewijzigd; controleer eerst een nieuwe preview.');
       return;
     }
-    saveFile('mijn-contractversies-review-prive.json',
-      reviewBackupPreview.content, 'application/json;charset=utf-8');
+    // The other page sections' saveFile/saveDownload helpers are scoped to
+    // their own components. Keep this consent-gated browser download local.
+    const blob = new Blob([reviewBackupPreview.content],
+      {type:'application/json;charset=utf-8'});
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'mijn-contractversies-review-prive.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
     setReviewBackupAccepted(false);
     setNotice('De privé-JSON is aan je browser aangeboden. Bewaar dit contractbestand zelf veilig.');
   }
