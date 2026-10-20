@@ -12553,6 +12553,9 @@ function PrivateContractVersionComparison() {
   const [reviewedGroups, setReviewedGroups] = useState<number[]>([]);
   const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
   const [onlyOpen, setOnlyOpen] = useState(false);
+  // View-only controls do not change stored reviews or signed export previews.
+  const [groupSearch, setGroupSearch] = useState('');
+  const [notesOnly, setNotesOnly] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [reviewBackupPreview, setReviewBackupPreview] =
     useState<{source: string; content: string} | null>(null);
@@ -12571,6 +12574,13 @@ function PrivateContractVersionComparison() {
   const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
     [current]);
   const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
+  const searchTerm = groupSearch.trim().toLowerCase();
+  const visibleGroups = groups.filter(group =>
+    (!onlyOpen || !reviewedGroups.includes(group.id)) &&
+    (!notesOnly || !!groupNotes[group.id]?.trim()) &&
+    (!searchTerm || String(group.id) === searchTerm ||
+      (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
+      group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
   const reviewSource = JSON.stringify([source,
     [...reviewedGroups].sort((a, b) => a - b), groupNotes, onlyOpen]);
   const previewKey = JSON.stringify([source, includeQuotes, includeNotes,
@@ -12590,6 +12600,8 @@ function PrivateContractVersionComparison() {
     setReviewedGroups([]);
     setGroupNotes({});
     setOnlyOpen(false);
+    setGroupSearch('');
+    setNotesOnly(false);
     setIncludeNotes(false);
     setNotice('');
   }
@@ -12642,6 +12654,8 @@ function PrivateContractVersionComparison() {
     setReviewedGroups([]);
     setGroupNotes({});
     setOnlyOpen(false);
+    setGroupSearch('');
+    setNotesOnly(false);
     setIncludeNotes(false);
     setDiff({
       source,
@@ -12840,6 +12854,7 @@ function PrivateContractVersionComparison() {
       unchanged: lines.filter(row => row.kind === 'same').length});
     setReviewedGroups([...backup.reviewedGroups]);
     setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
+    setGroupSearch(''); setNotesOnly(false);
     setFilePreview(null); setConfirmSave(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setRestoreCandidate(null); setRestoreAccepted(false);
@@ -12853,6 +12868,7 @@ function PrivateContractVersionComparison() {
     contractFileReadEpoch.current++;
     setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
     setReviewedGroups(before.reviewed); setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
+    setGroupSearch(''); setNotesOnly(false);
     setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setFilePreview(null); setConfirmSave(false);
@@ -12957,13 +12973,35 @@ function PrivateContractVersionComparison() {
           iedere groep uitsluitend af nadat je de oorspronkelijke contractteksten hebt
           vergeleken. Een vinkje betekent niet dat je akkoord gaat of dat een wijziging veilig is.
           Notities en vinkjes staan alleen tijdelijk in dit tabblad.</p>
-        <label style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
-          <input type="checkbox" checked={onlyOpen}
-            onChange={event => setOnlyOpen(event.target.checked)} />
-          Toon alleen groepen die ik nog niet heb bekeken
-        </label>
-        {groups.filter(group => !onlyOpen || !reviewedGroups.includes(group.id))
-          .map(group => (
+        <div style={{display:'grid',gap:10,marginBottom:14,maxWidth:720}}>
+          <label style={{display:'grid',gap:6}}>
+            <strong>Zoek in gewijzigde contractregels en mijn eigen notities</strong>
+            <input type="search" value={groupSearch} maxLength={120}
+              autoComplete="off" spellCheck={false}
+              placeholder="Bijvoorbeeld borg, huurprijs, opzegtermijn of groepsnummer"
+              onChange={event => setGroupSearch(event.target.value)} />
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={onlyOpen}
+              onChange={event => setOnlyOpen(event.target.checked)} />
+            Toon alleen groepen die ik nog niet heb bekeken
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={notesOnly}
+              onChange={event => setNotesOnly(event.target.checked)} />
+            Toon alleen groepen met een eigen aandachtspunt
+          </label>
+          <p aria-live="polite" style={{margin:0}}>
+            <strong>{visibleGroups.length} van {groups.length} wijzigingsgroepen zichtbaar.</strong>
+            {' '}Zoeken en filteren gebeurt alleen in dit tabblad; de volledige vergelijking,
+            afvinkstatus, privé-back-up en rapporten blijven ongewijzigd.
+          </p>
+          {(groupSearch || onlyOpen || notesOnly) && <button type="button"
+            style={{justifySelf:'start'}} onClick={() => {
+              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false);
+            }}>Wis alleen deze weergavefilters</button>}
+        </div>
+        {visibleGroups.map(group => (
             <article key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
               padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
@@ -12996,6 +13034,10 @@ function PrivateContractVersionComparison() {
               </label>
             </article>
           ))}
+        {visibleGroups.length === 0 && groups.length > 0 &&
+          <p role="status">Geen wijzigingsgroepen voldoen aan de gekozen filters.
+            Wis je zoekterm of vink een weergavefilter uit. Er is niets verwijderd
+            en de volledige vergelijking blijft beschikbaar.</p>}
         {onlyOpen && reviewed === groups.length && groups.length > 0 &&
           <p role="status">Alle groepen zijn handmatig afgevinkt. Dit is geen akkoord
             of juridische controle; vergelijk de originele documenten zelf.</p>}
