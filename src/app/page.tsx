@@ -12762,7 +12762,7 @@ function PrivateContractVersionComparison() {
       setNotice('Maak eerst een geldige vergelijking voor een reviewback-up.');
       return;
     }
-    const content = JSON.stringify(backup, null, 2) + '\\n';
+    const content = JSON.stringify(backup, null, 2) + '\n';
     if (new TextEncoder().encode(content).length > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
       setNotice('De privéback-up is te groot om veilig te exporteren.');
       return;
@@ -12787,7 +12787,7 @@ function PrivateContractVersionComparison() {
     if (!file) return;
     const epoch = ++contractFileReadEpoch.current;
     setRestoreCandidate(null); setRestoreAccepted(false);
-    if (!/\\.json$/i.test(file.name) || file.size < 1 ||
+    if (!/\.json$/i.test(file.name) || file.size < 1 ||
         file.size > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
       setNotice('Kies een eigen niet-leeg JSON-reviewbestand van maximaal 64 KiB.');
       return;
