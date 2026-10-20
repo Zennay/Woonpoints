@@ -13075,14 +13075,13 @@ function PrivateContractVersionComparison() {
                   terugzoeken, maar bevestigt geen juridische samenhang of akkoord.
                 </small></p>
                 {([['Vóór de wijziging', group.before], ['Na de wijziging', group.after]] as const)
-                  .filter((entry): entry is readonly [string, PrivateContractDiffLine] => !!entry[1])
-                  .map(([label, row]) => <div key={label}
+                  .map(([label, row]) => row ? <div key={label}
                     style={{padding:'7px 9px',background:'#f2f6f2',marginTop:6,borderRadius:8}}>
                     <small>{label} · oud {row.oldLine} / nieuw {row.newLine}</small>
                     <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
                       {row.text || '(lege regel)'}
                     </pre>
-                  </div>)}
+                  </div> : null)}
               </details>}
               {searchTerm && (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) &&
                 <p style={{margin:'8px 0 0'}}><small>Zoekterm komt ook voor in je eigen aandachtspunt.</small></p>}
