@@ -12890,6 +12890,27 @@ function PrivateContractVersionComparison() {
     setFilePreview(null); setConfirmSave(false);
     setNotice('Vorige tabbladinvoer eenmalig hersteld. Geen eerdere downloadtoestemming hergebruikt.');
   }
+  async function copyReviewedReport() {
+    // Browsers share clipboard text with other apps. Keep this action strictly
+    // behind the same fresh preview + explicit opt-in as the TXT download.
+    if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
+      setFilePreview(null);
+      setConfirmSave(false);
+      setNotice('De tekst is gewijzigd of niet bevestigd. Bekijk eerst een nieuwe preview.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(filePreview.text);
+      setConfirmSave(false);
+      setNotice('Alleen de bekeken tekst is op jouw klik naar het klembord gekopieerd. ' +
+        'Er is niets verstuurd. Controleer zelf waar je de tekst plakt.');
+    } catch {
+      setConfirmSave(false);
+      setNotice('Je browser staat klembordtoegang niet toe. Selecteer en kopieer de ' +
+        'zichtbare voorbeeldtekst zelf, of gebruik na nieuwe bevestiging de TXT-download.');
+    }
+  }
+
   function saveReport() {
     if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
       setFilePreview(null);
@@ -13130,11 +13151,18 @@ function PrivateContractVersionComparison() {
           <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
             <input type="checkbox" checked={confirmSave}
               onChange={event => setConfirmSave(event.target.checked)}/>
-            <span>Ik heb de volledige rapporttekst bekeken en bepaal zelf of ik dit bestand opsla.</span>
+            <span>Ik heb de volledige tekst bekeken en kies bewust voor een lokale TXT-download
+              of een kopie naar het gedeelde klembord. Andere apps kunnen gekopieerde
+              tekst lezen; ik bepaal zelf waar ik deze plak.</span>
           </label>
-          <button type="button" disabled={!confirmSave} onClick={saveReport}>
-            Download uitsluitend mijn bekeken {filePreview.filename}
-          </button>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <button type="button" disabled={!confirmSave} onClick={saveReport}>
+              Download uitsluitend mijn bekeken {filePreview.filename}
+            </button>
+            <button type="button" disabled={!confirmSave} onClick={() => {void copyReviewedReport();}}>
+              Kopieer uitsluitend deze bekeken tekst
+            </button>
+          </div>
         </div>}
       </div>}
       <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
