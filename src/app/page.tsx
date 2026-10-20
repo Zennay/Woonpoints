@@ -12581,6 +12581,22 @@ function PrivateContractVersionComparison() {
     (!searchTerm || String(group.id) === searchTerm ||
       (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
       group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
+  function highlightMatchedText(text: string) {
+    if (!text || !searchTerm) return text || '(lege regel)';
+    const lower = text.toLowerCase();
+    const parts = [];
+    let position = 0;
+    // Long lines and one-character queries must not create unbounded nodes.
+    for (let count = 0; count < 32; count++) {
+      const index = lower.indexOf(searchTerm, position);
+      if (index < 0) break;
+      if (index > position) parts.push(text.slice(position, index));
+      parts.push(<mark key={index}>{text.slice(index, index + searchTerm.length)}</mark>);
+      position = index + searchTerm.length;
+    }
+    parts.push(text.slice(position));
+    return parts;
+  }
   const reviewSource = JSON.stringify([source,
     [...reviewedGroups].sort((a, b) => a - b), groupNotes, onlyOpen]);
   const previewKey = JSON.stringify([source, includeQuotes, includeNotes,
@@ -13005,12 +13021,14 @@ function PrivateContractVersionComparison() {
             <article key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
               padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
+              {searchTerm && (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) &&
+                <p style={{margin:'8px 0 0'}}><small>Zoekterm komt ook voor in je eigen aandachtspunt.</small></p>}
               <div style={{maxHeight:240,overflowY:'auto',overflowWrap:'anywhere'}}>
                 {group.rows.map((row,index) => <div key={index} style={{marginTop:8}}>
                   <small>{row.kind === 'added' ? '+ Nieuw · regel ' + row.newLine :
                     '− Oud · regel ' + row.oldLine}</small>
                   <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'2px 0'}}>
-                    {row.text || '(lege regel)'}
+                    {highlightMatchedText(row.text)}
                   </pre>
                 </div>)}
               </div>
