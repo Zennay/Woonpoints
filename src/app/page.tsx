@@ -13017,9 +13017,21 @@ function PrivateContractVersionComparison() {
               setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false);
             }}>Wis alleen deze weergavefilters</button>}
         </div>
+        {visibleGroups.length > 1 && <details style={{marginBottom:14}}>
+          <summary>Snel naar een zichtbare wijzigingsgroep ({visibleGroups.length})</summary>
+          <nav aria-label="Spring naar een zichtbare contractwijziging"
+            style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+            {visibleGroups.map(group => <a key={group.id}
+              href={'#woonpoints-contractversies-groep-' + group.id}
+              style={{padding:'5px 8px',border:'1px solid #d2dcd7',borderRadius:8}}>
+              Groep {group.id} · {reviewedGroups.includes(group.id) ? 'bekeken' : 'open'}
+            </a>)}
+          </nav>
+        </details>}
         {visibleGroups.map(group => (
-            <article key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
-              padding:12,marginBottom:12}}>
+            <article id={'woonpoints-contractversies-groep-' + group.id}
+              key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
+              scrollMarginTop:20,padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
               {searchTerm && (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) &&
                 <p style={{margin:'8px 0 0'}}><small>Zoekterm komt ook voor in je eigen aandachtspunt.</small></p>}
