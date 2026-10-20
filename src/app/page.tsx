@@ -12410,24 +12410,38 @@ function PrivateContractReview({acceptedRentalDecision}: {
 // the Docker source allowlist and CI ownership policy remain unchanged.
 type PrivateContractDiffLine = {kind: 'same' | 'removed' | 'added'; text: string; oldLine: number | null; newLine: number | null};
 type PrivateContractDiffPreview = {source: string; lines: PrivateContractDiffLine[]; additions: number; removals: number; unchanged: number};
-type PrivateContractChangeGroup = {id: number; rows: PrivateContractDiffLine[]};
+type PrivateContractChangeGroup = {
+  id: number;
+  rows: PrivateContractDiffLine[];
+  before: PrivateContractDiffLine | null;
+  after: PrivateContractDiffLine | null;
+};
 
 // Each uninterrupted run of changed lines becomes one reviewable change group.
-// This is a text-review aid only: groups are not legal clauses or approvals.
+// Preserve only its immediately adjacent unchanged lines as optional context;
+// these are exact source text, not a legal clause or an inference about meaning.
 function privateContractChangeGroups(lines: PrivateContractDiffLine[]): PrivateContractChangeGroup[] {
   const groups: PrivateContractChangeGroup[] = [];
   let changed: PrivateContractDiffLine[] = [];
-  const flush = () => {
+  let previousSame: PrivateContractDiffLine | null = null;
+  let before: PrivateContractDiffLine | null = null;
+  const flush = (after: PrivateContractDiffLine | null) => {
     if (changed.length) {
-      groups.push({id: groups.length + 1, rows: changed});
+      groups.push({id: groups.length + 1, rows: changed, before, after});
       changed = [];
+      before = null;
     }
   };
   for (const row of lines) {
-    if (row.kind === 'same') flush();
-    else changed.push(row);
+    if (row.kind === 'same') {
+      flush(row);
+      previousSame = row;
+    } else {
+      if (!changed.length) before = previousSame;
+      changed.push(row);
+    }
   }
-  flush();
+  flush(null);
   return groups;
 }
 
@@ -13054,6 +13068,22 @@ function PrivateContractVersionComparison() {
               key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
               scrollMarginTop:20,padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
+              {(group.before || group.after) && <details style={{marginTop:8,marginBottom:8}}>
+                <summary>Bekijk ongewijzigde regels direct rondom deze wijziging</summary>
+                <p style={{margin:'6px 0'}}><small>
+                  Alleen de direct aangrenzende identieke tekstregels. Context helpt
+                  terugzoeken, maar bevestigt geen juridische samenhang of akkoord.
+                </small></p>
+                {([['Vóór de wijziging', group.before], ['Na de wijziging', group.after]] as const)
+                  .filter((entry): entry is readonly [string, PrivateContractDiffLine] => !!entry[1])
+                  .map(([label, row]) => <div key={label}
+                    style={{padding:'7px 9px',background:'#f2f6f2',marginTop:6,borderRadius:8}}>
+                    <small>{label} · oud {row.oldLine} / nieuw {row.newLine}</small>
+                    <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
+                      {row.text || '(lege regel)'}
+                    </pre>
+                  </div>)}
+              </details>}
               {searchTerm && (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) &&
                 <p style={{margin:'8px 0 0'}}><small>Zoekterm komt ook voor in je eigen aandachtspunt.</small></p>}
               <div style={{maxHeight:240,overflowY:'auto',overflowWrap:'anywhere'}}>
