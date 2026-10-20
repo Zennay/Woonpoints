@@ -12478,6 +12478,70 @@ function comparePrivateContractText(before: string, after: string): PrivateContr
   return result;
 }
 
+
+// A deliberately opt-in, local-only review handoff. The source texts are private:
+// no automatic browser storage or transmission, even of a derived fingerprint.
+type ContractVersionReviewBackup = {
+  kind: 'woonpoints-contract-version-review';
+  version: 1;
+  earlier: string;
+  newer: string;
+  reviewedGroups: number[];
+  groupNotes: {group: number; text: string}[];
+  onlyOpen: boolean;
+};
+const CONTRACT_REVIEW_BACKUP_MAX_BYTES = 64 * 1024;
+
+function contractVersionReviewBackup(earlier: string, newer: string,
+  reviewedGroups: number[], groupNotes: Record<number, string>,
+  onlyOpen: boolean): ContractVersionReviewBackup | null {
+  const lines = comparePrivateContractText(earlier, newer);
+  if (!lines) return null;
+  const groups = privateContractChangeGroups(lines);
+  const groupCount = groups.length;
+  if (reviewedGroups.length > groupCount ||
+      new Set(reviewedGroups).size !== reviewedGroups.length ||
+      reviewedGroups.some(id => !Number.isSafeInteger(id) || id < 1 || id > groupCount)) return null;
+  const notes = Object.entries(groupNotes).map(([id, text]) => ({group: Number(id), text}));
+  if (notes.length > groupCount ||
+      notes.some(row => !Number.isSafeInteger(row.group) || row.group < 1 ||
+        row.group > groupCount || typeof row.text !== 'string' || row.text.length > 240)) return null;
+  return {
+    kind: 'woonpoints-contract-version-review', version: 1,
+    earlier, newer, reviewedGroups: [...reviewedGroups].sort((a, b) => a - b),
+    groupNotes: notes.sort((a, b) => a.group - b.group), onlyOpen
+  };
+}
+
+function parseContractVersionReviewBackup(input: string): ContractVersionReviewBackup {
+  const raw: unknown = JSON.parse(input);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Error('invalid');
+  const row = raw as Record<string, unknown>;
+  const expected = ['earlier','groupNotes','kind','newer','onlyOpen','reviewedGroups','version'];
+  if (Object.keys(row).sort().join('|') !== expected.join('|') ||
+      row.kind !== 'woonpoints-contract-version-review' || row.version !== 1 ||
+      typeof row.earlier !== 'string' || typeof row.newer !== 'string' ||
+      typeof row.onlyOpen !== 'boolean' ||
+      !Array.isArray(row.reviewedGroups) || !Array.isArray(row.groupNotes)) throw Error('invalid');
+  const checked = row.reviewedGroups;
+  const entries = row.groupNotes;
+  if (checked.length > CONTRACT_VERSION_MAX_LINES || entries.length > CONTRACT_VERSION_MAX_LINES ||
+      checked.some(value => typeof value !== 'number' || !Number.isSafeInteger(value)) ||
+      entries.some(value => !value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).sort().join('|') !== 'group|text' ||
+        !Number.isSafeInteger(value.group) || typeof value.text !== 'string' ||
+        value.text.length > 240)) throw Error('invalid');
+  const notes: Record<number, string> = Object.create(null);
+  for (const value of entries) {
+    if (Object.prototype.hasOwnProperty.call(notes, value.group)) throw Error('duplicate');
+    notes[value.group] = value.text;
+  }
+  const result = contractVersionReviewBackup(row.earlier, row.newer,
+    checked as number[], notes, row.onlyOpen);
+  if (!result) throw Error('invalid');
+  return result;
+}
+
 function PrivateContractVersionComparison() {
   const [earlier, setEarlier] = useState('');
   const [newer, setNewer] = useState('');
@@ -12490,18 +12554,36 @@ function PrivateContractVersionComparison() {
   const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
+  const [reviewBackupPreview, setReviewBackupPreview] =
+    useState<{source: string; content: string} | null>(null);
+  const [reviewBackupAccepted, setReviewBackupAccepted] = useState(false);
+  const [restoreCandidate, setRestoreCandidate] =
+    useState<{backup: ContractVersionReviewBackup; content: string} | null>(null);
+  const [restoreAccepted, setRestoreAccepted] = useState(false);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    before: {earlier: string; newer: string; diff: PrivateContractDiffPreview | null;
+      reviewed: number[]; notes: Record<number, string>; onlyOpen: boolean};
+    restoredSource: string;
+  } | null>(null);
   const contractFileReadEpoch = useRef(0);
   const source = JSON.stringify([earlier, newer]);
   const current = diff?.source === source ? diff : null;
   const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
     [current]);
   const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
+  const reviewSource = JSON.stringify([source,
+    [...reviewedGroups].sort((a, b) => a - b), groupNotes, onlyOpen]);
   const previewKey = JSON.stringify([source, includeQuotes, includeNotes,
     [...reviewedGroups].sort((a, b) => a - b), groupNotes]);
 
   function invalidate() {
     // Any source edit cancels an already pending asynchronous local file read.
     contractFileReadEpoch.current++;
+    setReviewBackupPreview(null);
+    setReviewBackupAccepted(false);
+    setRestoreCandidate(null);
+    setRestoreAccepted(false);
+    setRestoreUndo(null);
     setDiff(null);
     setFilePreview(null);
     setConfirmSave(false);
@@ -12512,6 +12594,9 @@ function PrivateContractVersionComparison() {
     setNotice('');
   }
   function invalidateExport() {
+    setReviewBackupPreview(null);
+    setReviewBackupAccepted(false);
+    setRestoreUndo(null);
     setFilePreview(null);
     setConfirmSave(false);
     setNotice('Opvolgstatus of eigen notities aangepast. Bekijk een nieuwe exportpreview.');
@@ -12669,6 +12754,96 @@ function PrivateContractVersionComparison() {
     setConfirmSave(false);
     setNotice('Conceptbericht lokaal samengesteld uit uitsluitend eigen notities. ' +
       'Niet verzonden. Lees de volledige tekst en bevestig zelf een eventuele TXT-download.');
+  }
+  function previewReviewBackup() {
+    const backup = contractVersionReviewBackup(earlier, newer, reviewedGroups,
+      groupNotes, onlyOpen);
+    if (!backup || !current) {
+      setNotice('Maak eerst een geldige vergelijking voor een reviewback-up.');
+      return;
+    }
+    const content = JSON.stringify(backup, null, 2) + '\\n';
+    if (new TextEncoder().encode(content).length > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
+      setNotice('De privéback-up is te groot om veilig te exporteren.');
+      return;
+    }
+    setReviewBackupPreview({source: reviewSource, content});
+    setReviewBackupAccepted(false);
+    setNotice('De back-up bevat beide volledige contractteksten en eigen notities. Controleer de hele preview.');
+  }
+  function downloadReviewBackup() {
+    if (!current || !reviewBackupAccepted || !reviewBackupPreview ||
+        reviewBackupPreview.source !== reviewSource) {
+      setReviewBackupPreview(null); setReviewBackupAccepted(false);
+      setNotice('Deze back-up is gewijzigd; controleer eerst een nieuwe preview.');
+      return;
+    }
+    saveDownload('mijn-contractversies-review-prive.json',
+      reviewBackupPreview.content, 'application/json;charset=utf-8');
+    setReviewBackupAccepted(false);
+    setNotice('De privé-JSON is aan je browser aangeboden. Bewaar dit contractbestand zelf veilig.');
+  }
+  async function readReviewBackup(file: File | undefined) {
+    if (!file) return;
+    const epoch = ++contractFileReadEpoch.current;
+    setRestoreCandidate(null); setRestoreAccepted(false);
+    if (!/\\.json$/i.test(file.name) || file.size < 1 ||
+        file.size > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
+      setNotice('Kies een eigen niet-leeg JSON-reviewbestand van maximaal 64 KiB.');
+      return;
+    }
+    try {
+      const bytes = await file.arrayBuffer();
+      if (contractFileReadEpoch.current !== epoch) return;
+      const content = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+      const backup = parseContractVersionReviewBackup(content);
+      if (contractFileReadEpoch.current !== epoch) return;
+      setRestoreCandidate({backup, content: JSON.stringify(backup, null, 2)});
+      setReviewBackupPreview(null); setReviewBackupAccepted(false);
+      setNotice('Reviewbestand lokaal gelezen. Vergelijk de volledige vervangingspreview voor bevestiging.');
+    } catch {
+      if (contractFileReadEpoch.current === epoch) {
+        setRestoreCandidate(null); setRestoreAccepted(false);
+        setNotice('Reviewbestand geweigerd: onjuiste structuur, regels of ongeldige UTF-8.');
+      }
+    }
+  }
+  function acceptReviewRestore() {
+    if (!restoreCandidate || !restoreAccepted) return;
+    const {backup} = restoreCandidate;
+    const lines = comparePrivateContractText(backup.earlier, backup.newer);
+    if (!lines) { setRestoreCandidate(null); setRestoreAccepted(false); return; }
+    const before = {earlier, newer, diff, reviewed: [...reviewedGroups],
+      notes: {...groupNotes}, onlyOpen};
+    const notes: Record<number, string> = Object.create(null);
+    for (const note of backup.groupNotes) notes[note.group] = note.text;
+    const newSource = JSON.stringify([backup.earlier, backup.newer]);
+    const restoredSource = JSON.stringify([newSource, backup.reviewedGroups, notes, backup.onlyOpen]);
+    contractFileReadEpoch.current++;
+    setEarlier(backup.earlier); setNewer(backup.newer);
+    setDiff({source: newSource, lines,
+      additions: lines.filter(row => row.kind === 'added').length,
+      removals: lines.filter(row => row.kind === 'removed').length,
+      unchanged: lines.filter(row => row.kind === 'same').length});
+    setReviewedGroups([...backup.reviewedGroups]);
+    setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
+    setFilePreview(null); setConfirmSave(false);
+    setReviewBackupPreview(null); setReviewBackupAccepted(false);
+    setRestoreCandidate(null); setRestoreAccepted(false);
+    setIncludeQuotes(false); setIncludeNotes(false);
+    setRestoreUndo({before, restoredSource});
+    setNotice('Twee teksten en handmatige reviews lokaal hersteld. Rapporten en eerdere toestemmingen zijn gewist.');
+  }
+  function undoReviewRestore() {
+    if (!restoreUndo || restoreUndo.restoredSource !== reviewSource) return;
+    const {before} = restoreUndo;
+    contractFileReadEpoch.current++;
+    setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
+    setReviewedGroups(before.reviewed); setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
+    setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
+    setReviewBackupPreview(null); setReviewBackupAccepted(false);
+    setFilePreview(null); setConfirmSave(false);
+    setNotice('Vorige tabbladinvoer eenmalig hersteld. Geen eerdere downloadtoestemming hergebruikt.');
   }
   function saveReport() {
     if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
@@ -12877,6 +13052,57 @@ function PrivateContractVersionComparison() {
           </button>
         </div>}
       </div>}
+      <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+        <h3>Mijn contractvergelijking bewust bewaren of herstellen</h3>
+        <p>Deze optionele privé-back-up bevat beide <strong>volledige contractteksten</strong>,
+          eigen notities en aangevinkte groepen. Er is geen automatische opslag, upload,
+          synchronisatie of verzending. Een lokaal gedownload bestand kan door jouw eigen
+          opslagprovider gesynchroniseerd worden. Deel dit bestand niet onbedoeld.</p>
+        <button type="button" disabled={!current} onClick={previewReviewBackup}>
+          Bekijk volledige privé-JSON vóór download
+        </button>
+        {reviewBackupPreview?.source === reviewSource && <div style={{marginTop:12}}>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
+            padding:14,background:'#f2f6f2',borderRadius:10}}>{reviewBackupPreview.content}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
+            <input type="checkbox" checked={reviewBackupAccepted}
+              onChange={event => setReviewBackupAccepted(event.target.checked)}/>
+            <span>Ik heb de volledige privé-JSON met contractinhoud bekeken en kies bewust
+              zelf waar ik dit persoonlijke bestand bewaar.</span>
+          </label>
+          <button type="button" disabled={!reviewBackupAccepted} onClick={downloadReviewBackup}>
+            Download uitsluitend mijn gecontroleerde privé-back-up
+          </button>
+        </div>}
+        <label style={{display:'grid',gap:6,marginTop:18,maxWidth:500}}>
+          <strong>Mijn eerdere privé-review-JSON lokaal openen (maximaal 64 KiB)</strong>
+          <input type="file" accept=".json,application/json"
+            onChange={event => {const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = ''; void readReviewBackup(file);}}/>
+        </label>
+        {restoreCandidate && <div style={{marginTop:12}}>
+          <p><strong>Vervangingspreview:</strong> deze import overschrijft pas na jouw aparte
+            bevestiging de twee tijdelijke teksten, notities en afvinkstatussen.
+            Hij voert geen wijzigingen uit in officiële documenten.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
+            padding:14,background:'#f2f6f2',borderRadius:10}}>{restoreCandidate.content}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
+            <input type="checkbox" checked={restoreAccepted}
+              onChange={event => setRestoreAccepted(event.target.checked)}/>
+            <span>Ik heb de complete vervangende contractteksten en reviewstatus bekeken
+              en wil mijn huidige tijdelijke vergelijking vervangen.</span>
+          </label>
+          <button type="button" disabled={!restoreAccepted} onClick={acceptReviewRestore}>
+            Herstel uitsluitend mijn bekeken contractreview
+          </button>
+          <button type="button" onClick={() => {setRestoreCandidate(null);
+            setRestoreAccepted(false);}}>Annuleer import</button>
+        </div>}
+        {restoreUndo && <button type="button" style={{marginTop:12}}
+          disabled={restoreUndo.restoredSource !== reviewSource} onClick={undoReviewRestore}>
+          Mijn vorige tabbladinvoer eenmalig terugzetten
+        </button>}
+      </div>
       {notice && <p role="status" aria-live="polite">{notice}</p>}
       <p><small>Deze functie gebruikt uitsluitend tijdelijk tabbladgeheugen.
         TXT-import leest alleen de door jou geselecteerde UTF-8-tekst lokaal
