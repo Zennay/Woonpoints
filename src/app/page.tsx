@@ -12778,7 +12778,7 @@ function PrivateContractVersionComparison() {
       setNotice('Deze back-up is gewijzigd; controleer eerst een nieuwe preview.');
       return;
     }
-    saveDownload('mijn-contractversies-review-prive.json',
+    saveFile('mijn-contractversies-review-prive.json',
       reviewBackupPreview.content, 'application/json;charset=utf-8');
     setReviewBackupAccepted(false);
     setNotice('De privé-JSON is aan je browser aangeboden. Bewaar dit contractbestand zelf veilig.');
