@@ -1,5 +1,7 @@
 'use client';
 
+import {useMemo} from 'react';
+
 /**
  * Literal, local character changes between ONE removed and ONE added line.
  * Keep both complete original lines. Never classify legal terms, prices or
@@ -111,7 +113,9 @@ export function PrivateContractInlineChange({
   oldLine: number;
   newLine: number;
 }) {
-  const comparison = exactChange(older, newer);
+  // Review checkboxes and notes can re-render many groups; only recompute
+  // the bounded character alignment if one of these two actual lines changes.
+  const comparison = useMemo(() => exactChange(older, newer), [older, newer]);
   return (
     <details style={{margin:'10px 0',padding:'10px 12px',
       border:'1px solid #b8cdbd',borderRadius:8}}>
