@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { PrivateContractInlineChange } from './private-contract-inline-change';
+import { PrivateContractInlineChange, privateContractChangedDigits } from './private-contract-inline-change';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';
@@ -12584,6 +12584,7 @@ function PrivateContractVersionComparison() {
   const [groupSearch, setGroupSearch] = useState('');
   const [notesOnly, setNotesOnly] = useState(false);
   const [numbersOnly, setNumbersOnly] = useState(false);
+  const [changedDigitsOnly, setChangedDigitsOnly] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [reviewBackupPreview, setReviewBackupPreview] =
     useState<{source: string; content: string} | null>(null);
@@ -12607,10 +12608,18 @@ function PrivateContractVersionComparison() {
   // proof that the numeric value or legal meaning itself changed.
   const groupsWithDigits = groups.filter(group =>
     group.rows.some(row => /[0-9]/.test(row.text))).length;
+  // Exact 1:1 replacements distinguish edited digits from incidental numbers.
+  // Multi-line groups with digits remain candidates, never inferred matches.
+  const changedDigitGroupIds = useMemo(() => new Set(groups.filter(group => {
+    const pair = privateContractSingleReplacement(group);
+    return pair ? privateContractChangedDigits(pair.older, pair.newer)
+      : group.rows.some(row => /[0-9]/.test(row.text));
+  }).map(group => group.id)), [groups]);
   const visibleGroups = groups.filter(group =>
     (!onlyOpen || !reviewedGroups.includes(group.id)) &&
     (!notesOnly || !!groupNotes[group.id]?.trim()) &&
     (!numbersOnly || group.rows.some(row => /[0-9]/.test(row.text))) &&
+    (!changedDigitsOnly || changedDigitGroupIds.has(group.id)) &&
     (!searchTerm || String(group.id) === searchTerm ||
       (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
       group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
@@ -12652,6 +12661,7 @@ function PrivateContractVersionComparison() {
     setGroupSearch('');
     setNotesOnly(false);
     setNumbersOnly(false);
+    setChangedDigitsOnly(false);
     setIncludeNotes(false);
     setNotice('');
   }
@@ -12707,6 +12717,7 @@ function PrivateContractVersionComparison() {
     setGroupSearch('');
     setNotesOnly(false);
     setNumbersOnly(false);
+    setChangedDigitsOnly(false);
     setIncludeNotes(false);
     setDiff({
       source,
@@ -12906,6 +12917,7 @@ function PrivateContractVersionComparison() {
     setReviewedGroups([...backup.reviewedGroups]);
     setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
     setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
+    setChangedDigitsOnly(false);
     setFilePreview(null); setConfirmSave(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setRestoreCandidate(null); setRestoreAccepted(false);
@@ -12920,6 +12932,7 @@ function PrivateContractVersionComparison() {
     setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
     setReviewedGroups(before.reviewed); setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
     setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
+    setChangedDigitsOnly(false);
     setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setFilePreview(null); setConfirmSave(false);
@@ -13068,17 +13081,26 @@ function PrivateContractVersionComparison() {
               onChange={event => setNumbersOnly(event.target.checked)} />
             Toon groepen met cijfers in gewijzigde regels ({groupsWithDigits})
           </label>
-          <small>Dit filter zoekt zichtbare cijfers in gewijzigde tekstregels.
-            Het bepaalt niet of een bedrag of afspraak daadwerkelijk is veranderd.
-            Ook zonder cijfers kunnen belangrijke contractwijzigingen voorkomen.</small>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={changedDigitsOnly}
+              onChange={event => setChangedDigitsOnly(event.target.checked)} />
+            Toon mogelijke cijfertekenwijzigingen ({changedDigitGroupIds.size})
+          </label>
+          <small>Het brede filter zoekt cijfers in gewijzigde regels. Dit extra filter
+            zoekt bij één-op-één regelvervanging alleen daadwerkelijk gewijzigde
+            cijfertekens. Complexe wijzigingen met meerdere regels blijven kandidaat
+            wanneer daar cijfers in voorkomen: hun onderlinge overeenkomst is onbekend.
+            Geen filter bepaalt of huur, datum of juridische afspraak inhoudelijk is
+            gewijzigd. Ook wijzigingen zonder cijfers kunnen belangrijk zijn.</small>
           <p aria-live="polite" style={{margin:0}}>
             <strong>{visibleGroups.length} van {groups.length} wijzigingsgroepen zichtbaar.</strong>
             {' '}Zoeken en filteren gebeurt alleen in dit tabblad; de volledige vergelijking,
             afvinkstatus, privé-back-up en rapporten blijven ongewijzigd.
           </p>
-          {(groupSearch || onlyOpen || notesOnly || numbersOnly) && <button type="button"
+          {(groupSearch || onlyOpen || notesOnly || numbersOnly || changedDigitsOnly) && <button type="button"
             style={{justifySelf:'start'}} onClick={() => {
-              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false); setNumbersOnly(false);
+              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false);
+              setNumbersOnly(false); setChangedDigitsOnly(false);
             }}>Wis alleen deze weergavefilters</button>}
         </div>
         {visibleGroups.length > 1 && <details style={{marginBottom:14}}>
