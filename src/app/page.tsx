@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { PrivateContractInlineChange, privateContractChangedDigits } from './private-contract-inline-change';
-import { PrivateContractParallelRows } from './private-contract-parallel-rows';
+import { PrivateContractInlineChange, privateContractChangedDigits, PrivateContractParallelRows } from './manual-month-progress';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';

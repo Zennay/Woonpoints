@@ -23,9 +23,6 @@ src/app/api/health/*
 !src/app/manual-month-progress.tsx
 !src/app/position-stats.tsx
 !src/app/page.tsx
-# These exact contract-diff components are imported by page.tsx; keep other app files excluded.
-!src/app/private-contract-inline-change.tsx
-!src/app/private-contract-parallel-rows.tsx
 !src/lib
 src/lib/*
 !src/lib/db-url-launcher.mjs
