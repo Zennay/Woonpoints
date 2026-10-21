@@ -97,7 +97,7 @@ export function privateContractChangedDigits(older: string, newer: string): bool
 function visibleWhitespace(text: string): string {
   // Read-only display transcription. Never used for diff, search, persistence
   // or export. Distinguish ordinary space, tab and non-breaking space.
-  return text.replace(/ /g, '·').replace(/\\t/g, '→').replace(/\\u00A0/g, '⍽');
+  return text.replace(/ /g, '·').replace(/\t/g, '→').replace(/\u00A0/g, '⍽');
 }
 
 function markedRuns(runs: Run[], side: 'old' | 'new', showWhitespace: boolean) {
