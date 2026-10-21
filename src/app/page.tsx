@@ -12579,6 +12579,7 @@ function PrivateContractVersionComparison() {
   const [confirmSave, setConfirmSave] = useState(false);
   const [notice, setNotice] = useState('');
   const [reviewedGroups, setReviewedGroups] = useState<number[]>([]);
+  const [lastFocusedGroup, setLastFocusedGroup] = useState(0);
   const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
   const [onlyOpen, setOnlyOpen] = useState(false);
   // View-only controls do not change stored reviews or signed export previews.
@@ -12624,6 +12625,21 @@ function PrivateContractVersionComparison() {
     (!searchTerm || String(group.id) === searchTerm ||
       (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
       group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
+  const availableOpenGroups = visibleGroups.filter(group =>
+    !reviewedGroups.includes(group.id)).map(group => group.id);
+  function jumpToNextOpenGroup() {
+    if (!availableOpenGroups.length) return;
+    // Navigate only already-visible, still-unreviewed source groups. When the
+    // filter hides an item, navigation must not silently relax it or mark it.
+    const next = availableOpenGroups.find(id => id > lastFocusedGroup)
+      ?? availableOpenGroups[0];
+    setLastFocusedGroup(next);
+    window.requestAnimationFrame(() => {
+      const node = document.getElementById('woonpoints-contractversies-groep-' + next);
+      node?.focus({preventScroll:true});
+      node?.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  }
   function highlightMatchedText(text: string) {
     if (!text || !searchTerm) return text || '(lege regel)';
     const lower = text.toLowerCase();
@@ -12657,6 +12673,7 @@ function PrivateContractVersionComparison() {
     setFilePreview(null);
     setConfirmSave(false);
     setReviewedGroups([]);
+    setLastFocusedGroup(0);
     setGroupNotes({});
     setOnlyOpen(false);
     setGroupSearch('');
@@ -12713,6 +12730,7 @@ function PrivateContractVersionComparison() {
       return;
     }
     setReviewedGroups([]);
+    setLastFocusedGroup(0);
     setGroupNotes({});
     setOnlyOpen(false);
     setGroupSearch('');
@@ -12916,6 +12934,7 @@ function PrivateContractVersionComparison() {
       removals: lines.filter(row => row.kind === 'removed').length,
       unchanged: lines.filter(row => row.kind === 'same').length});
     setReviewedGroups([...backup.reviewedGroups]);
+    setLastFocusedGroup(0);
     setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
     setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
     setChangedDigitsOnly(false);
@@ -12931,7 +12950,8 @@ function PrivateContractVersionComparison() {
     const {before} = restoreUndo;
     contractFileReadEpoch.current++;
     setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
-    setReviewedGroups(before.reviewed); setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
+    setReviewedGroups(before.reviewed); setLastFocusedGroup(0);
+    setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
     setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
     setChangedDigitsOnly(false);
     setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
@@ -13104,6 +13124,14 @@ function PrivateContractVersionComparison() {
               setNumbersOnly(false); setChangedDigitsOnly(false);
             }}>Wis alleen deze weergavefilters</button>}
         </div>
+        <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
+          <button type="button" disabled={!availableOpenGroups.length}
+            onClick={jumpToNextOpenGroup}>
+            Naar volgende zichtbare, nog niet bekeken groep ({availableOpenGroups.length})
+          </button>
+          <small>Springt alleen naar een bestaande groep; verandert geen
+            afvinkstatus, filter of contracttekst.</small>
+        </div>
         {visibleGroups.length > 1 && <details style={{marginBottom:14}}>
           <summary>Snel naar een zichtbare wijzigingsgroep ({visibleGroups.length})</summary>
           <nav aria-label="Spring naar een zichtbare contractwijziging"
@@ -13117,7 +13145,7 @@ function PrivateContractVersionComparison() {
         </details>}
         {visibleGroups.map(group => (
             <article id={'woonpoints-contractversies-groep-' + group.id}
-              key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
+              key={group.id} tabIndex={-1} style={{border:'1px solid #d2dcd7',borderRadius:10,
               scrollMarginTop:20,padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
               <PrivateContractParallelRows group={group.id} rows={group.rows} />
