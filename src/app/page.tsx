@@ -12706,6 +12706,7 @@ function PrivateContractVersionComparison() {
     setOnlyOpen(false);
     setGroupSearch('');
     setNotesOnly(false);
+    setNumbersOnly(false);
     setIncludeNotes(false);
     setDiff({
       source,
