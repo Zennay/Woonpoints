@@ -85,6 +85,13 @@ function exactChange(older: string, newer: string): ExactChange {
     changedDigits, coarse};
 }
 
+/** For an unambiguous one-line replacement, inspect the changed characters
+ * rather than any digits that happen to occur elsewhere in the line.
+ * This is literal edit evidence only, never a changed-price determination. */
+export function privateContractChangedDigits(older: string, newer: string): boolean {
+  return exactChange(older, newer).changedDigits;
+}
+
 function markedRuns(runs: Run[], side: 'old' | 'new') {
   return runs.map((run, index) => {
     if (run.kind === 'same') return <span key={index}>{run.text}</span>;
