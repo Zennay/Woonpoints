@@ -12583,6 +12583,7 @@ function PrivateContractVersionComparison() {
   // View-only controls do not change stored reviews or signed export previews.
   const [groupSearch, setGroupSearch] = useState('');
   const [notesOnly, setNotesOnly] = useState(false);
+  const [numbersOnly, setNumbersOnly] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [reviewBackupPreview, setReviewBackupPreview] =
     useState<{source: string; content: string} | null>(null);
@@ -12602,9 +12603,14 @@ function PrivateContractVersionComparison() {
     [current]);
   const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
   const searchTerm = groupSearch.trim().toLowerCase();
+  // Literal digit presence only; a digit anywhere in a changed line is not
+  // proof that the numeric value or legal meaning itself changed.
+  const groupsWithDigits = groups.filter(group =>
+    group.rows.some(row => /[0-9]/.test(row.text))).length;
   const visibleGroups = groups.filter(group =>
     (!onlyOpen || !reviewedGroups.includes(group.id)) &&
     (!notesOnly || !!groupNotes[group.id]?.trim()) &&
+    (!numbersOnly || group.rows.some(row => /[0-9]/.test(row.text))) &&
     (!searchTerm || String(group.id) === searchTerm ||
       (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
       group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
@@ -12645,6 +12651,7 @@ function PrivateContractVersionComparison() {
     setOnlyOpen(false);
     setGroupSearch('');
     setNotesOnly(false);
+    setNumbersOnly(false);
     setIncludeNotes(false);
     setNotice('');
   }
@@ -12897,7 +12904,7 @@ function PrivateContractVersionComparison() {
       unchanged: lines.filter(row => row.kind === 'same').length});
     setReviewedGroups([...backup.reviewedGroups]);
     setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
-    setGroupSearch(''); setNotesOnly(false);
+    setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
     setFilePreview(null); setConfirmSave(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setRestoreCandidate(null); setRestoreAccepted(false);
@@ -12911,7 +12918,7 @@ function PrivateContractVersionComparison() {
     contractFileReadEpoch.current++;
     setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
     setReviewedGroups(before.reviewed); setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
-    setGroupSearch(''); setNotesOnly(false);
+    setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
     setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
     setReviewBackupPreview(null); setReviewBackupAccepted(false);
     setFilePreview(null); setConfirmSave(false);
@@ -13055,14 +13062,22 @@ function PrivateContractVersionComparison() {
               onChange={event => setNotesOnly(event.target.checked)} />
             Toon alleen groepen met een eigen aandachtspunt
           </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={numbersOnly}
+              onChange={event => setNumbersOnly(event.target.checked)} />
+            Toon groepen met cijfers in gewijzigde regels ({groupsWithDigits})
+          </label>
+          <small>Dit filter zoekt zichtbare cijfers in gewijzigde tekstregels.
+            Het bepaalt niet of een bedrag of afspraak daadwerkelijk is veranderd.
+            Ook zonder cijfers kunnen belangrijke contractwijzigingen voorkomen.</small>
           <p aria-live="polite" style={{margin:0}}>
             <strong>{visibleGroups.length} van {groups.length} wijzigingsgroepen zichtbaar.</strong>
             {' '}Zoeken en filteren gebeurt alleen in dit tabblad; de volledige vergelijking,
             afvinkstatus, privé-back-up en rapporten blijven ongewijzigd.
           </p>
-          {(groupSearch || onlyOpen || notesOnly) && <button type="button"
+          {(groupSearch || onlyOpen || notesOnly || numbersOnly) && <button type="button"
             style={{justifySelf:'start'}} onClick={() => {
-              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false);
+              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false); setNumbersOnly(false);
             }}>Wis alleen deze weergavefilters</button>}
         </div>
         {visibleGroups.length > 1 && <details style={{marginBottom:14}}>
