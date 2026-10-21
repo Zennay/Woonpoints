@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { PrivateContractInlineChange } from './private-contract-inline-change';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';
@@ -12420,6 +12421,18 @@ type PrivateContractChangeGroup = {
 // Each uninterrupted run of changed lines becomes one reviewable change group.
 // Preserve only its immediately adjacent unchanged lines as optional context;
 // these are exact source text, not a legal clause or an inference about meaning.
+function privateContractSingleReplacement(group: PrivateContractChangeGroup) {
+  // Highlight only an unambiguous 1:1 changed-line pair. If a group contains
+  // multiple added/removed rows, preserve every original row instead of
+  // guessing correspondences or silently hiding important contract text.
+  if (group.rows.length !== 2) return null;
+  const older = group.rows.find(row => row.kind === 'removed');
+  const newer = group.rows.find(row => row.kind === 'added');
+  if (!older || !newer || older.oldLine === null || newer.newLine === null) return null;
+  return {older: older.text, newer: newer.text,
+    oldLine: older.oldLine, newLine: newer.newLine};
+}
+
 function privateContractChangeGroups(lines: PrivateContractDiffLine[]): PrivateContractChangeGroup[] {
   const groups: PrivateContractChangeGroup[] = [];
   let changed: PrivateContractDiffLine[] = [];
@@ -13068,6 +13081,11 @@ function PrivateContractVersionComparison() {
               key={group.id} style={{border:'1px solid #d2dcd7',borderRadius:10,
               scrollMarginTop:20,padding:12,marginBottom:12}}>
               <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
+              {(() => {
+                const replacement = privateContractSingleReplacement(group);
+                return replacement ?
+                  <PrivateContractInlineChange {...replacement} /> : null;
+              })()}
               {(group.before || group.after) && <details style={{marginTop:8,marginBottom:8}}>
                 <summary>Bekijk ongewijzigde regels direct rondom deze wijziging</summary>
                 <p style={{margin:'6px 0'}}><small>
