@@ -1,34 +1,99 @@
 'use client';
 
 /**
- * Exact, local character-level view of a single replaced contract line.
- *
- * Preserve both complete source lines and all whitespace. No similarity,
- * legal meaning, monetary value or contract acceptance is inferred.
- * This component does not read from storage, perform I/O or export data.
+ * Literal, local character changes between ONE removed and ONE added line.
+ * Keep both complete original lines. Never classify legal terms, prices or
+ * acceptance. Long/ambiguous lines fall back to a single exact middle span.
  */
-type ReplacementParts = {
-  commonPrefix: string;
-  removed: string;
-  added: string;
-  commonSuffix: string;
-};
+type Run = {text: string; kind: 'same' | 'removed' | 'added'};
+type ExactChange = {oldRuns: Run[]; newRuns: Run[]; removed: number; added: number; regions: number; changedDigits: boolean; coarse: boolean};
+const MAX_PRECISE_CODEPOINTS = 320;
 
-function exactReplacementParts(older: string, newer: string): ReplacementParts {
-  // Code points, not UTF-16 code units: never split a surrogate pair.
-  const a = Array.from(older);
-  const b = Array.from(newer);
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let end = 0;
-  while (end < a.length - start && end < b.length - start &&
-         a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
-  return {
-    commonPrefix: a.slice(0, start).join(''),
-    removed: a.slice(start, a.length - end).join(''),
-    added: b.slice(start, b.length - end).join(''),
-    commonSuffix: end ? a.slice(a.length - end).join('') : '',
+function pushRun(runs: Run[], kind: Run['kind'], text: string) {
+  if (!text) return;
+  const last = runs[runs.length - 1];
+  if (last?.kind === kind) last.text += text;
+  else runs.push({kind, text});
+}
+
+function exactChange(older: string, newer: string): ExactChange {
+  const oldPoints = Array.from(older);
+  const newPoints = Array.from(newer);
+  let first = 0;
+  while (first < oldPoints.length && first < newPoints.length &&
+         oldPoints[first] === newPoints[first]) first++;
+  let last = 0;
+  while (last < oldPoints.length - first && last < newPoints.length - first &&
+         oldPoints[oldPoints.length - last - 1] === newPoints[newPoints.length - last - 1]) last++;
+  const a = oldPoints.slice(first, oldPoints.length - last);
+  const b = newPoints.slice(first, newPoints.length - last);
+  const oldRuns: Run[] = [];
+  const newRuns: Run[] = [];
+  pushRun(oldRuns, 'same', oldPoints.slice(0, first).join(''));
+  pushRun(newRuns, 'same', newPoints.slice(0, first).join(''));
+  let regions = 0;
+  let inChange = false;
+  let changedDigits = false;
+  let removed = 0;
+  let added = 0;
+  const emit = (kind: Run['kind'], character: string) => {
+    if (kind !== 'same') {
+      if (!inChange) regions++;
+      inChange = true;
+      if (/[0-9]/.test(character)) changedDigits = true;
+    } else {
+      inChange = false;
+    }
+    if (kind === 'removed') {removed++; pushRun(oldRuns, kind, character);}
+    else if (kind === 'added') {added++; pushRun(newRuns, kind, character);}
+    else {
+      pushRun(oldRuns, kind, character);
+      pushRun(newRuns, kind, character);
+    }
   };
+  const coarse = a.length > MAX_PRECISE_CODEPOINTS || b.length > MAX_PRECISE_CODEPOINTS;
+  if (coarse) {
+    for (const character of a) emit('removed', character);
+    for (const character of b) emit('added', character);
+  } else {
+    // Bounded exact LCS; tie-break removal first and retain original order.
+    // Uint16 is safe because each compared middle section is at most 320 points.
+    const width = b.length + 1;
+    const matrix = new Uint16Array((a.length + 1) * width);
+    for (let i = a.length - 1; i >= 0; i--) {
+      for (let j = b.length - 1; j >= 0; j--) {
+        matrix[i * width + j] = a[i] === b[j]
+          ? 1 + matrix[(i + 1) * width + j + 1]
+          : Math.max(matrix[(i + 1) * width + j], matrix[i * width + j + 1]);
+      }
+    }
+    let i = 0, j = 0;
+    while (i < a.length || j < b.length) {
+      if (i < a.length && j < b.length && a[i] === b[j]) {
+        emit('same', a[i]); i++; j++;
+      } else if (i < a.length &&
+          (j === b.length || matrix[(i + 1) * width + j] >= matrix[i * width + j + 1])) {
+        emit('removed', a[i++]);
+      } else {
+        emit('added', b[j++]);
+      }
+    }
+  }
+  pushRun(oldRuns, 'same', last ? oldPoints.slice(-last).join('') : '');
+  pushRun(newRuns, 'same', last ? newPoints.slice(-last).join('') : '');
+  return {oldRuns, newRuns, removed, added, regions,
+    changedDigits, coarse};
+}
+
+function markedRuns(runs: Run[], side: 'old' | 'new') {
+  return runs.map((run, index) => {
+    if (run.kind === 'same') return <span key={index}>{run.text}</span>;
+    return side === 'old'
+      ? <del key={index} style={{textDecoration:'none'}}><mark
+          style={{background:'#ffdfd9'}}>{run.text}</mark></del>
+      : <ins key={index} style={{textDecoration:'none'}}><mark
+          style={{background:'#ddf2dc'}}>{run.text}</mark></ins>;
+  });
 }
 
 export function PrivateContractInlineChange({
@@ -39,41 +104,40 @@ export function PrivateContractInlineChange({
   oldLine: number;
   newLine: number;
 }) {
-  const parts = exactReplacementParts(older, newer);
-  const alteredDigits = /[0-9]/.test(parts.removed + parts.added);
+  const comparison = exactChange(older, newer);
   return (
     <details style={{margin:'10px 0',padding:'10px 12px',
       border:'1px solid #b8cdbd',borderRadius:8}}>
       <summary style={{cursor:'pointer',fontWeight:600}}>
         Bekijk exacte tekenverschillen tussen oude regel {oldLine} en nieuwe regel {newLine}
-        {alteredDigits ? ' · aangepaste tekst bevat cijfers' : ''}
+        {comparison.changedDigits ? ' · gewijzigde tekens bevatten cijfers' : ''}
       </summary>
       <p style={{margin:'8px 0',fontSize:13}}>
-        Dezelfde volledige tekst staat hieronder; alleen het gewijzigde middenstuk is gemarkeerd.
-        Er wordt niets uitgelegd, automatisch goedgekeurd of geëxporteerd.
-        Vergelijk de originele contracten zelf.
+        {comparison.regions} letterlijk gewijzigd(e) tekendeel(en):
+        {' '}{comparison.removed} verwijderd, {comparison.added} toegevoegd.
+        {comparison.coarse
+          ? ' Lange regels krijgen één begrensde middenmarkering; de volledige tekst blijft zichtbaar.'
+          : ' Afzonderlijke wijzigingen zijn apart gemarkeerd.'}
+        {' '}Dit is geen interpretatie of goedkeuring van de contractwijziging.
       </p>
       <div aria-label={'Exacte tekenwijzigingen oud ' + oldLine + ' nieuw ' + newLine}
         style={{display:'grid',gap:8,overflowWrap:'anywhere'}}>
         <div>
           <strong>Oude regel {oldLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
-            {parts.commonPrefix}
-            {parts.removed && <del style={{textDecoration:'none'}}><mark style={{background:'#ffdfd9'}}>{parts.removed}</mark></del>}
-            {parts.commonSuffix}
+            {markedRuns(comparison.oldRuns, 'old')}
           </pre>
         </div>
         <div>
           <strong>Nieuwe regel {newLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
-            {parts.commonPrefix}
-            {parts.added && <ins style={{textDecoration:'none'}}><mark style={{background:'#ddf2dc'}}>{parts.added}</mark></ins>}
-            {parts.commonSuffix}
+            {markedRuns(comparison.newRuns, 'new')}
           </pre>
         </div>
       </div>
-      <small>Dit is een letterlijke weergave van één verwijderd en één toegevoegd tekstregel.
-        Cijfers, bedragen en afspraken worden niet automatisch geïnterpreteerd.</small>
+      <small>De volledige oorspronkelijke regeltekst, inclusief spaties en Unicode-tekens,
+        blijft zichtbaar. Markering vergelijkt alleen tekens en bepaalt geen bedrag,
+        juridische betekenis of akkoord. Controleer beide originele contracten.</small>
     </details>
   );
 }
