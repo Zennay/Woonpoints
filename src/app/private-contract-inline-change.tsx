@@ -1,6 +1,6 @@
 'use client';
 
-import {useMemo} from 'react';
+import {useMemo, useState} from 'react';
 
 /**
  * Literal, local character changes between ONE removed and ONE added line.
@@ -94,14 +94,21 @@ export function privateContractChangedDigits(older: string, newer: string): bool
   return exactChange(older, newer).changedDigits;
 }
 
-function markedRuns(runs: Run[], side: 'old' | 'new') {
+function visibleWhitespace(text: string): string {
+  // Read-only display transcription. Never used for diff, search, persistence
+  // or export. Distinguish ordinary space, tab and non-breaking space.
+  return text.replace(/ /g, '·').replace(/\\t/g, '→').replace(/\\u00A0/g, '⍽');
+}
+
+function markedRuns(runs: Run[], side: 'old' | 'new', showWhitespace: boolean) {
   return runs.map((run, index) => {
-    if (run.kind === 'same') return <span key={index}>{run.text}</span>;
+    const shown = showWhitespace ? visibleWhitespace(run.text) : run.text;
+    if (run.kind === 'same') return <span key={index}>{shown}</span>;
     return side === 'old'
       ? <del key={index} style={{textDecoration:'none'}}><mark
-          style={{background:'#ffdfd9'}}>{run.text}</mark></del>
+          style={{background:'#ffdfd9'}}>{shown}</mark></del>
       : <ins key={index} style={{textDecoration:'none'}}><mark
-          style={{background:'#ddf2dc'}}>{run.text}</mark></ins>;
+          style={{background:'#ddf2dc'}}>{shown}</mark></ins>;
   });
 }
 
@@ -116,6 +123,7 @@ export function PrivateContractInlineChange({
   // Review checkboxes and notes can re-render many groups; only recompute
   // the bounded character alignment if one of these two actual lines changes.
   const comparison = useMemo(() => exactChange(older, newer), [older, newer]);
+  const [showWhitespace, setShowWhitespace] = useState(false);
   return (
     <details style={{margin:'10px 0',padding:'10px 12px',
       border:'1px solid #b8cdbd',borderRadius:8}}>
@@ -131,18 +139,27 @@ export function PrivateContractInlineChange({
           : ' Afzonderlijke wijzigingen zijn apart gemarkeerd.'}
         {' '}Dit is geen interpretatie of goedkeuring van de contractwijziging.
       </p>
+      <label style={{display:'flex',gap:8,alignItems:'center',margin:'10px 0'}}>
+        <input type="checkbox" checked={showWhitespace}
+          onChange={event => setShowWhitespace(event.target.checked)}/>
+        Toon ook onzichtbare spaties (·), tabs (→) en vaste spaties (⍽) als leestekens
+      </label>
+      {showWhitespace && <p style={{fontSize:12,margin:'4px 0 10px'}}>
+        Dit zijn alleen zichtbare symbolen in de voorvertoning, geen aangepaste
+        contracttekst. Schakel uit voor de oorspronkelijke letterlijke weergave.
+      </p>}
       <div aria-label={'Exacte tekenwijzigingen oud ' + oldLine + ' nieuw ' + newLine}
         style={{display:'grid',gap:8,overflowWrap:'anywhere'}}>
         <div>
           <strong>Oude regel {oldLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
-            {markedRuns(comparison.oldRuns, 'old')}
+            {markedRuns(comparison.oldRuns, 'old', showWhitespace)}
           </pre>
         </div>
         <div>
           <strong>Nieuwe regel {newLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
-            {markedRuns(comparison.newRuns, 'new')}
+            {markedRuns(comparison.newRuns, 'new', showWhitespace)}
           </pre>
         </div>
       </div>
