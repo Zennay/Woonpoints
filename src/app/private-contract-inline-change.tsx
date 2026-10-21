@@ -59,9 +59,7 @@ export function PrivateContractInlineChange({
           <strong>Oude regel {oldLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
             {parts.commonPrefix}
-            <del style={{textDecoration:'none'}}><mark style={{background:'#ffdfd9'}}>
-              {parts.removed || '(geen tekens)'}
-            </mark></del>
+            {parts.removed && <del style={{textDecoration:'none'}}><mark style={{background:'#ffdfd9'}}>{parts.removed}</mark></del>}
             {parts.commonSuffix}
           </pre>
         </div>
@@ -69,9 +67,7 @@ export function PrivateContractInlineChange({
           <strong>Nieuwe regel {newLine}</strong>
           <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
             {parts.commonPrefix}
-            <ins style={{textDecoration:'none'}}><mark style={{background:'#ddf2dc'}}>
-              {parts.added || '(geen tekens)'}
-            </mark></ins>
+            {parts.added && <ins style={{textDecoration:'none'}}><mark style={{background:'#ddf2dc'}}>{parts.added}</mark></ins>}
             {parts.commonSuffix}
           </pre>
         </div>
