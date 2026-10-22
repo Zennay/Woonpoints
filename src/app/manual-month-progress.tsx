@@ -6093,9 +6093,9 @@ type ChangeRow = ContractChangeRow;
 export function isWhitespaceOnlyContractChange(rows: ChangeRow[]): boolean {
   const removed=rows.filter(row=>row.kind==='removed');
   const added=rows.filter(row=>row.kind==='added');
-  const oldText=removed.map(row=>row.text).join('\\n');
-  const newText=added.map(row=>row.text).join('\\n');
-  const withoutWhitespace=(value:string)=>value.replace(/\\s+/gu,'');
+  const oldText=removed.map(row=>row.text).join('\n');
+  const newText=added.map(row=>row.text).join('\n');
+  const withoutWhitespace=(value:string)=>value.replace(/\s+/gu,'');
   return (oldText!==newText || removed.length!==added.length) &&
     withoutWhitespace(oldText)===withoutWhitespace(newText);
 }
