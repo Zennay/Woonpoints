@@ -6081,12 +6081,24 @@ export function PrivateContractInlineChange({
  *
  * This component has no persistence, clipboard, fetch, export or approval path.
  */
-type ChangeRow = {
+export type ContractChangeRow = {
   kind: 'same' | 'removed' | 'added';
   text: string;
   oldLine: number | null;
   newLine: number | null;
 };
+type ChangeRow = ContractChangeRow;
+
+/** Literal-only hint shared with the summary; never a legal meaning judgment. */
+export function isWhitespaceOnlyContractChange(rows: ChangeRow[]): boolean {
+  const removed=rows.filter(row=>row.kind==='removed');
+  const added=rows.filter(row=>row.kind==='added');
+  const oldText=removed.map(row=>row.text).join('\\n');
+  const newText=added.map(row=>row.text).join('\\n');
+  const withoutWhitespace=(value:string)=>value.replace(/\\s+/gu,'');
+  return (oldText!==newText || removed.length!==added.length) &&
+    withoutWhitespace(oldText)===withoutWhitespace(newText);
+}
 
 function SourceColumn({
   title, rows, side, showWhitespace,
@@ -6106,35 +6118,9 @@ function SourceColumn({
     </p>}
     <ol style={{listStyle:'none',margin:0,padding:0,display:'grid',gap:8}}>
       {rows.map((row,index)=><li key={index} style={{
-        background:'#fff',border:'1px solid #dce4df',padding:'7px 9px',
-        minWidth:0,overflowWrap:'anywhere'
-      }}>
-        <small style={{fontWeight:600}}>
-          {side==='old'?'− Oud':'＋ Nieuw'} · bronregel {side==='old'?row.oldLine:row.newLine}
-        </small>
-        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'5px 0 0'}}>
-          {(showWhitespace ? visibleWhitespace(row.text) : row.text) || '(lege regel)'}
-        </pre>
-      </li>)}
-    </ol>
-  </section>;
-}
-
-export function PrivateContractParallelRows({
-  group, rows,
-}: {
-  group: number;
-  rows: ChangeRow[];
-}) {
-  const [showWhitespace, setShowWhitespace] = useState(false);
-  const removed=rows.filter(row=>row.kind==='removed');
+        background:'#fff',border:'1px solid #dce4df',  const removed=rows.filter(row=>row.kind==='removed');
   const added=rows.filter(row=>row.kind==='added');
-  const oldText=removed.map(row=>row.text).join('\n');
-  const newText=added.map(row=>row.text).join('\n');
-  const withoutWhitespace=(value:string)=>value.replace(/\s+/gu,'');
-  const whitespaceOnly=(
-    oldText!==newText || removed.length!==added.length
-  ) && withoutWhitespace(oldText)===withoutWhitespace(newText);
+  const whitespaceOnly=isWhitespaceOnlyContractChange(rows);
   return <details style={{
     margin:'10px 0',padding:'10px 12px',
     border:'1px solid #b8cdbd',borderRadius:8,
