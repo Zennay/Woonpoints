@@ -6089,11 +6089,12 @@ type ChangeRow = {
 };
 
 function SourceColumn({
-  title, rows, side,
+  title, rows, side, showWhitespace,
 }: {
   title: string;
   rows: ChangeRow[];
   side: 'old' | 'new';
+  showWhitespace: boolean;
 }) {
   return <section aria-label={title} style={{
     minWidth:0, background:side==='old' ? '#fff7f5' : '#f4fbf4',
@@ -6112,7 +6113,7 @@ function SourceColumn({
           {side==='old'?'− Oud':'＋ Nieuw'} · bronregel {side==='old'?row.oldLine:row.newLine}
         </small>
         <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'5px 0 0'}}>
-          {row.text || '(lege regel)'}
+          {(showWhitespace ? visibleWhitespace(row.text) : row.text) || '(lege regel)'}
         </pre>
       </li>)}
     </ol>
@@ -6125,14 +6126,22 @@ export function PrivateContractParallelRows({
   group: number;
   rows: ChangeRow[];
 }) {
+  const [showWhitespace, setShowWhitespace] = useState(false);
   const removed=rows.filter(row=>row.kind==='removed');
   const added=rows.filter(row=>row.kind==='added');
+  const oldText=removed.map(row=>row.text).join('\n');
+  const newText=added.map(row=>row.text).join('\n');
+  const withoutWhitespace=(value:string)=>value.replace(/\s+/gu,'');
+  const whitespaceOnly=(
+    oldText!==newText || removed.length!==added.length
+  ) && withoutWhitespace(oldText)===withoutWhitespace(newText);
   return <details style={{
     margin:'10px 0',padding:'10px 12px',
     border:'1px solid #b8cdbd',borderRadius:8,
   }}>
     <summary style={{cursor:'pointer',fontWeight:600}}>
       Vergelijk groep {group} in twee bronkolommen
+      {whitespaceOnly ? ' · alleen witruimte/regelafbreking gewijzigd' : ''}
     </summary>
     <p style={{fontSize:13,margin:'10px 0'}}>
       Links staan alle verwijderde regels in hun oorspronkelijke volgorde.
@@ -6140,9 +6149,23 @@ export function PrivateContractParallelRows({
       Regels naast elkaar vormen <strong>geen</strong> automatische één-op-één-koppeling.
       Ontbrekende tekst blijft expliciet leeg; geen afspraken zijn geïnterpreteerd.
     </p>
+    {whitespaceOnly && <p role="status" style={{fontSize:13,margin:'10px 0'}}>
+      De gewijzigde tekst bevat dezelfde niet-witruimtetekens. Alleen witruimte of
+      regelafbreking verschilt volgens een letterlijke vergelijking. Dit is een
+      weergavehint, geen beoordeling van betekenis of juridische gevolgen.
+    </p>}
+    <label style={{display:'flex',gap:8,alignItems:'center',margin:'10px 0'}}>
+      <input type="checkbox" checked={showWhitespace}
+        onChange={event=>setShowWhitespace(event.target.checked)}/>
+      Toon spaties (·), tabs (→) en vaste spaties (⍽) zichtbaar in beide bronkolommen
+    </label>
+    {showWhitespace && <p style={{fontSize:12,margin:'4px 0 10px'}}>
+      Symbolen verschijnen uitsluitend in deze voorvertoning. De originele tekst,
+      vergelijking, notities en exportinhoud veranderen niet.
+    </p>}
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,250px),1fr))',gap:12}}>
-      <SourceColumn title="Oudere contractversie" rows={removed} side="old"/>
-      <SourceColumn title="Nieuwere contractversie" rows={added} side="new"/>
+      <SourceColumn title="Oudere contractversie" rows={removed} side="old" showWhitespace={showWhitespace}/>
+      <SourceColumn title="Nieuwere contractversie" rows={added} side="new" showWhitespace={showWhitespace}/>
     </div>
     <p style={{margin:'10px 0 0',fontSize:12}}>
       Alleen lokale weergave. Er wordt niets gekopieerd, geëxporteerd of goedgekeurd.
