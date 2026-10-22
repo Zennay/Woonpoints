@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { PrivateContractInlineChange, privateContractChangedDigits, PrivateContractParallelRows } from './manual-month-progress';
+import { PrivateContractInlineChange, privateContractChangedDigits, PrivateContractParallelRows, isWhitespaceOnlyContractChange } from './manual-month-progress';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';
@@ -12603,6 +12603,8 @@ function PrivateContractVersionComparison() {
   const current = diff?.source === source ? diff : null;
   const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
     [current]);
+  const whitespaceOnlyGroups = useMemo(() =>
+    groups.filter(group => isWhitespaceOnlyContractChange(group.rows)).length, [groups]);
   const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
   const searchTerm = groupSearch.trim().toLowerCase();
   // Literal digit presence only; a digit anywhere in a changed line is not
@@ -13073,6 +13075,12 @@ function PrivateContractVersionComparison() {
         <h3>Exacte regelwijzigingen</h3>
         <p aria-live="polite"><strong>{current.additions} toegevoegd · {current.removals} verwijderd
           · {current.unchanged} identiek.</strong> Dit telt regels, niet juridische clausules.</p>
+        <p aria-live="polite">
+          <strong>{whitespaceOnlyGroups} groepen met dezelfde niet-witruimtetekens · {groups.length - whitespaceOnlyGroups} groepen met andere letterlijke tekenwijzigingen.</strong>
+          {' '}Dit is uitsluitend een tekenvergelijking, geen juridische beoordeling.
+          Ook witruimte en regelafbreking kunnen betekenis hebben. Alle groepen blijven
+          beschikbaar voor controle en blijven onderdeel van de volledige vergelijking en privé-back-up.
+        </p>
         <h4>Mijn wijzigingsgroepen nalopen</h4>
         <p><strong>{reviewed} van {groups.length} groepen handmatig bekeken.</strong> Vink
           iedere groep uitsluitend af nadat je de oorspronkelijke contractteksten hebt
