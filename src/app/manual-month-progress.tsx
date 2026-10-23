@@ -6118,7 +6118,28 @@ function SourceColumn({
     </p>}
     <ol style={{listStyle:'none',margin:0,padding:0,display:'grid',gap:8}}>
       {rows.map((row,index)=><li key={index} style={{
-        background:'#fff',border:'1px solid #dce4df',  const removed=rows.filter(row=>row.kind==='removed');
+        background:'#fff',border:'1px solid #dce4df',padding:'7px 9px',
+        minWidth:0,overflowWrap:'anywhere'
+      }}>
+        <small style={{fontWeight:600}}>
+          {side==='old'?'− Oud':'＋ Nieuw'} · bronregel {side==='old'?row.oldLine:row.newLine}
+        </small>
+        <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'5px 0 0'}}>
+          {(showWhitespace ? visibleWhitespace(row.text) : row.text) || '(lege regel)'}
+        </pre>
+      </li>)}
+    </ol>
+  </section>;
+}
+
+export function PrivateContractParallelRows({
+  group, rows,
+}: {
+  group: number;
+  rows: ChangeRow[];
+}) {
+  const [showWhitespace, setShowWhitespace] = useState(false);
+  const removed=rows.filter(row=>row.kind==='removed');
   const added=rows.filter(row=>row.kind==='added');
   const whitespaceOnly=isWhitespaceOnlyContractChange(rows);
   return <details style={{
