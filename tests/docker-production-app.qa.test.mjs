@@ -24,8 +24,10 @@ test('Compose app uses the built image through the private-URL launcher, not a d
   assert.match(compose, /command: \["node", "src\/lib\/db-url-launcher\.mjs", "npm", "run", "worker"\]/);
 });
 
-test('hosted Docker production smoke is immutable, private and does not deploy', () => {
-  assert.match(workflow, /runs-on: ubuntu-latest/);
+test('self-hosted Docker production smoke is immutable, private and does not deploy', () => {
+  assert.match(workflow, /runs-on: \[self-hosted, portfolio-pool, vps\]/);
+  assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
+  assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.match(workflow, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
   assert.match(workflow, /persist-credentials: false/);
