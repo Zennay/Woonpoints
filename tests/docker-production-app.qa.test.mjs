@@ -31,9 +31,13 @@ test('self-hosted Docker production smoke is immutable, private and does not dep
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.match(workflow, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
   assert.match(workflow, /persist-credentials: false/);
-  assert.match(workflow, /docker build --target app/);
-  assert.match(workflow, /docker run --network none/);
-  assert.match(workflow, /docker exec/);
+  assert.match(workflow, /XDG_RUNTIME_DIR: .*woonpoints-rootless-oci/);
+  assert.match(workflow, /podman --cgroup-manager=cgroupfs info .*Rootless/);
+  assert.match(workflow, /test "\$\(id -u\)" -ne 0/);
+  assert.doesNotMatch(workflow, /\/var\/run\/docker\.sock|sudo docker/);
+  assert.match(workflow, /podman --cgroup-manager=cgroupfs build --target app/);
+  assert.match(workflow, /podman --cgroup-manager=cgroupfs run --network none/);
+  assert.match(workflow, /podman --cgroup-manager=cgroupfs exec/);
   assert.match(workflow, /x-frame-options/);
   assert.match(workflow, /referrer-policy/);
   assert.doesNotMatch(workflow, /docker (?:push|compose up)|kubectl|ssh |secrets\./);

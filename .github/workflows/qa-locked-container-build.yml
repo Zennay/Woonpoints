@@ -29,6 +29,8 @@ jobs:
     if: ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
     runs-on: [self-hosted, portfolio-pool, vps]
     timeout-minutes: 15
+    env:
+      XDG_RUNTIME_DIR: ${{ runner.temp }}/woonpoints-rootless-oci
     steps:
       - name: Checkout exact triggering source SHA
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -42,19 +44,26 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test -z "$(git status --porcelain)"
+      - name: Require isolated unprivileged OCI build runtime
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          command -v podman >/dev/null
+          install -d -m 0700 "$XDG_RUNTIME_DIR"
+          test "$(podman --cgroup-manager=cgroupfs info --format '{{.Host.Security.Rootless}}')" = true
       - name: Plant synthetic unreviewed worker/runtime context credentials
         run: |
           set -euo pipefail
           printf 'FICTIONAL-NO-SECRETS' > src/worker/service-account.json
           printf 'FICTIONAL-NO-SECRETS' > prisma/backup.sql
-      - name: Build pinned Docker worker image without deployment
+      - name: Build rootless OCI worker image without deployment
         run: |
           set -euo pipefail
-          docker build --target worker --tag woonpoints-locked-qa:local .
+          podman --cgroup-manager=cgroupfs build --target worker --tag woonpoints-locked-qa:local .
       - name: Assert actual worker image omits unreviewed nested source files
         run: |
           set -euo pipefail
-          docker run --rm --network none --entrypoint node woonpoints-locked-qa:local -e '
+          podman --cgroup-manager=cgroupfs run --rm --network none --entrypoint node woonpoints-locked-qa:local -e '
             const fs = require("node:fs");
             if (fs.existsSync("/app/src/worker/service-account.json") ||
                 fs.existsSync("/app/prisma/backup.sql") ||
@@ -64,11 +73,11 @@ jobs:
       - name: Verify real isolated worker dry run and live refusal
         run: |
           set -euo pipefail
-          uid="$(docker run --rm --network none --entrypoint node woonpoints-locked-qa:local -p 'process.getuid()')"
+          uid="$(podman --cgroup-manager=cgroupfs run --rm --network none --entrypoint node woonpoints-locked-qa:local -p 'process.getuid()')"
           test "$uid" = "1000"
-          receipt="$(docker run --rm --network none -e BOT_DRY_RUN=true --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs)"
-          node -e 'const r=JSON.parse(process.argv[1]);if(r.mode!=="dry-run"||r.status!=="ready"||!r.action.includes("No live WoningNet reaction"))process.exit(1)' "$receipt"
-          if docker run --rm --network none -e BOT_DRY_RUN=false --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs >/dev/null 2>&1; then
+          receipt="$(podman --cgroup-manager=cgroupfs run --rm --network none -e BOT_DRY_RUN=true --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs)"
+          node -e 'const r=JSON.parse(process.argv[1]);if(r.mode!=="dry-run"||r.status!=="dry_run_only"||r.liveExecutionAllowed!==false||r.accountDataVerified!==false||r.providerAdapterAvailable!==false||!r.action.includes("No live WoningNet reaction"))process.exit(1)' "$receipt"
+          if podman --cgroup-manager=cgroupfs run --rm --network none -e BOT_DRY_RUN=false --entrypoint node woonpoints-locked-qa:local src/worker/index.mjs >/dev/null 2>&1; then
             echo "unsafe live execution admitted" >&2
             exit 1
           fi
