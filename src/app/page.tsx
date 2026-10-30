@@ -3055,6 +3055,12 @@ export default function HomePage() {
     function onShortcut(event:KeyboardEvent){
       if((event.ctrlKey||event.metaKey)&&!event.altKey&&!event.shiftKey&&
         event.key.toLowerCase()==='k'){
+        // Never steal keyboard focus from a private note, contract editor,
+        // form selection or ongoing IME text composition.
+        if(event.isComposing)return;
+        const target=event.target;
+        if(target instanceof Element&&target!==navSearchRef.current&&
+          target.closest('input, textarea, select, [contenteditable], [role="textbox"]'))return;
         event.preventDefault();
         navSearchRef.current?.focus();
         navSearchRef.current?.select();
