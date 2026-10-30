@@ -3949,7 +3949,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
   }
   async function selectCsvArchive(file: File|undefined) {
-    const token=[REDACTED]
+    const token=++readSequence.current;
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
@@ -3969,7 +3969,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
   }
   async function selectArchive(file: File|undefined) {
-    const token=[REDACTED]
+    const token=++readSequence.current;
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
