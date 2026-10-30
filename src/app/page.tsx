@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { PrivateContractInlineChange, privateContractChangedDigits, PrivateContractParallelRows, isWhitespaceOnlyContractChange } from './manual-month-progress';
 import { PrivateMovingDayTimeline } from './manual-month-progress';
 import { PrivateMovingPackingInventory } from './manual-month-progress';
 import { PrivateReactionWorkflow, PrivateReactionPacing, PrivateCommuteComparison, PrivateMovingHelperRoster, PrivateAddressChangePlanner, type PrivateHomeOverview, type PrivateMatchCostPair } from './position-stats';
@@ -20,6 +21,7 @@ const homepageDestinations:{id:string;title:string;category:HomeNavCategory}[]=[
   {id:'private-offer-desk-heading',title:'Huurvoorstellen',category:'woning'},
   {id:'private-offer-safety-heading',title:'Aanbodcheck',category:'woning'},
   {id:'private-contract-review-heading',title:'Huurcontract nalopen',category:'woning'},
+  {id:'private-contract-version-diff-heading',title:'Twee contractversies',category:'woning'},
   {id:'private-energy-quotes-heading',title:'Energietarieven vergelijken',category:'woning'},
   {id:'private-budget-title',title:'Woonkosten',category:'woning'},
   {id:'rental-scenarios-heading',title:'Huurscenario’s vergelijken',category:'woning'},
@@ -71,6 +73,7 @@ const homeNavAliases:Record<string,string[]>={
   'housing-shortlist-heading':['woning kiezen','selectie'],
   'private-woningmatch-heading':['zelf woning vergelijken','matchscore','huurcriterium','match studio'],
   'private-contract-review-heading':['contract controleren','huurovereenkomst','voorwaarden','borg terug','contract tekenen'],
+  'private-contract-version-diff-heading':['contractwijzigingen','conceptcontract','contractversie vergelijken','oude nieuwe overeenkomst'],
   'private-budget-title':['woonlasten','huur vergelijken'],
   'rental-scenarios-heading':['huurscenario','budget woning','borg reserveren','eerstejaarskosten','verhuizen kosten'],
   'private-moving-workspace-heading':['backup','herstellen','verhuisdossier'],
@@ -3540,6 +3543,7 @@ export default function HomePage() {
         onClearRentalProposal={()=>setRentalDecisionProposal(null)}
         onClearRentalDecision={invalidateRentalDecision} />
       <PrivateContractReview acceptedRentalDecision={acceptedRentalDecision} />
+      <PrivateContractVersionComparison />
     </main>
   );
 }
@@ -12401,4 +12405,947 @@ function PrivateContractReview({acceptedRentalDecision}: {
       Sluit je het tabblad, dan verdwijnen de ingevulde waarden; een zelf gedownload bestand blijft onder jouw beheer.
       Controleer persoonlijke informatie vóór je een rapport met anderen deelt.</small></p>
   </section>;
+}
+
+// Reviewed private contract comparison shares the canonical app source boundary;
+// the Docker source allowlist and CI ownership policy remain unchanged.
+type PrivateContractDiffLine = {kind: 'same' | 'removed' | 'added'; text: string; oldLine: number | null; newLine: number | null};
+type PrivateContractDiffPreview = {source: string; lines: PrivateContractDiffLine[]; additions: number; removals: number; unchanged: number};
+type PrivateContractChangeGroup = {
+  id: number;
+  rows: PrivateContractDiffLine[];
+  before: PrivateContractDiffLine | null;
+  after: PrivateContractDiffLine | null;
+};
+
+// Each uninterrupted run of changed lines becomes one reviewable change group.
+// Preserve only its immediately adjacent unchanged lines as optional context;
+// these are exact source text, not a legal clause or an inference about meaning.
+function privateContractSingleReplacement(group: PrivateContractChangeGroup) {
+  // Highlight only an unambiguous 1:1 changed-line pair. If a group contains
+  // multiple added/removed rows, preserve every original row instead of
+  // guessing correspondences or silently hiding important contract text.
+  if (group.rows.length !== 2) return null;
+  const older = group.rows.find(row => row.kind === 'removed');
+  const newer = group.rows.find(row => row.kind === 'added');
+  if (!older || !newer || older.oldLine === null || newer.newLine === null) return null;
+  return {older: older.text, newer: newer.text,
+    oldLine: older.oldLine, newLine: newer.newLine};
+}
+
+function privateContractChangeGroups(lines: PrivateContractDiffLine[]): PrivateContractChangeGroup[] {
+  const groups: PrivateContractChangeGroup[] = [];
+  let changed: PrivateContractDiffLine[] = [];
+  let previousSame: PrivateContractDiffLine | null = null;
+  let before: PrivateContractDiffLine | null = null;
+  const flush = (after: PrivateContractDiffLine | null) => {
+    if (changed.length) {
+      groups.push({id: groups.length + 1, rows: changed, before, after});
+      changed = [];
+      before = null;
+    }
+  };
+  for (const row of lines) {
+    if (row.kind === 'same') {
+      flush(row);
+      previousSame = row;
+    } else {
+      if (!changed.length) before = previousSame;
+      changed.push(row);
+    }
+  }
+  flush(null);
+  return groups;
+}
+
+const CONTRACT_VERSION_MAX_CHARS = 8000;
+const CONTRACT_VERSION_MAX_LINES = 80;
+
+function privateContractLines(value: string): string[] {
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const result = normalized.split('\n');
+  if (result[result.length - 1] === '') result.pop();
+  return result;
+}
+
+/** Bounded longest-common-subsequence diff, preserving order and original text.
+ * Never infer legal significance or hide edits behind a similarity threshold. */
+function comparePrivateContractText(before: string, after: string): PrivateContractDiffLine[] | null {
+  if (!before.trim() || !after.trim() ||
+      before.length > CONTRACT_VERSION_MAX_CHARS || after.length > CONTRACT_VERSION_MAX_CHARS) return null;
+  const oldLines = privateContractLines(before);
+  const newLines = privateContractLines(after);
+  if (!oldLines.length || !newLines.length ||
+      oldLines.length > CONTRACT_VERSION_MAX_LINES || newLines.length > CONTRACT_VERSION_MAX_LINES) return null;
+
+  const dp: number[][] = Array.from({length: oldLines.length + 1},
+    () => Array<number>(newLines.length + 1).fill(0));
+  for (let a = oldLines.length - 1; a >= 0; a--) {
+    for (let b = newLines.length - 1; b >= 0; b--) {
+      dp[a][b] = oldLines[a] === newLines[b] ? 1 + dp[a + 1][b + 1]
+        : Math.max(dp[a + 1][b], dp[a][b + 1]);
+    }
+  }
+  const result: PrivateContractDiffLine[] = [];
+  let a = 0, b = 0;
+  while (a < oldLines.length || b < newLines.length) {
+    if (a < oldLines.length && b < newLines.length &&
+        oldLines[a] === newLines[b]) {
+      result.push({kind: 'same', text: oldLines[a], oldLine: a + 1, newLine: b + 1});
+      a++; b++;
+    } else if (a < oldLines.length &&
+        (b === newLines.length || dp[a + 1][b] >= dp[a][b + 1])) {
+      result.push({kind: 'removed', text: oldLines[a], oldLine: a + 1, newLine: null});
+      a++;
+    } else {
+      result.push({kind: 'added', text: newLines[b], oldLine: null, newLine: b + 1});
+      b++;
+    }
+  }
+  return result;
+}
+
+
+// A deliberately opt-in, local-only review handoff. The source texts are private:
+// no automatic browser storage or transmission, even of a derived fingerprint.
+type ContractVersionReviewBackup = {
+  kind: 'woonpoints-contract-version-review';
+  version: 1;
+  earlier: string;
+  newer: string;
+  reviewedGroups: number[];
+  groupNotes: {group: number; text: string}[];
+  onlyOpen: boolean;
+};
+const CONTRACT_REVIEW_BACKUP_MAX_BYTES = 64 * 1024;
+
+function contractVersionReviewBackup(earlier: string, newer: string,
+  reviewedGroups: number[], groupNotes: Record<number, string>,
+  onlyOpen: boolean): ContractVersionReviewBackup | null {
+  const lines = comparePrivateContractText(earlier, newer);
+  if (!lines) return null;
+  const groups = privateContractChangeGroups(lines);
+  const groupCount = groups.length;
+  if (reviewedGroups.length > groupCount ||
+      new Set(reviewedGroups).size !== reviewedGroups.length ||
+      reviewedGroups.some(id => !Number.isSafeInteger(id) || id < 1 || id > groupCount)) return null;
+  const notes = Object.entries(groupNotes).map(([id, text]) => ({group: Number(id), text}));
+  if (notes.length > groupCount ||
+      notes.some(row => !Number.isSafeInteger(row.group) || row.group < 1 ||
+        row.group > groupCount || typeof row.text !== 'string' || row.text.length > 240)) return null;
+  return {
+    kind: 'woonpoints-contract-version-review', version: 1,
+    earlier, newer, reviewedGroups: [...reviewedGroups].sort((a, b) => a - b),
+    groupNotes: notes.sort((a, b) => a.group - b.group), onlyOpen
+  };
+}
+
+function parseContractVersionReviewBackup(input: string): ContractVersionReviewBackup {
+  const raw: unknown = JSON.parse(input);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Error('invalid');
+  const row = raw as Record<string, unknown>;
+  const expected = ['earlier','groupNotes','kind','newer','onlyOpen','reviewedGroups','version'];
+  if (Object.keys(row).sort().join('|') !== expected.join('|') ||
+      row.kind !== 'woonpoints-contract-version-review' || row.version !== 1 ||
+      typeof row.earlier !== 'string' || typeof row.newer !== 'string' ||
+      typeof row.onlyOpen !== 'boolean' ||
+      !Array.isArray(row.reviewedGroups) || !Array.isArray(row.groupNotes)) throw Error('invalid');
+  const checked = row.reviewedGroups;
+  const entries = row.groupNotes;
+  if (checked.length > CONTRACT_VERSION_MAX_LINES || entries.length > CONTRACT_VERSION_MAX_LINES ||
+      checked.some(value => typeof value !== 'number' || !Number.isSafeInteger(value)) ||
+      entries.some(value => !value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).sort().join('|') !== 'group|text' ||
+        !Number.isSafeInteger(value.group) || typeof value.text !== 'string' ||
+        value.text.length > 240)) throw Error('invalid');
+  const notes: Record<number, string> = Object.create(null);
+  for (const value of entries) {
+    if (Object.prototype.hasOwnProperty.call(notes, value.group)) throw Error('duplicate');
+    notes[value.group] = value.text;
+  }
+  const result = contractVersionReviewBackup(row.earlier, row.newer,
+    checked as number[], notes, row.onlyOpen);
+  if (!result) throw Error('invalid');
+  return result;
+}
+
+function PrivateContractVersionComparison() {
+  const [earlier, setEarlier] = useState('');
+  const [newer, setNewer] = useState('');
+  const [diff, setDiff] = useState<PrivateContractDiffPreview | null>(null);
+  const [includeQuotes, setIncludeQuotes] = useState(false);
+  const [filePreview, setFilePreview] = useState<{source: string; text: string; filename: string} | null>(null);
+  const [confirmSave, setConfirmSave] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [reviewedGroups, setReviewedGroups] = useState<number[]>([]);
+  const [lastFocusedGroup, setLastFocusedGroup] = useState(0);
+  const [groupNotes, setGroupNotes] = useState<Record<number, string>>({});
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  // View-only controls do not change stored reviews or signed export previews.
+  const [groupSearch, setGroupSearch] = useState('');
+  const [notesOnly, setNotesOnly] = useState(false);
+  const [numbersOnly, setNumbersOnly] = useState(false);
+  const [changedDigitsOnly, setChangedDigitsOnly] = useState(false);
+  const [includeNotes, setIncludeNotes] = useState(false);
+  const [reviewBackupPreview, setReviewBackupPreview] =
+    useState<{source: string; content: string} | null>(null);
+  const [reviewBackupAccepted, setReviewBackupAccepted] = useState(false);
+  const [restoreCandidate, setRestoreCandidate] =
+    useState<{backup: ContractVersionReviewBackup; content: string} | null>(null);
+  const [restoreAccepted, setRestoreAccepted] = useState(false);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    before: {earlier: string; newer: string; diff: PrivateContractDiffPreview | null;
+      reviewed: number[]; notes: Record<number, string>; onlyOpen: boolean};
+    restoredSource: string;
+  } | null>(null);
+  const contractFileReadEpoch = useRef(0);
+  const source = JSON.stringify([earlier, newer]);
+  const current = diff?.source === source ? diff : null;
+  const groups = useMemo(() => current ? privateContractChangeGroups(current.lines) : [],
+    [current]);
+  const whitespaceOnlyGroups = useMemo(() =>
+    groups.filter(group => isWhitespaceOnlyContractChange(group.rows)).length, [groups]);
+  const reviewed = groups.filter(group => reviewedGroups.includes(group.id)).length;
+  const searchTerm = groupSearch.trim().toLowerCase();
+  // Literal digit presence only; a digit anywhere in a changed line is not
+  // proof that the numeric value or legal meaning itself changed.
+  const groupsWithDigits = groups.filter(group =>
+    group.rows.some(row => /[0-9]/.test(row.text))).length;
+  // Exact 1:1 replacements distinguish edited digits from incidental numbers.
+  // Multi-line groups with digits remain candidates, never inferred matches.
+  const changedDigitGroupIds = useMemo(() => new Set(groups.filter(group => {
+    const pair = privateContractSingleReplacement(group);
+    return pair ? privateContractChangedDigits(pair.older, pair.newer)
+      : group.rows.some(row => /[0-9]/.test(row.text));
+  }).map(group => group.id)), [groups]);
+  const visibleGroups = groups.filter(group =>
+    (!onlyOpen || !reviewedGroups.includes(group.id)) &&
+    (!notesOnly || !!groupNotes[group.id]?.trim()) &&
+    (!numbersOnly || group.rows.some(row => /[0-9]/.test(row.text))) &&
+    (!changedDigitsOnly || changedDigitGroupIds.has(group.id)) &&
+    (!searchTerm || String(group.id) === searchTerm ||
+      (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) ||
+      group.rows.some(row => row.text.toLowerCase().includes(searchTerm))));
+  const availableOpenGroups = visibleGroups.filter(group =>
+    !reviewedGroups.includes(group.id)).map(group => group.id);
+  function jumpToNextOpenGroup() {
+    if (!availableOpenGroups.length) return;
+    // Navigate only already-visible, still-unreviewed source groups. When the
+    // filter hides an item, navigation must not silently relax it or mark it.
+    const next = availableOpenGroups.find(id => id > lastFocusedGroup)
+      ?? availableOpenGroups[0];
+    setLastFocusedGroup(next);
+    window.requestAnimationFrame(() => {
+      const node = document.getElementById('woonpoints-contractversies-groep-' + next);
+      node?.focus({preventScroll:true});
+      node?.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  }
+  function highlightMatchedText(text: string) {
+    if (!text || !searchTerm) return text || '(lege regel)';
+    const lower = text.toLowerCase();
+    const parts = [];
+    let position = 0;
+    // Long lines and one-character queries must not create unbounded nodes.
+    for (let count = 0; count < 32; count++) {
+      const index = lower.indexOf(searchTerm, position);
+      if (index < 0) break;
+      if (index > position) parts.push(text.slice(position, index));
+      parts.push(<mark key={index}>{text.slice(index, index + searchTerm.length)}</mark>);
+      position = index + searchTerm.length;
+    }
+    parts.push(text.slice(position));
+    return parts;
+  }
+  const reviewSource = JSON.stringify([source,
+    [...reviewedGroups].sort((a, b) => a - b), groupNotes, onlyOpen]);
+  const previewKey = JSON.stringify([source, includeQuotes, includeNotes,
+    [...reviewedGroups].sort((a, b) => a - b), groupNotes]);
+
+  function invalidate() {
+    // Any source edit cancels an already pending asynchronous local file read.
+    contractFileReadEpoch.current++;
+    setReviewBackupPreview(null);
+    setReviewBackupAccepted(false);
+    setRestoreCandidate(null);
+    setRestoreAccepted(false);
+    setRestoreUndo(null);
+    setDiff(null);
+    setFilePreview(null);
+    setConfirmSave(false);
+    setReviewedGroups([]);
+    setLastFocusedGroup(0);
+    setGroupNotes({});
+    setOnlyOpen(false);
+    setGroupSearch('');
+    setNotesOnly(false);
+    setNumbersOnly(false);
+    setChangedDigitsOnly(false);
+    setIncludeNotes(false);
+    setNotice('');
+  }
+  function invalidateExport() {
+    setReviewBackupPreview(null);
+    setReviewBackupAccepted(false);
+    setRestoreUndo(null);
+    setFilePreview(null);
+    setConfirmSave(false);
+    setNotice('Opvolgstatus of eigen notities aangepast. Bekijk een nieuwe exportpreview.');
+  }
+  async function importPlainTextContract(file: File | undefined, side: 'earlier' | 'newer') {
+    if (!file) return;
+    const epoch = ++contractFileReadEpoch.current;
+    // Browser accept filters are hints only; enforce limits before reading bytes.
+    if (!/\.txt$/i.test(file.name) || file.size < 1 || file.size > 32768) {
+      setNotice('Kies een niet-leeg .txt-bestand van maximaal 32 KiB. PDF, DOCX en andere bestanden worden niet ingelezen.');
+      return;
+    }
+    try {
+      const bytes = await file.arrayBuffer();
+      if (epoch !== contractFileReadEpoch.current) return;
+      const text = new TextDecoder('utf-8', {fatal: true}).decode(bytes)
+        .replace(/^\uFEFF/, '');
+      if (!text.trim() || text.includes('\u0000') ||
+          text.length > CONTRACT_VERSION_MAX_CHARS ||
+          privateContractLines(text).length > CONTRACT_VERSION_MAX_LINES) {
+        setNotice('Bestand niet overgenomen: maximaal 8.000 tekens en 80 tekstregels per concept; geen binaire inhoud.');
+        return;
+      }
+      invalidate();
+      if (side === 'earlier') setEarlier(text);
+      else setNewer(text);
+      setNotice((side === 'earlier' ? 'Oudere' : 'Nieuwere') +
+        ' TXT lokaal overgenomen; de vergelijking en alle oude exporttoestemmingen zijn gewist. ' +
+        'Controleer de tekst en klik zelf op Vergelijk.');
+    } catch {
+      if (epoch === contractFileReadEpoch.current) {
+        setNotice('Het bestand kon niet als geldige UTF-8 tekst worden gelezen. Er is niets overgenomen.');
+      }
+    }
+  }
+  function compare() {
+    const rows = comparePrivateContractText(earlier, newer);
+    if (!rows) {
+      setDiff(null);
+      setNotice('Voeg twee niet-lege teksten toe (maximaal 8.000 tekens en 80 regels elk).');
+      return;
+    }
+    setReviewedGroups([]);
+    setLastFocusedGroup(0);
+    setGroupNotes({});
+    setOnlyOpen(false);
+    setGroupSearch('');
+    setNotesOnly(false);
+    setNumbersOnly(false);
+    setChangedDigitsOnly(false);
+    setIncludeNotes(false);
+    setDiff({
+      source,
+      lines: rows,
+      additions: rows.filter(row => row.kind === 'added').length,
+      removals: rows.filter(row => row.kind === 'removed').length,
+      unchanged: rows.filter(row => row.kind === 'same').length
+    });
+    setFilePreview(null);
+    setConfirmSave(false);
+    setNotice('Vergelijking alleen in dit tabblad gemaakt. Geen juridische beoordeling.');
+  }
+  function prepareReport() {
+    if (!current) return;
+    const report = [
+      'MIJN EIGEN CONTRACTVERSIES · WIJZIGINGSOVERZICHT', '',
+      'Concept van zelf ingevoerde teksten. Geen juridische toets, documentverificatie of ondertekening.',
+      'Een gewijzigde regel kan uit een verwijdering plus een toevoeging bestaan.',
+      'Dit overzicht bewijst niet dat alle juridische wijzigingen zijn herkend.',
+      '',
+      'Toegevoegde regels: ' + current.additions,
+      'Verwijderde regels: ' + current.removals,
+      'Identieke regels: ' + current.unchanged,
+      'Wijzigingsgroepen: ' + groups.length,
+      'Handmatig bekeken groepen: ' + reviewed,
+      'Nog te bekijken groepen: ' + (groups.length - reviewed),
+      '',
+      'Bekeken = alleen eigen afvinkstatus, GEEN juridische of inhoudelijke goedkeuring.',
+      includeQuotes ? 'LET OP: DEZE VERSIE BEVAT TEKST UIT JE CONTRACT.' :
+        'Contractinhoud weggelaten; alleen soort wijziging en regelnummer.',
+      includeNotes ? 'LET OP: DEZE VERSIE BEVAT JE EIGEN NOTITIES.' :
+        'Persoonlijke notities zijn standaard niet opgenomen.',
+      '',
+      ...groups.flatMap(group => [
+        'WIJZIGINGSGROEP ' + group.id + ' · ' +
+          (reviewedGroups.includes(group.id) ? 'HANDMATIG BEKEKEN' : 'NOG TE BEKIJKEN'),
+        ...(includeNotes && groupNotes[group.id]?.trim() ?
+          ['Eigen notitie: ' + groupNotes[group.id].trim()] : []),
+        ...group.rows.flatMap(row => [
+          (row.kind === 'added' ? 'TOEGEVOEGD: nieuwe regel ' + row.newLine :
+            'VERWIJDERD: oude regel ' + row.oldLine),
+          ...(includeQuotes ? [row.text] : [])
+        ]),
+        ''
+      ]),
+      'Controleer altijd beide originele documenten naast elkaar.',
+      'Woonpoints heeft niemand gecontacteerd en niets geüpload, bewaard of geaccepteerd.'
+    ].join('\n') + '\n';
+    setFilePreview({source: previewKey, text: report,
+      filename: 'mijn-contractversies-wijzigingen.txt'});
+    setConfirmSave(false);
+    setNotice('Lees de volledige TXT-preview. De download gebeurt alleen na jouw aparte toestemming.');
+  }
+  function prepareQuestions() {
+    if (!current) return;
+    const personalQuestions = groups.filter(group => groupNotes[group.id]?.trim());
+    if (!personalQuestions.length) {
+      setNotice('Schrijf eerst minimaal één eigen vraag bij een wijzigingsgroep.');
+      return;
+    }
+    // Intentionally excludes both pasted contract sources and diff line text.
+    // Even personal notes can contain sensitive information: preview is mandatory.
+    const report = [
+      'MIJN VRAGEN OVER TWEE HUURCONTRACTVERSIES', '',
+      'Zelf opgeschreven aandachtspunten, geen juridisch advies of contractacceptatie.',
+      'Bevat geen automatisch overgenomen contractregels of bedragen.',
+      'Controleer zelf of je vragen persoonsgegevens bevatten voordat je ze deelt.',
+      '',
+      ...personalQuestions.flatMap(group => [
+        'Wijzigingsgroep ' + group.id + ' · ' +
+          (reviewedGroups.includes(group.id) ? 'zelf bekeken' : 'nog niet bekeken'),
+        groupNotes[group.id].trim(), ''
+      ]),
+      'Er is niets verzonden of opgeslagen door Woonpoints.'
+    ].join('\n') + '\n';
+    setFilePreview({source: previewKey, text: report,
+      filename: 'mijn-vragen-over-contractversies.txt'});
+    setConfirmSave(false);
+    setNotice('Dit is een aparte conceptvragenlijst met alleen jouw eigen notities. ' +
+      'Lees de volledige preview en bevestig een eventuele download.');
+  }
+  function prepareLandlordDraft() {
+    if (!current) return;
+    const personalQuestions = groups.filter(group => groupNotes[group.id]?.trim());
+    if (!personalQuestions.length) {
+      setNotice('Voeg minimaal één zelfgeschreven vraag toe voordat je een conceptbericht maakt.');
+      return;
+    }
+    const letter = [
+      'Onderwerp: Vragen bij concept-huurovereenkomst',
+      '',
+      'Geachte verhuurder,',
+      '',
+      'Ik heb twee conceptversies van de huurovereenkomst naast elkaar bekeken.',
+      'Voordat ik verderga, wil ik graag een toelichting op de volgende punten:',
+      '',
+      ...personalQuestions.flatMap(group => [
+        'Punt ' + group.id + ': ' + groupNotes[group.id].trim(), ''
+      ]),
+      'Zou u deze punten schriftelijk willen toelichten?',
+      '',
+      'Met vriendelijke groet,',
+      '[Uw naam]',
+      '',
+      'Let op: dit conceptbericht is uitsluitend uit mijn eigen aantekeningen gemaakt.',
+      'Controleer de inhoud, persoonsgegevens en bewoordingen zelf vóór delen.'
+    ].join('\n') + '\n';
+    setFilePreview({source: previewKey, text: letter,
+      filename: 'mijn-conceptbericht-aan-verhuurder.txt'});
+    setConfirmSave(false);
+    setNotice('Conceptbericht lokaal samengesteld uit uitsluitend eigen notities. ' +
+      'Niet verzonden. Lees de volledige tekst en bevestig zelf een eventuele TXT-download.');
+  }
+  function previewReviewBackup() {
+    const backup = contractVersionReviewBackup(earlier, newer, reviewedGroups,
+      groupNotes, onlyOpen);
+    if (!backup || !current) {
+      setNotice('Maak eerst een geldige vergelijking voor een reviewback-up.');
+      return;
+    }
+    const content = JSON.stringify(backup, null, 2) + '\n';
+    if (new TextEncoder().encode(content).length > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
+      setNotice('De privéback-up is te groot om veilig te exporteren.');
+      return;
+    }
+    setReviewBackupPreview({source: reviewSource, content});
+    setReviewBackupAccepted(false);
+    setNotice('De back-up bevat beide volledige contractteksten en eigen notities. Controleer de hele preview.');
+  }
+  function downloadReviewBackup() {
+    if (!current || !reviewBackupAccepted || !reviewBackupPreview ||
+        reviewBackupPreview.source !== reviewSource) {
+      setReviewBackupPreview(null); setReviewBackupAccepted(false);
+      setNotice('Deze back-up is gewijzigd; controleer eerst een nieuwe preview.');
+      return;
+    }
+    // The other page sections' saveFile/saveDownload helpers are scoped to
+    // their own components. Keep this consent-gated browser download local.
+    const blob = new Blob([reviewBackupPreview.content],
+      {type:'application/json;charset=utf-8'});
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'mijn-contractversies-review-prive.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+    setReviewBackupAccepted(false);
+    setNotice('De privé-JSON is aan je browser aangeboden. Bewaar dit contractbestand zelf veilig.');
+  }
+  async function readReviewBackup(file: File | undefined) {
+    if (!file) return;
+    const epoch = ++contractFileReadEpoch.current;
+    setRestoreCandidate(null); setRestoreAccepted(false);
+    if (!/\.json$/i.test(file.name) || file.size < 1 ||
+        file.size > CONTRACT_REVIEW_BACKUP_MAX_BYTES) {
+      setNotice('Kies een eigen niet-leeg JSON-reviewbestand van maximaal 64 KiB.');
+      return;
+    }
+    try {
+      const bytes = await file.arrayBuffer();
+      if (contractFileReadEpoch.current !== epoch) return;
+      const content = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+      const backup = parseContractVersionReviewBackup(content);
+      if (contractFileReadEpoch.current !== epoch) return;
+      setRestoreCandidate({backup, content: JSON.stringify(backup, null, 2)});
+      setReviewBackupPreview(null); setReviewBackupAccepted(false);
+      setNotice('Reviewbestand lokaal gelezen. Vergelijk de volledige vervangingspreview voor bevestiging.');
+    } catch {
+      if (contractFileReadEpoch.current === epoch) {
+        setRestoreCandidate(null); setRestoreAccepted(false);
+        setNotice('Reviewbestand geweigerd: onjuiste structuur, regels of ongeldige UTF-8.');
+      }
+    }
+  }
+  function acceptReviewRestore() {
+    if (!restoreCandidate || !restoreAccepted) return;
+    const {backup} = restoreCandidate;
+    const lines = comparePrivateContractText(backup.earlier, backup.newer);
+    if (!lines) { setRestoreCandidate(null); setRestoreAccepted(false); return; }
+    const before = {earlier, newer, diff, reviewed: [...reviewedGroups],
+      notes: {...groupNotes}, onlyOpen};
+    const notes: Record<number, string> = Object.create(null);
+    for (const note of backup.groupNotes) notes[note.group] = note.text;
+    const newSource = JSON.stringify([backup.earlier, backup.newer]);
+    const restoredSource = JSON.stringify([newSource, backup.reviewedGroups, notes, backup.onlyOpen]);
+    contractFileReadEpoch.current++;
+    setEarlier(backup.earlier); setNewer(backup.newer);
+    setDiff({source: newSource, lines,
+      additions: lines.filter(row => row.kind === 'added').length,
+      removals: lines.filter(row => row.kind === 'removed').length,
+      unchanged: lines.filter(row => row.kind === 'same').length});
+    setReviewedGroups([...backup.reviewedGroups]);
+    setLastFocusedGroup(0);
+    setGroupNotes(notes); setOnlyOpen(backup.onlyOpen);
+    setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
+    setChangedDigitsOnly(false);
+    setFilePreview(null); setConfirmSave(false);
+    setReviewBackupPreview(null); setReviewBackupAccepted(false);
+    setRestoreCandidate(null); setRestoreAccepted(false);
+    setIncludeQuotes(false); setIncludeNotes(false);
+    setRestoreUndo({before, restoredSource});
+    setNotice('Twee teksten en handmatige reviews lokaal hersteld. Rapporten en eerdere toestemmingen zijn gewist.');
+  }
+  function undoReviewRestore() {
+    if (!restoreUndo || restoreUndo.restoredSource !== reviewSource) return;
+    const {before} = restoreUndo;
+    contractFileReadEpoch.current++;
+    setEarlier(before.earlier); setNewer(before.newer); setDiff(before.diff);
+    setReviewedGroups(before.reviewed); setLastFocusedGroup(0);
+    setGroupNotes(before.notes); setOnlyOpen(before.onlyOpen);
+    setGroupSearch(''); setNotesOnly(false); setNumbersOnly(false);
+    setChangedDigitsOnly(false);
+    setRestoreUndo(null); setRestoreCandidate(null); setRestoreAccepted(false);
+    setReviewBackupPreview(null); setReviewBackupAccepted(false);
+    setFilePreview(null); setConfirmSave(false);
+    setNotice('Vorige tabbladinvoer eenmalig hersteld. Geen eerdere downloadtoestemming hergebruikt.');
+  }
+  async function copyReviewedReport() {
+    // Browsers share clipboard text with other apps. Keep this action strictly
+    // behind the same fresh preview + explicit opt-in as the TXT download.
+    if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
+      setFilePreview(null);
+      setConfirmSave(false);
+      setNotice('De tekst is gewijzigd of niet bevestigd. Bekijk eerst een nieuwe preview.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(filePreview.text);
+      setConfirmSave(false);
+      setNotice('Alleen de bekeken tekst is op jouw klik naar het klembord gekopieerd. ' +
+        'Er is niets verstuurd. Controleer zelf waar je de tekst plakt.');
+    } catch {
+      setConfirmSave(false);
+      setNotice('Je browser staat klembordtoegang niet toe. Selecteer en kopieer de ' +
+        'zichtbare voorbeeldtekst zelf, of gebruik na nieuwe bevestiging de TXT-download.');
+    }
+  }
+
+  function saveReport() {
+    if (!current || !filePreview || filePreview.source !== previewKey || !confirmSave) {
+      setFilePreview(null);
+      setConfirmSave(false);
+      setNotice('De inhoud is gewijzigd of nog niet bevestigd; maak eerst een nieuwe preview.');
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([filePreview.text], {type: 'text/plain;charset=utf-8'}));
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filePreview.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setConfirmSave(false);
+      setNotice('TXT aangeboden aan je browser. Controleer zelf de opslaglocatie en eventuele gedeelde inhoud.');
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+  const layout = {display: 'grid', gap: 12, gridTemplateColumns:
+    'repeat(auto-fit,minmax(260px,1fr))'} as const;
+  return (
+    <section className="panel" id="private-contract-version-diff-heading"
+      aria-labelledby="private-contract-version-diff-title">
+      <p className="eyebrow">TWEE CONCEPTEN · ALLEEN IN DIT TABBLAD</p>
+      <h2 id="private-contract-version-diff-title">Mijn huurcontractversies naast elkaar</h2>
+      <p>
+        Plak een oudere en een nieuwere tekstversie. Deze lokale vergelijking toont exacte
+        toegevoegde en verwijderde regels. Ook een kleine aanpassing binnen één regel
+        verschijnt als oude én nieuwe regel. Dit is geen juridische controle en geen bewijs
+        van volledigheid. Vergelijk de officiële documenten altijd zelf.
+      </p>
+      <div style={layout}>
+        <label style={{display: 'grid', gap: 8}}>
+          <strong>Oudere concepttekst</strong>
+          <textarea value={earlier} rows={9} maxLength={CONTRACT_VERSION_MAX_CHARS}
+            placeholder="Plak hier tekst uit de oudere conceptversie"
+            onChange={event => { setEarlier(event.target.value); invalidate(); }}
+          />
+          <small>{earlier.length}/{CONTRACT_VERSION_MAX_CHARS} tekens · {privateContractLines(earlier).length} regels</small>
+          <span>Of laad uitsluitend een lokale UTF-8 .txt met oude concepttekst:</span>
+          <input type="file" accept=".txt,text/plain"
+            aria-label="Laad oudere contracttekst uit een lokaal TXT-bestand"
+            onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void importPlainTextContract(file, 'earlier');
+            }} />
+        </label>
+        <label style={{display: 'grid', gap: 8}}>
+          <strong>Nieuwere concepttekst</strong>
+          <textarea value={newer} rows={9} maxLength={CONTRACT_VERSION_MAX_CHARS}
+            placeholder="Plak hier dezelfde onderdelen uit het nieuwste concept"
+            onChange={event => { setNewer(event.target.value); invalidate(); }}
+          />
+          <small>{newer.length}/{CONTRACT_VERSION_MAX_CHARS} tekens · {privateContractLines(newer).length} regels</small>
+          <span>Of laad uitsluitend een lokale UTF-8 .txt met nieuwe concepttekst:</span>
+          <input type="file" accept=".txt,text/plain"
+            aria-label="Laad nieuwere contracttekst uit een lokaal TXT-bestand"
+            onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void importPlainTextContract(file, 'newer');
+            }} />
+        </label>
+      </div>
+      <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:12}}>
+        <button type="button" onClick={compare}
+          disabled={!earlier.trim() || !newer.trim() ||
+            privateContractLines(earlier).length > CONTRACT_VERSION_MAX_LINES ||
+            privateContractLines(newer).length > CONTRACT_VERSION_MAX_LINES}>
+          Vergelijk mijn twee teksten lokaal
+        </button>
+        <button type="button" disabled={!earlier && !newer}
+          onClick={() => {
+            const previousEarlier = earlier;
+            setEarlier(newer);
+            setNewer(previousEarlier);
+            invalidate();
+            setNotice('Oud en nieuw omgewisseld. Bestaande vergelijking, vragen en rapporttoestemmingen zijn gewist.');
+          }}>Wissel oud en nieuw</button>
+        <button type="button" onClick={() => {
+          if (!window.confirm('Beide ingevoerde contractconcepten en previews uit dit tabblad wissen?')) return;
+          setEarlier(''); setNewer(''); invalidate();
+          setNotice('Beide tijdelijke teksten gewist uit deze vergelijker.');
+        }}>Wis mijn beide teksten</button>
+      </div>
+      {current && <div style={{marginTop:18}}>
+        <h3>Exacte regelwijzigingen</h3>
+        <p aria-live="polite"><strong>{current.additions} toegevoegd · {current.removals} verwijderd
+          · {current.unchanged} identiek.</strong> Dit telt regels, niet juridische clausules.</p>
+        <p aria-live="polite">
+          <strong>{whitespaceOnlyGroups} groepen met dezelfde niet-witruimtetekens · {groups.length - whitespaceOnlyGroups} groepen met andere letterlijke tekenwijzigingen.</strong>
+          {' '}Dit is uitsluitend een tekenvergelijking, geen juridische beoordeling.
+          Ook witruimte en regelafbreking kunnen betekenis hebben. Alle groepen blijven
+          beschikbaar voor controle en blijven onderdeel van de volledige vergelijking en privé-back-up.
+        </p>
+        <h4>Mijn wijzigingsgroepen nalopen</h4>
+        <p><strong>{reviewed} van {groups.length} groepen handmatig bekeken.</strong> Vink
+          iedere groep uitsluitend af nadat je de oorspronkelijke contractteksten hebt
+          vergeleken. Een vinkje betekent niet dat je akkoord gaat of dat een wijziging veilig is.
+          Notities en vinkjes staan alleen tijdelijk in dit tabblad.</p>
+        <div style={{display:'grid',gap:10,marginBottom:14,maxWidth:720}}>
+          <label style={{display:'grid',gap:6}}>
+            <strong>Zoek in gewijzigde contractregels en mijn eigen notities</strong>
+            <input type="search" value={groupSearch} maxLength={120}
+              autoComplete="off" spellCheck={false}
+              placeholder="Bijvoorbeeld borg, huurprijs, opzegtermijn of groepsnummer"
+              onChange={event => setGroupSearch(event.target.value)} />
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={onlyOpen}
+              onChange={event => setOnlyOpen(event.target.checked)} />
+            Toon alleen groepen die ik nog niet heb bekeken
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={notesOnly}
+              onChange={event => setNotesOnly(event.target.checked)} />
+            Toon alleen groepen met een eigen aandachtspunt
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={numbersOnly}
+              onChange={event => setNumbersOnly(event.target.checked)} />
+            Toon groepen met cijfers in gewijzigde regels ({groupsWithDigits})
+          </label>
+          <label style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="checkbox" checked={changedDigitsOnly}
+              onChange={event => setChangedDigitsOnly(event.target.checked)} />
+            Toon mogelijke cijfertekenwijzigingen ({changedDigitGroupIds.size})
+          </label>
+          <small>Het brede filter zoekt cijfers in gewijzigde regels. Dit extra filter
+            zoekt bij één-op-één regelvervanging alleen daadwerkelijk gewijzigde
+            cijfertekens. Complexe wijzigingen met meerdere regels blijven kandidaat
+            wanneer daar cijfers in voorkomen: hun onderlinge overeenkomst is onbekend.
+            Geen filter bepaalt of huur, datum of juridische afspraak inhoudelijk is
+            gewijzigd. Ook wijzigingen zonder cijfers kunnen belangrijk zijn.</small>
+          <p aria-live="polite" style={{margin:0}}>
+            <strong>{visibleGroups.length} van {groups.length} wijzigingsgroepen zichtbaar.</strong>
+            {' '}Zoeken en filteren gebeurt alleen in dit tabblad; de volledige vergelijking,
+            afvinkstatus, privé-back-up en rapporten blijven ongewijzigd.
+          </p>
+          {(groupSearch || onlyOpen || notesOnly || numbersOnly || changedDigitsOnly) && <button type="button"
+            style={{justifySelf:'start'}} onClick={() => {
+              setGroupSearch(''); setOnlyOpen(false); setNotesOnly(false);
+              setNumbersOnly(false); setChangedDigitsOnly(false);
+            }}>Wis alleen deze weergavefilters</button>}
+        </div>
+        <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
+          <button type="button" disabled={!availableOpenGroups.length}
+            onClick={jumpToNextOpenGroup}>
+            Naar volgende zichtbare, nog niet bekeken groep ({availableOpenGroups.length})
+          </button>
+          <small>Springt alleen naar een bestaande groep; verandert geen
+            afvinkstatus, filter of contracttekst.</small>
+        </div>
+        {visibleGroups.length > 1 && <details style={{marginBottom:14}}>
+          <summary>Snel naar een zichtbare wijzigingsgroep ({visibleGroups.length})</summary>
+          <nav aria-label="Spring naar een zichtbare contractwijziging"
+            style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+            {visibleGroups.map(group => <a key={group.id}
+              href={'#woonpoints-contractversies-groep-' + group.id}
+              style={{padding:'5px 8px',border:'1px solid #d2dcd7',borderRadius:8}}>
+              Groep {group.id} · {reviewedGroups.includes(group.id) ? 'bekeken' : 'open'}
+            </a>)}
+          </nav>
+        </details>}
+        {visibleGroups.map(group => (
+            <article id={'woonpoints-contractversies-groep-' + group.id}
+              key={group.id} tabIndex={-1} style={{border:'1px solid #d2dcd7',borderRadius:10,
+              scrollMarginTop:20,padding:12,marginBottom:12}}>
+              <strong>Wijzigingsgroep {group.id} · {group.rows.length} gewijzigde regels</strong>
+              <PrivateContractParallelRows group={group.id} rows={group.rows} />
+              {(() => {
+                const replacement = privateContractSingleReplacement(group);
+                return replacement ?
+                  <PrivateContractInlineChange {...replacement} /> : null;
+              })()}
+              {(group.before || group.after) && <details style={{marginTop:8,marginBottom:8}}>
+                <summary>Bekijk ongewijzigde regels direct rondom deze wijziging</summary>
+                <p style={{margin:'6px 0'}}><small>
+                  Alleen de direct aangrenzende identieke tekstregels. Context helpt
+                  terugzoeken, maar bevestigt geen juridische samenhang of akkoord.
+                </small></p>
+                {([['Vóór de wijziging', group.before], ['Na de wijziging', group.after]] as const)
+                  .map(([label, row]) => row ? <div key={label}
+                    style={{padding:'7px 9px',background:'#f2f6f2',marginTop:6,borderRadius:8}}>
+                    <small>{label} · oud {row.oldLine} / nieuw {row.newLine}</small>
+                    <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'3px 0'}}>
+                      {row.text || '(lege regel)'}
+                    </pre>
+                  </div> : null)}
+              </details>}
+              {searchTerm && (groupNotes[group.id] || '').toLowerCase().includes(searchTerm) &&
+                <p style={{margin:'8px 0 0'}}><small>Zoekterm komt ook voor in je eigen aandachtspunt.</small></p>}
+              <div style={{maxHeight:240,overflowY:'auto',overflowWrap:'anywhere'}}>
+                {group.rows.map((row,index) => <div key={index} style={{marginTop:8}}>
+                  <small>{row.kind === 'added' ? '+ Nieuw · regel ' + row.newLine :
+                    '− Oud · regel ' + row.oldLine}</small>
+                  <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'2px 0'}}>
+                    {highlightMatchedText(row.text)}
+                  </pre>
+                </div>)}
+              </div>
+              <label style={{display:'grid',gap:6,marginTop:12}}>
+                Mijn eigen aandachtspunt (optioneel, maximaal 240 tekens)
+                <textarea rows={2} maxLength={240} value={groupNotes[group.id] || ''}
+                  placeholder="Bijvoorbeeld: dit bedrag navragen bij de verhuurder"
+                  onChange={event => {
+                    setGroupNotes(previous => ({...previous,[group.id]:event.target.value}));
+                    invalidateExport();
+                  }}/>
+              </label>
+              <label style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
+                <input type="checkbox" checked={reviewedGroups.includes(group.id)}
+                  onChange={event => {
+                    setReviewedGroups(previous => previous.includes(group.id) ?
+                      previous.filter(id => id !== group.id) : [...previous,group.id]);
+                    invalidateExport();
+                  }}/>
+                Ik heb deze groep zelf naast de originele documenten bekeken
+              </label>
+            </article>
+          ))}
+        {visibleGroups.length === 0 && groups.length > 0 &&
+          <p role="status">Geen wijzigingsgroepen voldoen aan de gekozen filters.
+            Wis je zoekterm of vink een weergavefilter uit. Er is niets verwijderd
+            en de volledige vergelijking blijft beschikbaar.</p>}
+        {onlyOpen && reviewed === groups.length && groups.length > 0 &&
+          <p role="status">Alle groepen zijn handmatig afgevinkt. Dit is geen akkoord
+            of juridische controle; vergelijk de originele documenten zelf.</p>}
+        <details>
+          <summary>Bekijk ook de volledige regel-voor-regel vergelijking, inclusief ongewijzigd</summary>
+        <div role="region" aria-label="Resultaat van de lokale tekstvergelijking"
+          style={{maxHeight:380, overflowY:'auto', overflowWrap:'anywhere'}}>
+          {current.lines.map((row, index) => (
+            <div key={index} style={{borderBottom:'1px solid #d2dcd7',padding:'8px 10px'}}>
+              <strong>{row.kind === 'same' ? 'Ongewijzigd' :
+                row.kind === 'removed' ? '− Uit oudere versie' : '+ In nieuwere versie'}
+                {' · '}
+                {row.kind === 'added' ? 'nieuw ' + row.newLine :
+                  'oud ' + row.oldLine}
+              </strong>
+              <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',margin:'4px 0 0'}}>
+                {row.text || '(lege regel)'}
+              </pre>
+            </div>
+          ))}
+        </div>
+        </details>
+        <p><small>De lijst is een letterlijke tekstvergelijking. Een verschoven identieke
+          regel kan elders terugkomen; een andere regelindeling kan extra verschillen tonen.
+          Lees de volledige contracten ook naast elkaar.</small></p>
+        <h3>Mijn wijzigingslijst bewaren</h3>
+        <label style={{display:'flex',gap:8,alignItems:'start'}}>
+          <input type="checkbox" checked={includeQuotes}
+            onChange={event => {
+              setIncludeQuotes(event.target.checked);
+              setFilePreview(null); setConfirmSave(false); setNotice('');
+            }}/>
+          <span>Neem ook de gewijzigde contractregels letterlijk op in mijn TXT.
+            Dit kan persoonsgegevens en gevoelige afspraken bevatten.
+            Standaard worden die teksten <strong>niet</strong> geëxporteerd.</span>
+        </label>
+        <label style={{display:'flex',gap:8,alignItems:'start',marginTop:12}}>
+          <input type="checkbox" checked={includeNotes}
+            onChange={event => {
+              setIncludeNotes(event.target.checked);
+              invalidateExport();
+            }}/>
+          <span>Neem ook mijn eigen aandachtspunten op in de TXT. Deze kunnen persoonlijke
+            gegevens bevatten en worden standaard <strong>niet</strong> geëxporteerd.</span>
+        </label>
+        <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:12}}>
+          <button type="button" disabled={!current.additions && !current.removals}
+            onClick={prepareReport}>Bekijk mijn volledige wijzigingsrapport met afvinkstatus</button>
+          <button type="button" disabled={!groups.some(group => groupNotes[group.id]?.trim())}
+            onClick={prepareQuestions}>Bekijk aparte vragenlijst (alleen mijn eigen notities)</button>
+          <button type="button" disabled={!groups.some(group => groupNotes[group.id]?.trim())}
+            onClick={prepareLandlordDraft}>Bekijk conceptbericht aan verhuurder</button>
+        </div>
+        <p><small>De vragenlijst en het conceptbericht bevatten geen automatisch gekopieerde contractregels;
+          zelf geschreven notities kunnen alsnog privé-informatie bevatten.
+          Geen verzending naar verhuurder, e-mail of externe dienst.</small></p>
+        {filePreview?.source === previewKey && <div style={{marginTop:12}}>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
+            padding:14,background:'#f2f6f2',borderRadius:10}}>{filePreview.text}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
+            <input type="checkbox" checked={confirmSave}
+              onChange={event => setConfirmSave(event.target.checked)}/>
+            <span>Ik heb de volledige tekst bekeken en kies bewust voor een lokale TXT-download
+              of een kopie naar het gedeelde klembord. Andere apps kunnen gekopieerde
+              tekst lezen; ik bepaal zelf waar ik deze plak.</span>
+          </label>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <button type="button" disabled={!confirmSave} onClick={saveReport}>
+              Download uitsluitend mijn bekeken {filePreview.filename}
+            </button>
+            <button type="button" disabled={!confirmSave} onClick={() => {void copyReviewedReport();}}>
+              Kopieer uitsluitend deze bekeken tekst
+            </button>
+          </div>
+        </div>}
+      </div>}
+      <div style={{marginTop:20,padding:16,border:'1px solid #c9d8cf',borderRadius:12}}>
+        <h3>Mijn contractvergelijking bewust bewaren of herstellen</h3>
+        <p>Deze optionele privé-back-up bevat beide <strong>volledige contractteksten</strong>,
+          eigen notities en aangevinkte groepen. Er is geen automatische opslag, upload,
+          synchronisatie of verzending. Een lokaal gedownload bestand kan door jouw eigen
+          opslagprovider gesynchroniseerd worden. Deel dit bestand niet onbedoeld.</p>
+        <button type="button" disabled={!current} onClick={previewReviewBackup}>
+          Bekijk volledige privé-JSON vóór download
+        </button>
+        {reviewBackupPreview?.source === reviewSource && <div style={{marginTop:12}}>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
+            padding:14,background:'#f2f6f2',borderRadius:10}}>{reviewBackupPreview.content}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
+            <input type="checkbox" checked={reviewBackupAccepted}
+              onChange={event => setReviewBackupAccepted(event.target.checked)}/>
+            <span>Ik heb de volledige privé-JSON met contractinhoud bekeken en kies bewust
+              zelf waar ik dit persoonlijke bestand bewaar.</span>
+          </label>
+          <button type="button" disabled={!reviewBackupAccepted} onClick={downloadReviewBackup}>
+            Download uitsluitend mijn gecontroleerde privé-back-up
+          </button>
+        </div>}
+        <label style={{display:'grid',gap:6,marginTop:18,maxWidth:500}}>
+          <strong>Mijn eerdere privé-review-JSON lokaal openen (maximaal 64 KiB)</strong>
+          <input type="file" accept=".json,application/json"
+            onChange={event => {const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = ''; void readReviewBackup(file);}}/>
+        </label>
+        {restoreCandidate && <div style={{marginTop:12}}>
+          <p><strong>Vervangingspreview:</strong> deze import overschrijft pas na jouw aparte
+            bevestiging de twee tijdelijke teksten, notities en afvinkstatussen.
+            Hij voert geen wijzigingen uit in officiële documenten.</p>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:300,overflowY:'auto',
+            padding:14,background:'#f2f6f2',borderRadius:10}}>{restoreCandidate.content}</pre>
+          <label style={{display:'flex',gap:8,alignItems:'start',marginBottom:10}}>
+            <input type="checkbox" checked={restoreAccepted}
+              onChange={event => setRestoreAccepted(event.target.checked)}/>
+            <span>Ik heb de complete vervangende contractteksten en reviewstatus bekeken
+              en wil mijn huidige tijdelijke vergelijking vervangen.</span>
+          </label>
+          <button type="button" disabled={!restoreAccepted} onClick={acceptReviewRestore}>
+            Herstel uitsluitend mijn bekeken contractreview
+          </button>
+          <button type="button" onClick={() => {setRestoreCandidate(null);
+            setRestoreAccepted(false);}}>Annuleer import</button>
+        </div>}
+        {restoreUndo && <button type="button" style={{marginTop:12}}
+          disabled={restoreUndo.restoredSource !== reviewSource} onClick={undoReviewRestore}>
+          Mijn vorige tabbladinvoer eenmalig terugzetten
+        </button>}
+      </div>
+      {notice && <p role="status" aria-live="polite">{notice}</p>}
+      <p><small>Deze functie gebruikt uitsluitend tijdelijk tabbladgeheugen.
+        TXT-import leest alleen de door jou geselecteerde UTF-8-tekst lokaal
+        (maximaal 32 KiB bestand, 8.000 tekens en 80 regels per concept);
+        PDF/DOCX, scans en juridische inhoudsanalyse worden niet ondersteund.
+        Geen account, upload, contractacceptatie, AI-samenvatting, automatische opslag
+        of contact met een verhuurder. Sluiten of verversen wist de invoer van dit onderdeel;
+        een eerder gedownload TXT-bestand blijft onder jouw eigen beheer.</small></p>
+    </section>
+  );
 }

@@ -51,20 +51,36 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test -z "$(git status --porcelain)"
           node --test tests/docker-production-app.qa.test.mjs
+      - name: Require isolated unprivileged OCI build runtime
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          command -v podman >/dev/null
+          # The runner context is not available at jobs.<job>.env evaluation.
+          # Use the GitHub runner-provided environment after job admission.
+          test -n "${RUNNER_TEMP:-}"
+          test "$GITHUB_RUN_ID" != ""
+          test "$GITHUB_RUN_ATTEMPT" != ""
+          export XDG_RUNTIME_DIR="${RUNNER_TEMP%/}/woonpoints-rootless-oci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -L "$XDG_RUNTIME_DIR"
+          install -d -m 0700 "$XDG_RUNTIME_DIR"
+          test "$(stat -c %a "$XDG_RUNTIME_DIR")" = 700
+          printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          test "$(podman --cgroup-manager=cgroupfs info --format '{{.Host.Security.Rootless}}')" = true
       - name: Plant inert nested secret canaries to verify actual context exclusion
         run: |
           set -euo pipefail
           printf 'PRIVATE-SYNTHETIC-ONLY' > src/app/production-credentials.json
           printf 'PRIVATE-SYNTHETIC-ONLY' > src/lib/token.json
           printf 'PRIVATE-SYNTHETIC-ONLY' > prisma/backup.sql
-      - name: Build application image in a disposable hosted runner
+      - name: Build production app in isolated rootless OCI
         run: |
           set -euo pipefail
-          docker build --target app -t woonpoints-app-qa:local .
+          podman --cgroup-manager=cgroupfs build --target app -t woonpoints-app-qa:local .
       - name: Prove review-only source inclusion and canary exclusion in built image
         run: |
           set -euo pipefail
-          docker run --rm --network none --entrypoint node woonpoints-app-qa:local -e '
+          podman --cgroup-manager=cgroupfs run --rm --network none --entrypoint node woonpoints-app-qa:local -e '
             const fs = require("node:fs");
             const rejected = [
               "/app/src/app/production-credentials.json",
@@ -83,15 +99,15 @@ jobs:
       - name: Launch unnetworked production server and prove real HTTP + privacy headers
         run: |
           set -euo pipefail
-          cid="$(docker run --network none -d --rm \
+          cid="$(podman --cgroup-manager=cgroupfs run --network none -d --rm \
             -e NEXT_TELEMETRY_DISABLED=1 \
             -e WOONPOINTS_DB_PASSWORD=synthetic-offline-test-only \
             --entrypoint node woonpoints-app-qa:local \
             src/lib/db-url-launcher.mjs npm run start)"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          trap 'podman --cgroup-manager=cgroupfs rm -f "$cid" >/dev/null 2>&1 || true' EXIT
           # Verify actual image runtime identity, not just Dockerfile text.
-          test "$(docker exec "$cid" node -p 'process.getuid()')" = "1000"
-          docker exec "$cid" node -e '
+          test "$(podman --cgroup-manager=cgroupfs exec "$cid" node -p 'process.getuid()')" = "1000"
+          podman --cgroup-manager=cgroupfs exec "$cid" node -e '
             (async () => {
               let lastError = "not ready";
               for (let attempt=0; attempt<60; attempt++) {

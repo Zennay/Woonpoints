@@ -22,6 +22,11 @@ function checkImage(source) {
   }
 }
 test('both runtime targets explicitly drop to the built-in Alpine node user', () => checkImage(dockerfile));
+test('worker source remains readable on private-umask VPS checkouts without runtime writes', () => {
+  assert.match(dockerfile, /^COPY \. \.$\n^RUN chmod -R a\+rX \/app$/m);
+  assert.match(dockerfile, /^FROM base AS worker\nUSER node$/m);
+  assert.doesNotMatch(dockerfile, /^RUN chmod -R (?:777|a\+rw) /m);
+});
 
 test('root runtime overrides and missing cache ownership are rejected', () => {
   for (const altered of [
@@ -35,10 +40,19 @@ test('root runtime overrides and missing cache ownership are rejected', () => {
   }
 });
 
-test('hosted Docker checks assert nonroot uid on real app and real worker images', () => {
+test('VPS-only Docker checks assert nonroot uid on real app and real worker images', () => {
   for (const workflow of [appFlow, workerFlow]) {
-    assert.match(workflow, /runs-on: ubuntu-latest/);
+    assert.match(workflow, /runs-on: \[self-hosted, portfolio-pool, vps\]/);
+    assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
+    assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /--network none/);
+    assert.match(workflow, /podman --cgroup-manager=cgroupfs (?:build|run)/);
+    assert.match(workflow, /export XDG_RUNTIME_DIR=.*woonpoints-rootless-oci/);
+  assert.match(workflow, />> "\$GITHUB_ENV"/);
+  assert.match(workflow, /install -d -m 0700 "\$XDG_RUNTIME_DIR"/);
+  assert.doesNotMatch(workflow, /XDG_RUNTIME_DIR: .*runner\.temp/);
+    assert.match(workflow, /podman --cgroup-manager=cgroupfs info .*Rootless/);
+    assert.doesNotMatch(workflow, /\/var\/run\/docker\.sock|sudo docker/);
     assert.match(workflow, /process\.getuid\(\)/);
     assert.match(workflow, /\b1000\b/);
     assert.doesNotMatch(workflow, /docker push|docker compose up|ssh |secrets\./);

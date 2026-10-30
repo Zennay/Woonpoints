@@ -4,7 +4,11 @@ FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb836
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
+# A private-umask self-hosted checkout can have 0640 files / 0750 directories.
+# Keep root-owned source immutable to the node runtime, but ensure node can read
+# the exact allowlisted source and modules in both app and worker images.
 COPY . .
+RUN chmod -R a+rX /app
 
 FROM base AS app
 RUN npm run build
