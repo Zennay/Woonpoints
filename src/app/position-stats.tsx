@@ -1356,6 +1356,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
   const [homes, setHomes] = useState<Home[]>([]);
   const [notice, setNotice] = useState('');
   const [pendingImport, setPendingImport] = useState<{preferences: Preferences; homes: Home[]} | null>(null);
+  const importSequence = useRef(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [compared, setCompared] = useState<number[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -1457,6 +1458,9 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
   }
 
   async function selectJson(file: File | undefined) {
+    // File.text() is asynchronous. Ignore a prior slow file once a newer
+    // choice (including an invalid file) has replaced that user's intent.
+    const selected = ++importSequence.current;
     setPendingImport(null);
     if (!file) return;
     if (file.size < 1 || file.size > 16384) {
@@ -1465,11 +1469,13 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
     }
     try {
       const raw = await file.text();
+      if (selected !== importSequence.current) return;
       const incoming = decodeHousingShortlist(raw) as {preferences: Preferences; homes: Home[]} | null;
       if (!incoming) throw new Error('invalid');
       setPendingImport(incoming);
       setNotice('Geldig privébestand. Bevestig apart of je de huidige vergelijking wilt vervangen.');
     } catch {
+      if (selected !== importSequence.current) return;
       setNotice('Bestand geweigerd: onjuist formaat of ongeldige gegevens. Je huidige kandidaten zijn behouden.');
     }
   }
@@ -1544,8 +1550,19 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
             onClick={() => setConfirmClear(true)}>Wis vergelijking</button>
         </div>
         {pendingImport && <div className="housing-confirm" role="group" aria-label="Bevestig vervanging">
-          <p>Dit bestand heeft <strong>{pendingImport.homes.length}</strong> woningen en eigen
-            voorkeuren. Overnemen vervangt je huidige lokale vergelijking geheel.</p>
+          <p>Deze import bevat <strong>{pendingImport.homes.length}</strong> woningen;
+            je huidige vergelijking heeft <strong>{homes.length}</strong> woningen.
+            Bevestigen vervangt je huidige lokale woningen én voorkeuren geheel.</p>
+          <p>Nieuwe grenzen: maximaal €{pendingImport.preferences.maxRent} maandhuur,
+            minimaal {pendingImport.preferences.minRooms} kamers en maximaal
+            {' '}{pendingImport.preferences.maxTravel} minuten reistijd.</p>
+          <details>
+            <summary>Bekijk de woningen in het gekozen privébestand vóór vervangen</summary>
+            <ol>{pendingImport.homes.map((home, index) => <li key={index}>
+              {index + 1}. {home.label} · €{home.rent}/maand ·
+              {' '}{home.rooms} kamers · {home.travel} minuten
+            </li>)}</ol>
+          </details>
           <button type="button" onClick={() => {
             setPreferences(pendingImport.preferences); setHomes(pendingImport.homes);
             setCompared([]); setPendingImport(null); setConfirmClear(false);
@@ -3932,7 +3949,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
   }
   async function selectCsvArchive(file: File|undefined) {
-    const token=++readSequence.current;
+    const token=[REDACTED]
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
@@ -3952,7 +3969,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
   }
   async function selectArchive(file: File|undefined) {
-    const token=++readSequence.current;
+    const token=[REDACTED]
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
