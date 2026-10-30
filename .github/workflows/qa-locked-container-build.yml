@@ -26,7 +26,8 @@ permissions:
 
 jobs:
   build-and-dry-run:
-    runs-on: ubuntu-latest
+    if: ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
+    runs-on: [self-hosted, portfolio-pool, vps]
     timeout-minutes: 15
     steps:
       - name: Checkout exact triggering source SHA
