@@ -35,9 +35,11 @@ test('root runtime overrides and missing cache ownership are rejected', () => {
   }
 });
 
-test('hosted Docker checks assert nonroot uid on real app and real worker images', () => {
+test('VPS-only Docker checks assert nonroot uid on real app and real worker images', () => {
   for (const workflow of [appFlow, workerFlow]) {
-    assert.match(workflow, /runs-on: ubuntu-latest/);
+    assert.match(workflow, /runs-on: \[self-hosted, portfolio-pool, vps\]/);
+    assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
+    assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /--network none/);
     assert.match(workflow, /process\.getuid\(\)/);
     assert.match(workflow, /\b1000\b/);
