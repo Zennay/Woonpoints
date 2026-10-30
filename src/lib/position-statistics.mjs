@@ -300,7 +300,7 @@ const keys = (value, expected) => value !== null && typeof value === 'object' &&
   Object.keys(value).sort().join('|') === expected.slice().sort().join('|');
 const int = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
 const text = (s) => typeof s === 'string' && s.length >= 1 && s.length <= 64 &&
-  s === s.trim() && !/[\u0000-\u001f\u007f-\u009f]/u.test(s);
+  s === s.trim() && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/u.test(s);
 const PREF_KEYS = ['maxRent', 'minRooms', 'maxTravel', 'preferBalcony'];
 const HOME_KEYS = ['label', 'rent', 'rooms', 'travel', 'balcony'];
 
@@ -401,12 +401,24 @@ export function compareTwoManualHomes(homes, preferences, selected) {
   if (choices.some(x => !x)) return null;
   const [a, b] = choices;
   const aHome = a.home, bHome = b.home;
+  // Different manually entered homes may have the same display label.
+  // Never announce an ambiguous winner or write an ambiguous export;
+  // identify those homes by their stable original shortlist positions.
+  const identity = label => label.normalize('NFC').toLocaleLowerCase('nl-NL');
+  const duplicateCounts = new Map();
+  for (const row of ranked) {
+    const key = identity(row.home.label);
+    duplicateCounts.set(key, (duplicateCounts.get(key) || 0) + 1);
+  }
+  const display = row => duplicateCounts.get(identity(row.home.label)) > 1 ?
+    `${row.home.label} (notitie ${row.index + 1})` : row.home.label;
   const lowest = (key) => aHome[key] === bHome[key] ? null :
-    (aHome[key] < bHome[key] ? aHome.label : bHome.label);
+    display(aHome[key] < bHome[key] ? a : b);
   const highest = (key) => aHome[key] === bHome[key] ? null :
-    (aHome[key] > bHome[key] ? aHome.label : bHome.label);
+    display(aHome[key] > bHome[key] ? a : b);
   return {
-    choices, lowerRent: lowest('rent'), shorterTravel: lowest('travel'),
+    choices, choiceLabels: [display(a), display(b)],
+    lowerRent: lowest('rent'), shorterTravel: lowest('travel'),
     moreRooms: highest('rooms'),
     monthlyRentGap: Math.abs(aHome.rent - bHome.rent),
     twelveMonthRentGap: Math.abs(aHome.rent - bHome.rent) * 12,
@@ -424,9 +436,9 @@ export function exportManualHousingDecisionNote(homes, preferences, selected) {
     'Woonpoints — mijn eigen woningafweging (handmatige, ongeverifieerde notities)',
     '',
     'Geen accountgegevens, echte woningbeschikbaarheid, toewijzing of woningkans.',
-    ...[a, b].flatMap(row => [
+    ...[a, b].flatMap((row, index) => [
       '',
-      row.home.label,
+      comparison.choiceLabels[index],
       `Eigen invoer: EUR ${row.home.rent}/maand, ${row.home.rooms} kamers, ${row.home.travel} minuten reistijd, ${row.home.balcony ? 'balkon' : 'geen balkon'}`,
       row.suitable ? `Past bij eigen grenzen: ja, eigen score ${row.score}` : 'Past bij eigen grenzen: nee',
       ...row.reasons
