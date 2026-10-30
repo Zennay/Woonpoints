@@ -29,8 +29,6 @@ jobs:
     if: ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
     runs-on: [self-hosted, portfolio-pool, vps]
     timeout-minutes: 15
-    env:
-      XDG_RUNTIME_DIR: ${{ runner.temp }}/woonpoints-rootless-oci
     steps:
       - name: Checkout exact triggering source SHA
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -49,7 +47,16 @@ jobs:
           set -euo pipefail
           test "$(id -u)" -ne 0
           command -v podman >/dev/null
+          # The runner context is not available at jobs.<job>.env evaluation.
+          # Use the GitHub runner-provided environment after job admission.
+          test -n "${RUNNER_TEMP:-}"
+          test "$GITHUB_RUN_ID" != ""
+          test "$GITHUB_RUN_ATTEMPT" != ""
+          export XDG_RUNTIME_DIR="${RUNNER_TEMP%/}/woonpoints-rootless-oci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -L "$XDG_RUNTIME_DIR"
           install -d -m 0700 "$XDG_RUNTIME_DIR"
+          test "$(stat -c %a "$XDG_RUNTIME_DIR")" = 700
+          printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
           test "$(podman --cgroup-manager=cgroupfs info --format '{{.Host.Security.Rootless}}')" = true
       - name: Plant synthetic unreviewed worker/runtime context credentials
         run: |
