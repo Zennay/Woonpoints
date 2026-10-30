@@ -47,7 +47,10 @@ test('VPS-only Docker checks assert nonroot uid on real app and real worker imag
     assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /--network none/);
     assert.match(workflow, /podman --cgroup-manager=cgroupfs (?:build|run)/);
-    assert.match(workflow, /XDG_RUNTIME_DIR: .*woonpoints-rootless-oci/);
+    assert.match(workflow, /export XDG_RUNTIME_DIR=.*woonpoints-rootless-oci/);
+  assert.match(workflow, />> "\$GITHUB_ENV"/);
+  assert.match(workflow, /install -d -m 0700 "\$XDG_RUNTIME_DIR"/);
+  assert.doesNotMatch(workflow, /XDG_RUNTIME_DIR: .*runner\.temp/);
     assert.match(workflow, /podman --cgroup-manager=cgroupfs info .*Rootless/);
     assert.doesNotMatch(workflow, /\/var\/run\/docker\.sock|sudo docker/);
     assert.match(workflow, /process\.getuid\(\)/);
