@@ -1580,11 +1580,11 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
           <p aria-live="polite">{compared.length}/2 geselecteerd</p>
           {comparison && <div className="housing-pair-grid">
             <article>
-              <h4>{homes[compared[0]]?.label}</h4>
+              <h4>{comparison.choiceLabels[0]}</h4>
               <p>{comparison.choices[0]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <article>
-              <h4>{homes[compared[1]]?.label}</h4>
+              <h4>{comparison.choiceLabels[1]}</h4>
               <p>{comparison.choices[1]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <div className="housing-pair-facts">
@@ -1636,7 +1636,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
           {ranked?.map((row: {index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}) => (
             <li key={row.index} className="housing-item">
               <div className="housing-item-head">
-                <strong>{row.home.label}</strong>
+                <strong>{row.home.label} <small>(notitie {row.index + 1})</small></strong>
                 <span>{row.suitable ? `Past bij de grenzen · ${row.score} eigen punten` : 'Past niet bij jouw grenzen'}</span>
               </div>
               <p>Zelf genoteerd: €{row.home.rent}/maand · {row.home.rooms} kamers · {row.home.travel} minuten ·
@@ -3932,7 +3932,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     setMessage('Eigen, ongeverifieerde maandnotitie bijgewerkt. Niets online gecontroleerd of opgeslagen.');
   }
   async function selectCsvArchive(file: File|undefined) {
-    const token=++readSequence.current;
+    const token=[REDACTED]
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
@@ -3952,7 +3952,7 @@ export function PrivateSearchPointsHistory({onPointsSnapshot}:{
     }
   }
   async function selectArchive(file: File|undefined) {
-    const token=++readSequence.current;
+    const token=[REDACTED]
     const source=signature;
     setPendingImport(null);setPendingImportSource(null);
     if (!file) return;
