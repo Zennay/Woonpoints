@@ -22,6 +22,11 @@ function checkImage(source) {
   }
 }
 test('both runtime targets explicitly drop to the built-in Alpine node user', () => checkImage(dockerfile));
+test('worker source remains readable on private-umask VPS checkouts without runtime writes', () => {
+  assert.match(dockerfile, /^COPY \. \.$\n^RUN chmod -R a\+rX \/app$/m);
+  assert.match(dockerfile, /^FROM base AS worker\nUSER node$/m);
+  assert.doesNotMatch(dockerfile, /^RUN chmod -R (?:777|a\+rw) /m);
+});
 
 test('root runtime overrides and missing cache ownership are rejected', () => {
   for (const altered of [
