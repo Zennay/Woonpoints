@@ -2348,6 +2348,7 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
   const [matchCostApprovedKey, setMatchCostApprovedKey] = useState<string|null>(null);
   const matchCostKey = matchCostOffer ? JSON.stringify(matchCostOffer) : null;
   const [pendingBudgetRestore, setPendingBudgetRestore] = useState<PrivateBudgetBackup | null>(null);
+  const budgetRestoreReadSequence = useRef(0);
   const [budgetArchiveMessage, setBudgetArchiveMessage] = useState('');
 
   const [movePlan, setMovePlan] = useState({months: '6', reserveMonths: '3'});
@@ -2414,6 +2415,8 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
     setBudgetArchiveMessage('Privé-JSON aangeboden. Bewaar het zorgvuldig: de gekozen opslaglocatie kan synchroniseren.');
   }
   async function selectBudgetRestore(file: File | undefined) {
+    // Invalidate any older still-reading local backup, even on invalid new files.
+    const selected = ++budgetRestoreReadSequence.current;
     setPendingBudgetRestore(null);
     setBudgetArchiveMessage('');
     if (!file) return;
@@ -2423,10 +2426,12 @@ export function ManualHousingCostComparison({handoff, onLongTermOffer, matchCost
     }
     try {
       const incoming = readPrivateBudgetBackup(await file.text());
+      if (selected !== budgetRestoreReadSequence.current) return;
       if (!incoming) throw new TypeError('invalid');
       setPendingBudgetRestore(incoming);
       setBudgetArchiveMessage('Geldige privégegevens ingelezen. Bevestig apart voordat je huidige scenario’s worden vervangen.');
     } catch {
+      if (selected !== budgetRestoreReadSequence.current) return;
       setBudgetArchiveMessage('Herstelbestand geweigerd. Huidige bedragen en plannen zijn ongewijzigd.');
     }
   }
@@ -3012,6 +3017,7 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
   const [monthlyBudget, setMonthlyBudget] = useState('');
   const [message, setMessage] = useState('');
   const [pendingRestore, setPendingRestore] = useState<LongTermPrivateBackup | null>(null);
+  const longTermRestoreReadSequence = useRef(0);
   const left = readPrivateCostOption(first);
   const right = readPrivateCostOption(second);
   const years = /^(?:[1-9]|10)$/.test(horizon) && Number.isInteger(Number(horizon)) &&
@@ -3133,6 +3139,8 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     setMessage('Volledige meerjarenscenario’s aangeboden voor eigen opslag; een cloudmap kan synchroniseren.');
   }
   async function prepareLongTermRestore(file: File | undefined) {
+    // Invalidate any older still-reading local backup, even on invalid new files.
+    const selected = ++longTermRestoreReadSequence.current;
     setPendingRestore(null);
     if (!file) return;
     if (file.size === 0 || file.size > 16384) {
@@ -3141,10 +3149,12 @@ export function PrivateLongTermHousingCosts({offer, onOfferHandled}: {
     }
     try {
       const incoming = decodeLongTermPrivateBackup(await file.text());
+      if (selected !== longTermRestoreReadSequence.current) return;
       if (!incoming) throw new Error('invalid');
       setPendingRestore(incoming);
       setMessage('Geldig eigen scenario-bestand. Huidige bedragen blijven behouden tot je vervanging bevestigt.');
     } catch {
+      if (selected !== longTermRestoreReadSequence.current) return;
       setMessage('Herstelbestand geweigerd: onjuist formaat of ongeldig bedrag. De huidige cijfers blijven behouden.');
     }
   }
