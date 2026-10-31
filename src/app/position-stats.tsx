@@ -1842,6 +1842,7 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
   const [editing, setEditing] = useState<number | null>(null);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const [pendingImport, setPendingImport] = useState<PrivatePlanItem[] | null>(null);
+  const planImportSequence = useRef(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState('');
   const [onlyOpen, setOnlyOpen] = useState(false);
@@ -1906,6 +1907,8 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
   }
 
   async function selectJson(file: File | undefined) {
+    // Treat the newest file selection as the only live import intention.
+    const selected = ++planImportSequence.current;
     setPendingImport(null);
     if (!file) return;
     if (file.size < 1 || file.size > 16384) {
@@ -1913,7 +1916,9 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
       return;
     }
     try {
-      const decoded: unknown = JSON.parse(await file.text());
+      const raw = await file.text();
+      if (selected !== planImportSequence.current) return;
+      const decoded: unknown = JSON.parse(raw);
       if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) throw new Error('invalid');
       const object = decoded as {version?: unknown; entries?: unknown};
       if (object.version !== 1 || !Array.isArray(object.entries) ||
@@ -1924,6 +1929,7 @@ export function ManualDeadlinePlanner({prefill, onPrefillHandled}: {
       })));
       setNotice('Bestand gecontroleerd. Bevestig apart voordat de huidige tabbladplanning wordt vervangen.');
     } catch {
+      if (selected !== planImportSequence.current) return;
       setNotice('Geen geldig Woonpoints-planningsbestand; de huidige invoer is ongewijzigd.');
     }
   }
