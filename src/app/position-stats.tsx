@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import ManualMonthProgress from './manual-month-progress';
 import { localMonthKey, MANUAL_MONTHLY_GOAL } from '../lib/manual-month-progress.mjs';
 import { MAX_MANUAL_HOMES, normalizeHousingPreferences, normalizeManualHome, rankManualHomes,
-  encodeHousingShortlist, decodeHousingShortlist, compareTwoManualHomes,
+  encodeHousingShortlist, decodeHousingShortlist, manualHomeDisplayLabels, compareTwoManualHomes,
   exportManualHousingDecisionNote } from '../lib/position-statistics.mjs';
 import { summarizePositionPairs, summarizeManualPositionHistory, exportManualPositionHistoryCsv, importManualPositionHistoryCsv, summarizeManualReactionJournal, exportManualReactionJournalCsv, importManualReactionJournalCsv, formatPositionPercentile } from '../lib/position-statistics.mjs';
 
@@ -1364,6 +1364,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
   const [removedHome, setRemovedHome] = useState<{index: number; home: Home} | null>(null);
   const validPreferences = normalizeHousingPreferences(preferences) as Preferences | null;
   const ranked = validPreferences ? rankManualHomes(homes, validPreferences) : null;
+  const displayLabels = manualHomeDisplayLabels(homes) as string[] | null;
   const eligible = ranked?.filter((row: {suitable: boolean}) => row.suitable).length ?? 0;
   const comparison = validPreferences ? compareTwoManualHomes(homes, validPreferences, compared) : null;
 
@@ -1597,11 +1598,11 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
           <p aria-live="polite">{compared.length}/2 geselecteerd</p>
           {comparison && <div className="housing-pair-grid">
             <article>
-              <h4>{homes[compared[0]]?.label}</h4>
+              <h4>{comparison.choiceLabels[0]}</h4>
               <p>{comparison.choices[0]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <article>
-              <h4>{homes[compared[1]]?.label}</h4>
+              <h4>{comparison.choiceLabels[1]}</h4>
               <p>{comparison.choices[1]?.suitable ? 'Past bij je grenzen' : 'Past niet bij je grenzen'}</p>
             </article>
             <div className="housing-pair-facts">
@@ -1653,7 +1654,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
           {ranked?.map((row: {index: number; home: Home; suitable: boolean; score: number | null; reasons: string[]}) => (
             <li key={row.index} className="housing-item">
               <div className="housing-item-head">
-                <strong>{row.home.label}</strong>
+                <strong>{displayLabels?.[row.index] ?? row.home.label}</strong>
                 <span>{row.suitable ? `Past bij de grenzen · ${row.score} eigen punten` : 'Past niet bij jouw grenzen'}</span>
               </div>
               <p>Zelf genoteerd: €{row.home.rent}/maand · {row.home.rooms} kamers · {row.home.travel} minuten ·
@@ -1662,7 +1663,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
               {editingIndex === row.index && <form onSubmit={editHome}
                 className="housing-edit-form">
                 <fieldset>
-                  <legend>Bewerk jouw notitie: {row.home.label}</legend>
+                  <legend>Bewerk jouw notitie: {displayLabels?.[row.index] ?? row.home.label}</legend>
                   <label htmlFor="hs-edit-label">Neutraal label</label>
                   <input id="hs-edit-label" required maxLength={64} autoComplete="off"
                     value={editDraft.label}
@@ -1710,6 +1711,7 @@ export function ManualHousingShortlist({onCostPrefill, onPlanPrefill, onViewingP
               </button>
               <button type="button"
                 aria-pressed={compared.includes(row.index)}
+                aria-label={(compared.includes(row.index) ? 'Verwijder uit vergelijking: ' : 'Selecteer voor vergelijking: ') + (displayLabels?.[row.index] ?? row.home.label)}
                 className="secondary"
                 disabled={!compared.includes(row.index) && compared.length >= 2}
                 onClick={() => {
