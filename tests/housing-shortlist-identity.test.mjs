@@ -1,7 +1,8 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeManualHome, compareTwoManualHomes,
+  normalizeManualHome, manualHomeDisplayLabels, compareTwoManualHomes,
   exportManualHousingDecisionNote, encodeHousingShortlist, decodeHousingShortlist
 } from '../src/lib/position-statistics.mjs';
 
@@ -44,4 +45,31 @@ test('invisible directional controls cannot spoof manual housing comparison name
       {...second, label:'Woning\u202eB'}]
   });
   assert.equal(decodeHousingShortlist(payload), null);
+});
+
+// An actual shortlist may carry duplicate labels after import. Never make
+// source row one indistinguishable from source row two on screen.
+test('screen-facing labels match comparison and TXT identity for every row', () => {
+  const labels = manualHomeDisplayLabels([
+    first,
+    {...second, label: 'woning a'},
+    {...first, label: 'Studio B'},
+  ]);
+  assert.deepEqual(labels, ['Woning A (notitie 1)', 'woning a (notitie 2)', 'Studio B']);
+  const comparison = compareTwoManualHomes([first, {...second,label:'woning a'}, {...first,label:'Studio B'}], preferences,[1,0]);
+  assert.deepEqual(comparison.choiceLabels, [labels[1], labels[0]]);
+});
+
+test('screen-facing labels refuse invalid input and preserve distinct accents', () => {
+  assert.equal(manualHomeDisplayLabels([first, {...second, label: 'Woning' + String.fromCharCode(0x202e)}]), null);
+  assert.deepEqual(manualHomeDisplayLabels([first, {...second, label: 'Woning Á'}]), ['Woning A', 'Woning Á']);
+});
+
+
+test('visible comparison cards, ranked items and selection actions display disambiguated identities', () => {
+  const ui = readFileSync(new URL('../src/app/position-stats.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /<h4>\{comparison\.choiceLabels\[0\]\}<\/h4>/);
+  assert.match(ui, /<h4>\{comparison\.choiceLabels\[1\]\}<\/h4>/);
+  assert.match(ui, /<strong>\{displayLabels\?\.\[row\.index\]/);
+  assert.match(ui, /aria-label=\{\(compared\.includes\(row\.index\)/);
 });
