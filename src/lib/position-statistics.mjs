@@ -387,6 +387,24 @@ export function decodeHousingShortlist(input) {
 }
 
 
+/** Screen and export must agree on original shortlist identity, not just names.
+ * A name collision may involve Unicode normalization or lettercase. Keep the
+ * source label unchanged in JSON; add an ordinal only for presentation.
+ */
+export function manualHomeDisplayLabels(homes) {
+  if (!Array.isArray(homes) || homes.length > MAX_MANUAL_HOMES) return null;
+  const normalized = homes.map(normalizeManualHome);
+  if (normalized.some(row => !row)) return null;
+  const identity = label => label.normalize('NFC').toLocaleLowerCase('nl-NL');
+  const counts = new Map();
+  for (const home of normalized) {
+    const key = identity(home.label);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return normalized.map((home, index) => counts.get(identity(home.label)) > 1 ?
+    `${home.label} (notitie ${index + 1})` : home.label);
+}
+
 /**
  * Two user-selected homes, never fetched from a property platform.
  * Differences are descriptive arithmetic only and never predict allocation.
@@ -404,14 +422,9 @@ export function compareTwoManualHomes(homes, preferences, selected) {
   // Different manually entered homes may have the same display label.
   // Never announce an ambiguous winner or write an ambiguous export;
   // identify those homes by their stable original shortlist positions.
-  const identity = label => label.normalize('NFC').toLocaleLowerCase('nl-NL');
-  const duplicateCounts = new Map();
-  for (const row of ranked) {
-    const key = identity(row.home.label);
-    duplicateCounts.set(key, (duplicateCounts.get(key) || 0) + 1);
-  }
-  const display = row => duplicateCounts.get(identity(row.home.label)) > 1 ?
-    `${row.home.label} (notitie ${row.index + 1})` : row.home.label;
+  const displayLabels = manualHomeDisplayLabels(homes);
+  if (!displayLabels) return null;
+  const display = row => displayLabels[row.index];
   const lowest = (key) => aHome[key] === bHome[key] ? null :
     display(aHome[key] < bHome[key] ? a : b);
   const highest = (key) => aHome[key] === bHome[key] ? null :
